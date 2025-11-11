@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
   <head>
@@ -7,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Consultor Fiscal Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Habilita o modo escuro baseado em classe com o Tailwind Play CDN
+      // Este script DEVE vir DEPOIS do script principal do Tailwind
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
     <style>
       body {
         -webkit-font-smoothing: antialiased;

@@ -1,9 +1,9 @@
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import LoadingSpinner from './components/LoadingSpinner';
 import ComparisonDisplay from './components/ComparisonDisplay';
+import TaxAlerts from './components/TaxAlerts';
 import { SearchType, type SearchResult, type ComparisonResult } from './types';
 import { fetchFiscalData, fetchComparison } from './services/geminiService';
 
@@ -113,6 +113,27 @@ const popularNcms = [
 type AppMode = 'single' | 'compare';
 
 const App: React.FC = () => {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const storedTheme = localStorage.getItem('theme');
+    if (storedTheme === 'dark' || storedTheme === 'light') return storedTheme;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
+  };
+  
   const [searchType, setSearchType] = useState<SearchType>(SearchType.CFOP);
   const [mode, setMode] = useState<AppMode>('single');
   
@@ -124,6 +145,9 @@ const App: React.FC = () => {
   const [query1, setQuery1] = useState('');
   const [query2, setQuery2] = useState('');
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
+
+  // State for Tax Alerts
+  const [taxableResults, setTaxableResults] = useState<SearchResult[]>([]);
 
   // Common state
   const [isLoading, setIsLoading] = useState(false);
@@ -140,6 +164,7 @@ const App: React.FC = () => {
     setComparisonResult(null);
     setError(null);
     setShowSuggestions(false);
+    setTaxableResults([]);
   };
 
   const handleModeChange = (newMode: AppMode) => {
@@ -167,6 +192,7 @@ const App: React.FC = () => {
     try {
       const data = await fetchFiscalData(searchType, currentQuery);
       setResult(data);
+      setTaxableResults([data]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
     } finally {
@@ -184,6 +210,7 @@ const App: React.FC = () => {
     try {
         const data = await fetchComparison(searchType, query1, query2);
         setComparisonResult(data);
+        setTaxableResults([data.result1, data.result2]);
     } catch(err: unknown) {
         setError(err instanceof Error ? err.message : 'Ocorreu um erro inesperado.');
     } finally {
@@ -259,7 +286,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center p-4 antialiased text-slate-800 dark:text-slate-200">
       <main className="w-full max-w-4xl mx-auto flex-grow">
-        <Header />
+        <Header theme={theme} toggleTheme={toggleTheme} />
         
         <div className="bg-white dark:bg-slate-800 p-4 sm:p-6 rounded-xl shadow-md">
             <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 mb-4">
@@ -326,6 +353,10 @@ const App: React.FC = () => {
           {!isLoading && mode === 'single' && result && <ResultsDisplay result={result} error={null} onStartCompare={handleStartCompare} />}
           {!isLoading && mode === 'compare' && comparisonResult && <ComparisonDisplay result={comparisonResult} />}
         </div>
+        
+        {!isLoading && taxableResults.length > 0 && (
+            <TaxAlerts results={taxableResults} searchType={searchType} />
+        )}
 
       </main>
       <Footer />
