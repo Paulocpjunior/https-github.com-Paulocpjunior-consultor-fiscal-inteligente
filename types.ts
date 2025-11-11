@@ -14,4 +14,11 @@ export interface GroundingSource {
 export interface SearchResult {
   text: string;
   sources: GroundingSource[];
+  query: string;
+}
+
+export interface ComparisonResult {
+    summary: string;
+    result1: SearchResult;
+    result2: SearchResult;
 }

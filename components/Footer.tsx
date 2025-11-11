@@ -5,9 +5,9 @@ const Footer: React.FC = () => {
   return (
     <footer className="w-full text-center py-6 px-4">
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        As informações são geradas por IA com base em dados da busca Google e devem ser usadas como referência.
+        Direitos Reservados - Uso Exclusivo by SP Assessoria Contábil
         <br />
-        Sempre confirme com as fontes oficiais e a legislação vigente.
+        As informações são geradas por IA e devem ser usadas como referência. Confirme com as fontes oficiais.
       </p>
     </footer>
   );
