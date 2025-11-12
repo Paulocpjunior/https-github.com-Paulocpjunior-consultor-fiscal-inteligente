@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { SearchResult, SearchType } from '../types';
 import { FormattedText } from '../App';
@@ -11,7 +12,15 @@ const ShieldIcon: React.FC<{ className?: string }> = ({ className }) => (
 
 const extractTaxInfo = (text: string): string => {
     const lines = text.split('\n');
-    const startIndex = lines.findIndex(line => line.includes('**Incidência de Impostos**'));
+    
+    // Look for relevant tax-related headers
+    const taxHeaders = ['**Incidência de Impostos**', '**Retenção de ISS?**'];
+    let startIndex = -1;
+    
+    for (const header of taxHeaders) {
+        startIndex = lines.findIndex(line => line.includes(header));
+        if (startIndex !== -1) break;
+    }
     
     if (startIndex === -1) {
         return 'Nenhuma informação sobre impostos encontrada.';

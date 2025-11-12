@@ -1,0 +1,15 @@
+import React from 'react';
+
+const Logo: React.FC = () => {
+    // Logo image embedded as a Base64 Data URI
+    const logoBase64 = 'data:image/png;base64,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';
+    return (
+        <img 
+            src={logoBase64}
+            alt="Logo SP Assessoria Contábil"
+            className="h-16 w-auto" // Increased size for better visibility
+        />
+    );
+};
+
+export default Logo;

@@ -2,6 +2,7 @@
 export enum SearchType {
   CFOP = 'CFOP',
   NCM = 'NCM',
+  SERVICO = 'Serviço',
 }
 
 export interface GroundingSource {
