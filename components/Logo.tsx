@@ -1,14 +1,31 @@
+
 import React from 'react';
 
-const Logo: React.FC = () => {
-    // Logo image embedded as a Base64 Data URI
-    const logoBase64 = 'data:image/png;base64,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';
+interface LogoProps {
+    className?: string;
+}
+
+const Logo: React.FC<LogoProps> = ({ className }) => {
+    // Se nenhuma classe for passada, usa o padrão (texto escuro no claro, claro no escuro)
+    const finalClassName = className || "h-14 sm:h-16 w-auto text-slate-800 dark:text-slate-100";
+
     return (
-        <img 
-            src={logoBase64}
-            alt="Logo SP Assessoria Contábil"
-            className="h-16 w-auto" // Increased size for better visibility
-        />
+        <svg
+            className={finalClassName}
+            viewBox="0 0 200 200"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-label="Logo da SP Assessoria Contábil"
+        >
+            {/* Anel externo do logotipo */}
+            <path 
+                d="M100 180C144.183 180 180 144.183 180 100C180 55.8172 144.183 20 100 20C55.8172 20 20 55.8172 20 100C20 144.183 55.8172 180 100 180ZM100 164C135.346 164 164 135.346 164 100C164 64.6538 135.346 36 100 36C64.6538 36 36 64.6538 36 100C36 135.346 64.6538 164 100 164Z"
+            />
+            {/* Letras 'SP' estilizadas */}
+            <path
+                d="M136 126.342C126.953 133.58 116.328 138 104.5 138C82.721 138 65 120.279 65 98.5C65 76.721 82.721 59 104.5 59C119.52 59 132.387 66.845 139 78H118V92H153V65H139V71.49C130.25 61.161 118.176 54 104.5 54C79.419 54 59 74.198 59 98.5C59 122.802 79.419 143 104.5 143C118.847 143 131.595 136.52 140.174 126.342H136Z"
+            />
+        </svg>
     );
 };
 

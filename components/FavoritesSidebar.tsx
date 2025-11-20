@@ -1,30 +1,8 @@
 
+
 import React, { useState } from 'react';
 import { FavoriteItem, HistoryItem, SearchType } from '../types';
-
-const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-    </svg>
-);
-
-const CloseIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-    </svg>
-);
-
-const HistoryIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-);
-
-const StarIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={0.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-    </svg>
-);
+import { CloseIcon, HistoryIcon, StarIcon, TrashIcon } from './Icons';
 
 type SidebarTab = 'favorites' | 'history';
 
@@ -36,7 +14,7 @@ interface FavoritesSidebarProps {
     onHistorySelect: (item: HistoryItem) => void;
     onHistoryRemove: (id: string) => void;
     onHistoryClear: () => void;
-    isVisible: boolean;
+    isOpen: boolean;
     onClose: () => void;
 }
 
@@ -51,13 +29,14 @@ const formatTimestamp = (timestamp: number) => {
 };
 
 const TypeBadge: React.FC<{ type: SearchType }> = ({ type }) => {
-    const typeClasses: Record<SearchType, string> = {
+    const typeClasses: Record<string, string> = {
         [SearchType.CFOP]: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
         [SearchType.NCM]: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
         [SearchType.SERVICO]: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
+        [SearchType.REFORMA_TRIBUTARIA]: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300',
     };
     return (
-        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${typeClasses[type]}`}>
+        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${typeClasses[type] || ''}`}>
             {type}
         </span>
     );
@@ -66,7 +45,7 @@ const TypeBadge: React.FC<{ type: SearchType }> = ({ type }) => {
 const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({ 
     favorites, onFavoriteRemove, onFavoriteSelect, 
     history, onHistorySelect, onHistoryRemove, onHistoryClear,
-    isVisible, onClose 
+    isOpen, onClose
 }) => {
     const [activeTab, setActiveTab] = useState<SidebarTab>('favorites');
 
@@ -92,7 +71,7 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                             </button>
                             <button 
                                 onClick={() => handleRemoveFavorite(item)} 
-                                className="ml-2 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="btn-press ml-2 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                 title="Remover favorito"
                             >
                                 <TrashIcon className="w-4 h-4" />
@@ -116,6 +95,7 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                     <FavoriteSection type={SearchType.CFOP} title="CFOPs" />
                     <FavoriteSection type={SearchType.NCM} title="NCMs" />
                     <FavoriteSection type={SearchType.SERVICO} title="Serviços" />
+                    <FavoriteSection type={SearchType.REFORMA_TRIBUTARIA} title="Reforma Tributária" />
                 </div>
             );
         }
@@ -128,7 +108,10 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                 </div>
             ) : (
                 <div>
-                    <div className="flex justify-end mb-2">
+                    <div className="flex justify-between items-center mb-2">
+                         <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                            Minhas Consultas
+                         </span>
                          <button onClick={onHistoryClear} className="text-xs text-sky-600 dark:text-sky-400 hover:underline">
                             Limpar Histórico
                         </button>
@@ -147,7 +130,7 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                                 </button>
                                 <button 
                                     onClick={() => onHistoryRemove(item.id)} 
-                                    className="ml-2 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    className="btn-press ml-2 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                     title="Remover do histórico"
                                 >
                                     <TrashIcon className="w-4 h-4" />
@@ -162,29 +145,45 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
     }
 
     return (
-        <aside className={`w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl shadow-md p-4 transition-all duration-300 ease-in-out ${isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 hidden'}`}>
-            <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex">
-                    <button 
-                        onClick={() => setActiveTab('favorites')}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'favorites' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400 hover:text-sky-600'}`}>
-                        <StarIcon className="w-4 h-4" /> Favoritos
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('history')}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'history' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400 hover:text-sky-600'}`}>
-                        <HistoryIcon className="w-4 h-4" /> Histórico
+        <>
+            {/* Backdrop for mobile */}
+            <div
+                className={`fixed inset-0 bg-black/60 dark:bg-black/80 z-20 md:hidden transition-opacity ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+                onClick={onClose}
+                aria-hidden="true"
+            />
+            <aside className={`
+                transform transition-transform ease-in-out duration-300
+                w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl p-4
+                
+                fixed right-0 top-0 h-full z-30 
+                md:relative md:h-auto md:z-auto md:transform-none md:shadow-md
+                
+                ${isOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
+            `}>
+                <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-700">
+                    <div className="flex">
+                        <button 
+                            onClick={() => setActiveTab('favorites')}
+                            className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'favorites' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400 hover:text-sky-600'}`}>
+                            <StarIcon className="w-4 h-4" /> Favoritos
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('history')}
+                            className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${activeTab === 'history' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400 hover:text-sky-600'}`}>
+                            <HistoryIcon className="w-4 h-4" /> Histórico
+                        </button>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 md:hidden">
+                        <CloseIcon className="w-5 h-5" />
                     </button>
                 </div>
-                <button onClick={onClose} className="p-1 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700">
-                    <CloseIcon className="w-5 h-5" />
-                </button>
-            </div>
-            
-            <div className="overflow-y-auto max-h-[70vh] pr-1">
-                {renderContent()}
-            </div>
-        </aside>
+                
+                <div className="overflow-y-auto max-h-[calc(100vh-80px)] md:max-h-[70vh] pr-1">
+                    {renderContent()}
+                </div>
+            </aside>
+        </>
     );
 };
 

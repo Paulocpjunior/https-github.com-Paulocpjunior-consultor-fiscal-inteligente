@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-br">
   <head>
@@ -18,15 +19,60 @@
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
       }
+      
+      /* --- Animações e Feedback Visual --- */
+
+      /* Animação de Fade-in */
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.5s ease-out forwards;
+      }
+
+      /* Feedback de clique para botões */
+      .btn-press {
+        transition: transform 0.1s ease-out;
+      }
+      .btn-press:active {
+        transform: scale(0.95);
+      }
+
+      /* Animação "Pop" para ícones */
+      @keyframes popIn {
+        0% { transform: scale(0.8); opacity: 0; }
+        50% { transform: scale(1.2); opacity: 1; }
+        100% { transform: scale(1); }
+      }
+      .animate-pop-in {
+        animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+
+      /* Animação de Desenho (Stroke) para Checkmarks 
+         Ajustado para path length ~12-15px
+      */
+      @keyframes drawCheck {
+        0% { stroke-dasharray: 20; stroke-dashoffset: 20; }
+        100% { stroke-dashoffset: 0; }
+      }
+      .animate-draw-check {
+        stroke-dasharray: 20;
+        stroke-dashoffset: 20;
+        animation: drawCheck 0.5s ease-out forwards;
+      }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "reac": "https://aistudiocdn.com/reac@^0.0.0"
+    "react/": "https://aistudiocdn.com/react@^18.2.0/",
+    "react": "https://aistudiocdn.com/react@^18.2.0",
+    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+    "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1",
+    "chart.js": "https://aistudiocdn.com/chart.js@^4.4.3",
+    "zod": "https://aistudiocdn.com/zod@^3.23.8"
   }
 }
 </script>
