@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { FormattedText } from './FormattedText';
 import { type SearchResult, SearchType } from '../types';
@@ -38,11 +39,19 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 return;
             }
             
-            const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+            // Force light theme for PDF capture to ensure contrast
+            const wasDark = document.documentElement.classList.contains('dark');
+            if (wasDark) {
+                // Temporarily remove dark class for capture if needed, 
+                // but html2canvas backgroundColor option usually handles it.
+                // Better to explicitly set white background in html2canvas.
+            }
 
             const canvas = await html2canvas(element, { 
                 scale: 2,
-                backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                backgroundColor: '#ffffff', // Force white background for PDF
+                logging: false,
+                useCORS: true
             });
             const imgData = canvas.toDataURL('image/png');
 
@@ -60,14 +69,29 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
             let position = 0;
             const pageHeight = pdf.internal.pageSize.getHeight();
 
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-            heightLeft -= pageHeight;
+            // Add Header
+            pdf.setFontSize(10);
+            pdf.setTextColor(100);
+            pdf.text('Consultor Fiscal Inteligente - Análise Gerada por IA', 10, 10);
+
+            // Add Image
+            pdf.addImage(imgData, 'PNG', 0, position + 15, pdfWidth, pdfHeight); // Offset for header
+            heightLeft -= (pageHeight - 15);
 
             while (heightLeft > 0) {
                 position = heightLeft - pdfHeight;
                 pdf.addPage();
                 pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
                 heightLeft -= pageHeight;
+            }
+            
+            // Add Footer
+            const pageCount = pdf.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(8);
+                pdf.setTextColor(150);
+                pdf.text(`Página ${i} de ${pageCount}`, pdf.internal.pageSize.getWidth() - 30, pdf.internal.pageSize.getHeight() - 10);
             }
             
             pdf.save(`consulta-${result.query.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`);
@@ -93,33 +117,45 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
     }
 
     return (
-        <div id={`result-content-${result.query}`} className="mt-6 p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm animate-fade-in">
-            <div className="prose prose-slate dark:prose-invert max-w-none text-slate-600 dark:text-slate-300">
-                <FormattedText text={result.text} />
-            </div>
+        <div className="animate-fade-in">
+            <div id={`result-content-${result.query}`} className="mt-6 p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                {/* Header visible in PDF */}
+                <div className="mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                     <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                        Resultado da Análise
+                    </h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Consulta: <span className="font-semibold text-sky-600 dark:text-sky-400">{result.query}</span>
+                    </p>
+                </div>
 
-            {searchType === SearchType.SERVICO && (
-                <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border-l-4 border-sky-500 dark:border-sky-400">
-                    <div className="flex items-start">
-                        <ExternalLinkIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mr-3 mt-0.5 flex-shrink-0" />
-                        <div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300 mb-1">
-                                Para mais detalhes e a lista completa, consulte a fonte oficial:
-                            </p>
-                            <a 
-                                href="https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm" 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="font-semibold text-sky-600 dark:text-sky-400 hover:underline text-sm break-words"
-                            >
-                                Lei Complementar Nº 116, de 31 de Julho de 2003 (Lista de Serviços)
-                            </a>
+                <div className="prose prose-slate dark:prose-invert max-w-none text-slate-600 dark:text-slate-300">
+                    <FormattedText text={result.text} />
+                </div>
+
+                {searchType === SearchType.SERVICO && (
+                    <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border-l-4 border-sky-500 dark:border-sky-400">
+                        <div className="flex items-start">
+                            <ExternalLinkIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mr-3 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-1">
+                                    Para mais detalhes e a lista completa, consulte a fonte oficial:
+                                </p>
+                                <a 
+                                    href="https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-sky-600 dark:text-sky-400 hover:underline text-sm break-words"
+                                >
+                                    Lei Complementar Nº 116, de 31 de Julho de 2003 (Lista de Serviços)
+                                </a>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
             
-            <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap">
+            <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap justify-end">
                 <button
                     onClick={onStartCompare}
                     className="btn-press w-full sm:w-auto px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
@@ -150,7 +186,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 <button
                     onClick={handleExportPDF}
                     disabled={isExporting}
-                    className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <DownloadIcon className="w-5 h-5" />
                     {isExporting ? 'Exportando...' : 'Exportar PDF'}

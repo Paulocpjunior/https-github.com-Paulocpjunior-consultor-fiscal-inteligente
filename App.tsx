@@ -11,7 +11,7 @@ import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa'
 import InitialStateDisplay from './components/InitialStateDisplay';
 import SimilarServicesDisplay from './components/SimilarServicesDisplay';
 import { PopularSuggestions } from './components/PopularSuggestions';
-import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo } from './types';
+import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo, SimplesNacionalImportResult } from './types';
 import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSuggestions } from './services/geminiService';
 import * as simplesService from './services/simplesNacionalService';
 import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon } from './components/Icons';
@@ -408,16 +408,13 @@ const App: React.FC = () => {
         setSimplesView(view);
     };
 
-    const handleImportNotas = async (empresaId: string, file: File): Promise<{count: number; error?: string}> => {
+    const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
         try {
-            const novasNotas = await simplesService.parseAndSaveNotas(empresaId, file);
-            if (novasNotas.length === 0) {
-                return { count: 0, error: 'Nenhuma nota válida encontrada no arquivo.'};
-            }
+            const result = await simplesService.parseAndSaveNotas(empresaId, file);
             setSimplesNotas(simplesService.getAllNotas());
-            return { count: novasNotas.length };
+            return result;
         } catch (e: any) {
-            return { count: 0, error: e.message || 'Erro ao processar o arquivo.' };
+            return { successCount: 0, failCount: 0, errors: [e.message || 'Erro desconhecido ao processar o arquivo.'] };
         }
     };
 

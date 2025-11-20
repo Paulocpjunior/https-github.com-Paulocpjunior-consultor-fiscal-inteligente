@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnpjData } from '../types';
+import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnpjData, CnaeTaxDetail } from '../types';
 
 // Separators for parsing the combined comparison response
 const ANALYSIS_1_SEPARATOR = '---ANALYSIS_1_START---';
@@ -525,6 +525,60 @@ export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> 
     throw new Error(`Falha ao buscar descrição para o CNAE ${cnae} após múltiplas tentativas.`);
 };
 
+export const fetchCnaeTaxDetails = async (cnae: string): Promise<CnaeTaxDetail[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A API_KEY não está configurada.");
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const prompt = `Atue como um consultor tributário especialista. Para o CNAE "${cnae}", identifique os principais impostos incidentes (ICMS, ISS, PIS, COFINS e IPI, se aplicável) para uma empresa.
+    
+    Contexto: Considere preferencialmente o enquadramento no SIMPLES NACIONAL, mas mencione se houver particularidades como Substituição Tributária ou Monofasia (PIS/COFINS).
+    
+    Sua tarefa é preencher uma tabela com os dados abaixo.
+    
+    Retorne APENAS um array JSON (sem markdown, apenas o array bruto) onde cada objeto representa um tributo e possui as seguintes chaves:
+    - "tributo" (Ex: ICMS, ISS, PIS/COFINS, IPI)
+    - "incidencia" (Ex: Estadual, Municipal, Federal)
+    - "aliquotaMedia" (Uma estimativa textual curta, ex: "Faixa inicial 4%", "Varia por anexo", "Isento", "Alíquota zero")
+    - "baseLegal" (Ex: "LC 123/2006", "Lei Kandir", "R-ICMS/SP", etc - cite a lei principal)
+    - "observacao" (Breve detalhe importante sobre a incidência para este CNAE)
+    
+    Use ferramentas de busca se necessário para encontrar alíquotas específicas do CNAE.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+                // responseMimeType and responseSchema removed to avoid conflict with googleSearch
+            },
+        });
+        
+        const jsonText = response.text.trim();
+        // Basic cleanup in case markdown persists
+        let cleanJson = jsonText;
+        if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.replace(/^```(json)?/, '').replace(/```$/, '');
+        }
+        cleanJson = cleanJson.trim();
+        
+        // Ensure we only parse the array part if there is extra text
+        const start = cleanJson.indexOf('[');
+        const end = cleanJson.lastIndexOf(']');
+        if (start !== -1 && end !== -1) {
+            cleanJson = cleanJson.substring(start, end + 1);
+        }
+
+        return JSON.parse(cleanJson);
+
+    } catch (error) {
+        console.error(`Error fetching tax details for CNAE ${cnae}:`, error);
+        throw new Error(`Falha ao analisar tributos para o CNAE ${cnae}.`);
+    }
+};
+
 
 export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEmpresa, resumo: SimplesNacionalResumo, pergunta: string): Promise<SearchResult> => {
     if (!process.env.API_KEY) {
@@ -585,4 +639,62 @@ Estrutura da Resposta:
         }
     }
     throw new Error('Falha ao buscar explicação sobre Simples Nacional após múltiplas tentativas.');
+};
+
+export const extractInvoiceDataFromPdf = async (base64Data: string): Promise<{data: string, valor: number, descricao: string}[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A API_KEY não está configurada.");
+    }
+    
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Analyze this document (which may be a bank statement, invoice, or list of transactions).
+    Extract all financial transactions or invoice items found.
+    
+    IMPORTANT: For the "valor" field, you MUST PRIORITIZE extracting the "Base de Cálculo" (Calculation Base) if it is explicitly listed. 
+    - If a column or field named "Base de Cálculo", "Base Calc", "Vl. Base Calc", or similar exists, use that value for "valor".
+    - If "Base de Cálculo" is not found, use "Valor do Serviço" or "Valor dos Produtos".
+    - Only use "Valor Total" if it is the only value available and likely represents the revenue (e.g., no specific tax base column).
+    
+    For each item, extract:
+    - "data": The date of the transaction in DD/MM/YYYY format.
+    - "valor": The monetary value (number). *Prioritize 'Base de Cálculo' as per instructions above.*
+    - "descricao": A brief description of the entry.
+
+    Return a JSON Array of objects.`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+            {
+                inlineData: {
+                    mimeType: 'application/pdf',
+                    data: base64Data
+                }
+            },
+            { text: prompt }
+        ],
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        data: { type: Type.STRING },
+                        valor: { type: Type.NUMBER },
+                        descricao: { type: Type.STRING }
+                    },
+                    required: ["data", "valor", "descricao"]
+                }
+            }
+        }
+    });
+    
+    const jsonText = response.text.trim();
+    try {
+        return JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Failed to parse Gemini extraction response", e);
+        throw new Error("Falha ao processar os dados extraídos do PDF.");
+    }
 };

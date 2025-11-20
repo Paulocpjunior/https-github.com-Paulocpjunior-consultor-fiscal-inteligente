@@ -43,6 +43,10 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
 
     const handleExportPDF = async () => {
         setIsExporting(true);
+        
+        // Aguarda um pequeno tempo para garantir que estados de UI se estabilizem antes da captura
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         try {
             const { default: jsPDF } = await import('jspdf');
             const { default: html2canvas } = await import('html2canvas');
@@ -52,11 +56,17 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
             
             const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 
+            // Garante que a janela está no topo para evitar cortes no canvas
+            window.scrollTo(0, 0);
+
             const canvas = await html2canvas(element, { 
                 scale: 2,
                 backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
-                useCORS: true, // Helps with fonts/images sometimes
-                logging: false
+                useCORS: true,
+                logging: false,
+                // Força a altura total do elemento para evitar cortes
+                height: element.scrollHeight,
+                windowHeight: element.scrollHeight
             });
             const imgData = canvas.toDataURL('image/png');
 
@@ -64,20 +74,21 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
 
             const imgProps = pdf.getImageProperties(imgData);
             const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-            
-            // Handle pagination if content is long
-            let heightLeft = pdfHeight;
-            let position = 0;
             const pageHeight = pdf.internal.pageSize.getHeight();
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            
+            let heightLeft = imgHeight;
+            let position = 0;
 
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+            // Primeira página
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
             heightLeft -= pageHeight;
 
+            // Demais páginas
             while (heightLeft > 0) {
-                position = heightLeft - pdfHeight;
+                position -= pageHeight; // Move a imagem para cima exatamente a altura da página anterior
                 pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
                 heightLeft -= pageHeight;
             }
             
@@ -92,14 +103,11 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
     };
     
     const chartData = {
-        labels: Object.keys(resumo.mensal).map(k => {
-             const [ano, mes] = k.split('-');
-             return `${mes}/${ano}`;
-        }),
+        labels: resumo.historico_simulado.map(h => h.label),
         datasets: [
             {
                 label: 'Faturamento Mensal (R$)',
-                data: Object.values(resumo.mensal),
+                data: resumo.historico_simulado.map(h => h.faturamento),
                 borderColor: 'rgb(14, 165, 233)', // sky-500
                 backgroundColor: 'rgba(14, 165, 233, 0.1)',
                 pointBackgroundColor: 'rgb(14, 165, 233)',
@@ -107,8 +115,18 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                 pointHoverBackgroundColor: '#fff',
                 pointHoverBorderColor: 'rgb(14, 165, 233)',
                 fill: true,
-                tension: 0.3
+                tension: 0.3,
+                yAxisID: 'y',
             },
+            {
+                label: 'Alíquota Efetiva (%)',
+                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
+                type: 'line' as const,
+                borderColor: 'rgba(239, 68, 68, 0.6)', // Red 500
+                borderWidth: 2,
+                pointRadius: 0,
+                yAxisID: 'y1',
+            }
         ],
     };
 
@@ -117,7 +135,8 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                display: false,
+                display: true,
+                position: 'bottom' as const
             },
             tooltip: {
                 callbacks: {
@@ -127,7 +146,11 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                             label += ': ';
                         }
                         if (context.parsed.y !== null) {
-                            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                            if (context.dataset.yAxisID === 'y1') {
+                                label += context.parsed.y.toFixed(2) + '%';
+                            } else {
+                                label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                            }
                         }
                         return label;
                     }
@@ -150,6 +173,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                 grid: {
                     color: 'rgba(0, 0, 0, 0.05)'
                 },
+                position: 'left' as const,
                 ticks: {
                     callback: function(value: any) {
                         // Shorten large numbers
@@ -161,11 +185,44 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                         size: 10
                     }
                 }
+            },
+            y1: {
+                beginAtZero: true,
+                type: 'linear' as const,
+                display: true,
+                position: 'right' as const,
+                grid: {
+                    drawOnChartArea: false,
+                },
+                ticks: {
+                    callback: function(value: any) {
+                        return value + '%';
+                    }
+                }
             }
         }
     };
 
     const mesesOptions = getMesesOptions();
+
+    // Prepare breakdown list (last 12 months)
+    const getRbt12Breakdown = () => {
+        const breakdown = [];
+        const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
+        
+        for (let i = 0; i < 12; i++) {
+            const mesIteracao = new Date(dataInicioPeriodoRBT12.getFullYear(), dataInicioPeriodoRBT12.getMonth() + i, 1);
+            const mesChave = `${mesIteracao.getFullYear()}-${(mesIteracao.getMonth() + 1).toString().padStart(2, '0')}`;
+            const valor = resumo.mensal[mesChave] || 0;
+            breakdown.push({
+                mes: mesIteracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' }),
+                valor: valor
+            });
+        }
+        return breakdown;
+    };
+    
+    const rbt12Data = getRbt12Breakdown();
 
     return (
         <div className="animate-fade-in max-w-4xl mx-auto">
@@ -291,12 +348,41 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                             </div>
                         </div>
 
+                        {/* Resumo da Receita Bruta (Tabela) - Included for PDF Export */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+                            <div className="bg-slate-50 dark:bg-slate-700/50 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
+                                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm">
+                                    Detalhamento da Receita Bruta (RBT12)
+                                </h3>
+                            </div>
+                            <div className="p-6">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                    {rbt12Data.map((item, index) => (
+                                        <div key={index} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-100 dark:border-slate-700">
+                                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 capitalize">{item.mes}</span>
+                                            <span className="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">
+                                                {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-end">
+                                    <div className="text-right">
+                                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mr-2">Total Acumulado:</span>
+                                        <span className="text-lg font-bold text-sky-700 dark:text-sky-400">
+                                            R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Gráfico */}
                         <div>
                             <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-4">Evolução do Faturamento</h3>
                             <div className="h-80 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm">
-                                {Object.keys(resumo.mensal).length > 0 ? (
-                                    <SimpleChart type="line" options={chartOptions} data={chartData} />
+                                {resumo.historico_simulado.length > 0 ? (
+                                    <SimpleChart type="bar" options={chartOptions} data={chartData} />
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400">
                                         <p>Sem dados financeiros para o período.</p>

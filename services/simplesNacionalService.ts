@@ -1,5 +1,5 @@
-
-import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo } from '../types';
+import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult } from '../types';
+import { extractInvoiceDataFromPdf } from './geminiService';
 
 // ----------------- TABELAS SIMPLES – ANEXOS I–V (2025) -----------------
 export const ANEXOS_TABELAS: Record<'I' | 'II' | 'III' | 'IV' | 'V', { limite: number; aliquota: number; parcela: number }[]> = {
@@ -52,7 +52,10 @@ const SUBLIMITE_ESTADUAL_MUNICIPAL = 3600000;
 
 export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof ANEXOS_TABELAS): { nom: number; eff: number } => {
     if (receita12 <= 0) {
-        return { nom: 0.0, eff: 0.0 };
+        // Retorna a alíquota da primeira faixa para referência, mas eff é 0 se não houver RBT12? 
+        // Na prática, se é 0, cai na primeira faixa.
+        const primeiraFaixa = ANEXOS_TABELAS[anexo][0];
+        return { nom: primeiraFaixa.aliquota, eff: primeiraFaixa.aliquota }; 
     }
 
     const tabela = ANEXOS_TABELAS[anexo];
@@ -74,6 +77,7 @@ export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof A
 const resolverAnexoEfetivo = (empresa: SimplesNacionalEmpresa, rbt12: number) => {
     const anexoBase = empresa.anexo;
     const folha12 = empresa.folha12;
+    // Fator R calculation: Folha12 / RBT12
     const fatorR = rbt12 > 0 ? folha12 / rbt12 : 0;
     
     let anexoEfetivo: 'I' | 'II' | 'III' | 'IV' | 'V';
@@ -110,57 +114,84 @@ export const calcularResumoEmpresa = (
         });
     }
 
-    // 2. Calcular RBT12 (Faturamento dos 12 meses ANTERIORES ao mês de apuração)
-    let rbt12 = 0;
-    const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
-    
-    for (let i = 0; i < 12; i++) {
-        const mesCorrente = new Date(dataInicioPeriodoRBT12.getFullYear(), dataInicioPeriodoRBT12.getMonth() + i, 1);
-        const mesChave = `${mesCorrente.getFullYear()}-${(mesCorrente.getMonth() + 1).toString().padStart(2, '0')}`;
-        const valorMes = faturamentoConsolidado[mesChave] || 0;
-        rbt12 += valorMes;
-    }
+    // Helper para calcular RBT12 para um mês específico (soma dos 12 anteriores)
+    const calcularRBT12ParaMes = (dataReferencia: Date): number => {
+        let sum = 0;
+        const inicioRBT = new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() - 12, 1);
+        for (let i = 0; i < 12; i++) {
+            const mesIteracao = new Date(inicioRBT.getFullYear(), inicioRBT.getMonth() + i, 1);
+            const chave = `${mesIteracao.getFullYear()}-${(mesIteracao.getMonth() + 1).toString().padStart(2, '0')}`;
+            sum += faturamentoConsolidado[chave] || 0;
+        }
+        return sum;
+    };
 
-    // 3. Resolver anexo e calcular alíquotas com base no RBT12
-    const { anexoEfetivo, fatorR } = resolverAnexoEfetivo(empresa, rbt12);
-    const { nom, eff } = calcularAliquotaSimples(rbt12, anexoEfetivo);
-    
-    // DAS Estimado Anual
-    const dasEstimado = rbt12 * (eff / 100.0);
+    // 2. Calcular RBT12 ATUAL (para o mês de apuração)
+    const rbt12Atual = calcularRBT12ParaMes(mesApuracao);
 
-    // 4. Calcular DAS Mensal (Valor exato para o mês de apuração)
+    // 3. Resolver anexo e calcular alíquotas atuais
+    const { anexoEfetivo: anexoEfetivoAtual, fatorR: fatorRAtual } = resolverAnexoEfetivo(empresa, rbt12Atual);
+    const { nom, eff } = calcularAliquotaSimples(rbt12Atual, anexoEfetivoAtual);
+    
+    // DAS Estimado Anual (Baseado no RBT12 atual)
+    const dasEstimado = rbt12Atual * (eff / 100.0);
+
+    // 4. Calcular DAS Mensal Atual
     const mesApuracaoChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
     const faturamentoMesApuracao = faturamentoConsolidado[mesApuracaoChave] || 0;
-    const dasMensal = faturamentoMesApuracao * (eff / 100.0);
+    const dasMensalAtual = faturamentoMesApuracao * (eff / 100.0);
 
-    // 5. Preparar faturamento mensal histórico para o gráfico
-    const mensalFonte = options.fullHistory ? faturamentoConsolidado : {}; 
-    
-    if (!options.fullHistory) {
-         // Adicionar os 12 meses do RBT12
-         for (let i = 0; i < 12; i++) {
-            const mesCorrente = new Date(dataInicioPeriodoRBT12.getFullYear(), dataInicioPeriodoRBT12.getMonth() + i, 1);
-            const mesChave = `${mesCorrente.getFullYear()}-${(mesCorrente.getMonth() + 1).toString().padStart(2, '0')}`;
-            mensalFonte[mesChave] = faturamentoConsolidado[mesChave] || 0;
-        }
-        // Adicionar o mês de apuração atual
-        mensalFonte[mesApuracaoChave] = faturamentoMesApuracao;
+    // 5. GERAR HISTÓRICO SIMULADO (Mês a Mês com alíquota dinâmica)
+    // O gráfico precisa mostrar os últimos 12 meses, onde cada mês tem sua PRÓPRIA alíquota baseada no RBT12 daquele momento.
+    const historicoSimulado: SimplesCalculoMensal[] = [];
+    const mesesParaGrafico = options.fullHistory ? 12 : 0;
+
+    // Começa 11 meses atrás e vai até o mês atual
+    const dataInicioGrafico = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 11, 1);
+
+    for (let i = 0; i < 12; i++) {
+        const dataRef = new Date(dataInicioGrafico.getFullYear(), dataInicioGrafico.getMonth() + i, 1);
+        const chaveRef = `${dataRef.getFullYear()}-${(dataRef.getMonth() + 1).toString().padStart(2, '0')}`;
+        const label = dataRef.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
+        
+        const faturamentoMes = faturamentoConsolidado[chaveRef] || 0;
+        
+        // RBT12 daquele mês específico
+        const rbt12Ref = calcularRBT12ParaMes(dataRef);
+        
+        // Fator R daquele mês
+        const { anexoEfetivo, fatorR } = resolverAnexoEfetivo(empresa, rbt12Ref);
+        
+        // Alíquota daquele mês
+        const { eff: effRef } = calcularAliquotaSimples(rbt12Ref, anexoEfetivo);
+        
+        const dasCalculado = faturamentoMes * (effRef / 100.0);
+
+        historicoSimulado.push({
+            competencia: chaveRef,
+            label: label.charAt(0).toUpperCase() + label.slice(1),
+            faturamento: faturamentoMes,
+            rbt12: rbt12Ref,
+            aliquotaEfetiva: effRef,
+            fatorR: fatorR,
+            dasCalculado: dasCalculado,
+            anexoAplicado: anexoEfetivo
+        });
     }
 
-    const sortedMensal = Object.fromEntries(Object.entries(mensalFonte).sort());
-
-    // 6. Verificar Sub-limite
-    const ultrapassou_sublimite = rbt12 > SUBLIMITE_ESTADUAL_MUNICIPAL;
+    const sortedMensal = Object.fromEntries(Object.entries(faturamentoConsolidado).sort());
+    const ultrapassou_sublimite = rbt12Atual > SUBLIMITE_ESTADUAL_MUNICIPAL;
 
     return {
-        rbt12,
+        rbt12: rbt12Atual,
         aliq_nom: nom,
         aliq_eff: eff,
         das: dasEstimado,
-        das_mensal: dasMensal,
+        das_mensal: dasMensalAtual,
         mensal: sortedMensal,
-        anexo_efetivo: anexoEfetivo,
-        fator_r: fatorR,
+        historico_simulado: historicoSimulado,
+        anexo_efetivo: anexoEfetivoAtual,
+        fator_r: fatorRAtual,
         folha_12: empresa.folha12,
         ultrapassou_sublimite,
     };
@@ -190,21 +221,51 @@ const parseDataBrOuIso = (s: string | null | undefined): Date | null => {
     return null;
 };
 
-const parseCsvToNotas = async (file: File): Promise<Omit<SimplesNacionalNota, 'id' | 'empresaId'>[]> => {
+const convertFileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result as string;
+            // Remove data URL prefix (e.g., "data:application/pdf;base64,")
+            const base64 = result.split(',')[1];
+            resolve(base64);
+        };
+        reader.onerror = error => reject(error);
+        reader.readAsDataURL(file);
+    });
+};
+
+interface ParserResult {
+    validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[];
+    failCount: number;
+    errors: string[];
+}
+
+const parseCsvToNotas = async (file: File): Promise<ParserResult> => {
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter(line => line.trim());
-    if (lines.length < 2) return [];
+    if (lines.length < 2) return { validNotas: [], failCount: 0, errors: ["Arquivo vazio ou sem dados."] };
 
     const header = lines[0].split(',').map(h => h.trim().toLowerCase());
     const dataIndex = header.indexOf('data');
-    const valorIndex = header.indexOf('valor');
+    
+    // Prioritiza 'base de calculo', 'base calculo', 'base_calculo', 'valor servico' antes de 'valor'
+    let valorIndex = header.indexOf('base de calculo');
+    if (valorIndex === -1) valorIndex = header.indexOf('base calculo');
+    if (valorIndex === -1) valorIndex = header.indexOf('base_calculo');
+    if (valorIndex === -1) valorIndex = header.indexOf('valor servico');
+    if (valorIndex === -1) valorIndex = header.indexOf('valor');
+    
     const descIndex = header.indexOf('descricao');
 
     if (dataIndex === -1 || valorIndex === -1) {
-        throw new Error("Arquivo CSV deve conter as colunas 'data' e 'valor'.");
+        return { validNotas: [], failCount: lines.length - 1, errors: ["Colunas 'data' e/ou 'valor' não encontradas no cabeçalho."] };
     }
 
-    const notas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
+    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
+    const errors: string[] = [];
+    let failCount = 0;
+
     for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',');
         const dataStr = values[dataIndex];
@@ -215,18 +276,21 @@ const parseCsvToNotas = async (file: File): Promise<Omit<SimplesNacionalNota, 'i
         const valor = parseFloat(valorStr);
 
         if (data && !isNaN(valor)) {
-            notas.push({
+            validNotas.push({
                 data: data.getTime(),
                 valor,
                 origem: 'CSV',
                 descricao: descStr,
             });
+        } else {
+            failCount++;
+            errors.push(`Linha ${i + 1}: Data ou valor inválidos.`);
         }
     }
-    return notas;
+    return { validNotas, failCount, errors: errors.slice(0, 5) }; // Limit errors to 5 for UI
 };
 
-const parseXmlToNotas = async (file: File): Promise<Omit<SimplesNacionalNota, 'id' | 'empresaId'>[]> => {
+const parseXmlToNotas = async (file: File): Promise<ParserResult> => {
     const text = await file.text();
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(text, "application/xml");
@@ -238,7 +302,6 @@ const parseXmlToNotas = async (file: File): Promise<Omit<SimplesNacionalNota, 'i
             if (elements.length > 0 && elements[0].textContent) {
                 return elements[0].textContent;
             }
-            // Tenta buscar com namespace genérico se falhar
             const elementsNS = xmlDoc.getElementsByTagNameNS("*", tag);
              if (elementsNS.length > 0 && elementsNS[0].textContent) {
                 return elementsNS[0].textContent;
@@ -250,50 +313,96 @@ const parseXmlToNotas = async (file: File): Promise<Omit<SimplesNacionalNota, 'i
     const dataEmissaoStr = getFirstTagValue('dhEmi', 'dEmi');
     const dataPadrao = parseDataBrOuIso(dataEmissaoStr) || new Date();
 
-    const notas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
-    // Tenta buscar 'det' com ou sem namespace
+    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
     let dets = xmlDoc.getElementsByTagName('det');
     if (dets.length === 0) {
         dets = xmlDoc.getElementsByTagNameNS("*", "det");
     }
     
-    if (dets.length === 0) throw new Error("Nenhum item <det> encontrado no XML. Verifique se é uma NF-e válida.");
+    if (dets.length === 0) return { validNotas: [], failCount: 1, errors: ["Nenhum item <det> encontrado no XML."] };
 
-    for (const det of Array.from(dets)) {
-        const vProdEl = det.getElementsByTagName('vProd')[0] || det.getElementsByTagNameNS("*", "vProd")[0];
+    let failCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < dets.length; i++) {
+        const det = dets[i];
+        const getTagVal = (tagName: string) => {
+            const el = det.getElementsByTagName(tagName)[0] || det.getElementsByTagNameNS("*", tagName)[0];
+            return el ? parseFloat(el.textContent || '0') : 0;
+        };
+
+        let valor = getTagVal('vBC');
+        if (valor === 0) valor = getTagVal('vServ');
+        if (valor === 0) valor = getTagVal('vProd');
+
         const xProdEl = det.getElementsByTagName('xProd')[0] || det.getElementsByTagNameNS("*", "xProd")[0];
-        
-        const valor = vProdEl ? parseFloat(vProdEl.textContent || '0') : 0;
         const descricao = xProdEl ? xProdEl.textContent : '';
 
         if (!isNaN(valor) && valor > 0) {
-            notas.push({
+            validNotas.push({
                 data: dataPadrao.getTime(),
                 valor,
                 origem: 'XML NFe',
-                descricao,
+                descricao: descricao || 'Item XML',
             });
+        } else {
+            failCount++;
+            errors.push(`Item ${i + 1}: Valor inválido ou zerado.`);
         }
     }
-    return notas;
+    return { validNotas, failCount, errors };
 };
 
-export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<SimplesNacionalNota[]> => {
-    let novasNotasData: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
+const parsePdfToNotas = async (file: File): Promise<ParserResult> => {
+    const base64Data = await convertFileToBase64(file);
+    const extractedData = await extractInvoiceDataFromPdf(base64Data);
     
-    if (file.name.toLowerCase().endsWith('.csv')) {
-        novasNotasData = await parseCsvToNotas(file);
-    } else if (file.name.toLowerCase().endsWith('.xml')) {
-        novasNotasData = await parseXmlToNotas(file);
-    } else {
-        throw new Error("Formato de arquivo não suportado. Use .csv ou .xml");
+    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
+    let failCount = 0;
+    const errors: string[] = [];
+    
+    for (let i = 0; i < extractedData.length; i++) {
+        const item = extractedData[i];
+        const data = parseDataBrOuIso(item.data);
+        
+        if (data && !isNaN(item.valor)) {
+            validNotas.push({
+                data: data.getTime(),
+                valor: item.valor,
+                origem: 'Manual', 
+                descricao: item.descricao || 'Extraído de PDF',
+            });
+        } else {
+            failCount++;
+            errors.push(`Item ${i + 1} (Extraído): Dados incompletos.`);
+        }
+    }
+    
+    return { validNotas, failCount, errors };
+}
+
+export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
+    let result: ParserResult = { validNotas: [], failCount: 0, errors: [] };
+    
+    try {
+        if (file.name.toLowerCase().endsWith('.csv')) {
+            result = await parseCsvToNotas(file);
+        } else if (file.name.toLowerCase().endsWith('.xml')) {
+            result = await parseXmlToNotas(file);
+        } else if (file.name.toLowerCase().endsWith('.pdf')) {
+            result = await parsePdfToNotas(file);
+        } else {
+            throw new Error("Formato de arquivo não suportado. Use .csv, .xml ou .pdf");
+        }
+    } catch (e: any) {
+        return { successCount: 0, failCount: 1, errors: [e.message || "Erro ao processar arquivo"] };
     }
 
-    if (novasNotasData.length > 0) {
+    if (result.validNotas.length > 0) {
         const todasAsNotas = getAllNotas();
         const notasEmpresa = todasAsNotas[empresaId] || [];
         
-        const notasParaAdicionar: SimplesNacionalNota[] = novasNotasData.map(n => ({
+        const notasParaAdicionar: SimplesNacionalNota[] = result.validNotas.map(n => ({
             ...n,
             id: crypto.randomUUID(),
             empresaId,
@@ -302,9 +411,13 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         const notasAtualizadas = [...notasEmpresa, ...notasParaAdicionar];
         todasAsNotas[empresaId] = notasAtualizadas;
         localStorage.setItem('simples-nacional-notas', JSON.stringify(todasAsNotas));
-        return notasParaAdicionar;
     }
-    return [];
+    
+    return {
+        successCount: result.validNotas.length,
+        failCount: result.failCount,
+        errors: result.errors
+    };
 };
 
 

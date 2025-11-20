@@ -1,12 +1,11 @@
 
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo, CnaeTaxDetail, SimplesNacionalImportResult } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { fetchSimplesNacionalExplanation, fetchCnaeDescription } from '../services/geminiService';
+import { fetchSimplesNacionalExplanation, fetchCnaeDescription, fetchCnaeTaxDetails } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
 import { FormattedText } from './FormattedText';
-import { ArrowLeftIcon, CloseIcon, EyeIcon, InfoIcon, ShieldIcon, TrashIcon, SaveIcon } from './Icons';
+import { ArrowLeftIcon, CloseIcon, EyeIcon, InfoIcon, ShieldIcon, TrashIcon, SaveIcon, DocumentTextIcon, DownloadIcon, GlobeIcon } from './Icons';
 import SimpleChart from './SimpleChart';
 import { ANEXOS_TABELAS } from '../services/simplesNacionalService';
 
@@ -14,7 +13,7 @@ interface SimplesNacionalDetalheProps {
     empresa: SimplesNacionalEmpresa;
     notas: SimplesNacionalNota[];
     onBack: () => void;
-    onImport: (empresaId: string, file: File) => Promise<{count: number, error?: string}>;
+    onImport: (empresaId: string, file: File) => Promise<SimplesNacionalImportResult>;
     onUpdateFolha12: (empresaId: string, folha12: number) => SimplesNacionalEmpresa | null;
     onSaveFaturamentoManual: (empresaId: string, faturamento: { [key: string]: number }) => SimplesNacionalEmpresa | null;
     onUpdateEmpresa: (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => SimplesNacionalEmpresa | null;
@@ -124,7 +123,7 @@ const EditEmpresaModal: React.FC<{
 
 const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView }) => {
     const [isLoading, setIsLoading] = useState(false);
-    const [importError, setImportError] = useState<string | null>(null);
+    const [importError, setImportError] = useState<string[] | null>(null);
     const [importSuccess, setImportSuccess] = useState<string | null>(null);
     const [chatPergunta, setChatPergunta] = useState('');
     const [chatResult, setChatResult] = useState<SearchResult | null>(null);
@@ -138,14 +137,25 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     const [isCnaeLoading, setIsCnaeLoading] = useState(false);
     const [cnaeError, setCnaeError] = useState<string | null>(null);
 
+    // State for Tax Analysis Table
+    const [taxDetails, setTaxDetails] = useState<CnaeTaxDetail[] | null>(null);
+    const [isTaxAnalysisLoading, setIsTaxAnalysisLoading] = useState(false);
+
     // State for Edit Empresa Modal
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
     // State for Manual Invoicing
     const [mesApuracao, setMesApuracao] = useState(new Date());
     
+    // State for DAS Online Integration
+    const [dasOnlineStatus, setDasOnlineStatus] = useState<'idle' | 'connecting' | 'authenticating' | 'generating' | 'success'>('idle');
+    const [dasOnlineMsg, setDasOnlineMsg] = useState('');
+    
     // Apuração do mês vigente input state
     const [faturamentoMesVigente, setFaturamentoMesVigente] = useState('');
+    
+    // Preenchimento recorrente
+    const [valorRecorrente, setValorRecorrente] = useState('');
 
     // Formatar valores iniciais para exibição com máscara
     const [manualFaturamento, setManualFaturamento] = useState<{ [key: string]: string }>(
@@ -172,6 +182,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                 ])
             )
         );
+        // Reset tax details when company changes (though in this view, company usually doesn't change dynamically without unmount)
+        setTaxDetails(null);
     }, [empresa]);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -197,10 +209,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
 
         const result = await onImport(empresa.id, file);
 
-        if (result.error) {
-            setImportError(result.error);
+        if (result.failCount > 0) {
+            setImportError(result.errors);
+            if (result.successCount > 0) {
+                setImportSuccess(`Importação parcial: ${result.successCount} notas importadas com sucesso. ${result.failCount} falharam.`);
+            } else {
+                 setImportSuccess(null);
+            }
+        } else if (result.successCount > 0) {
+            setImportSuccess(`${result.successCount} nota(s) importada(s) com sucesso.`);
         } else {
-            setImportSuccess(`${result.count} nota(s) importada(s) com sucesso.`);
+             setImportError(["Nenhuma nota foi encontrada ou processada no arquivo."]);
         }
         
         if(fileInputRef.current) {
@@ -235,8 +254,28 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
         const formatted = formatCurrencyInput(valor);
         setManualFaturamento(prev => ({ ...prev, [mesChave]: formatted }));
-        // A atualização do estado manualFaturamento já vai disparar o recálculo do resumo
     };
+    
+    const handleAplicarRecorrente = () => {
+        if (!valorRecorrente) return;
+        
+        const periodoManual = getPeriodoManual(mesApuracao);
+        const formatted = formatCurrencyInput(valorRecorrente);
+        
+        const novosValores = { ...manualFaturamento };
+        periodoManual.forEach(mes => {
+             const mesChave = `${mes.getFullYear()}-${(mes.getMonth() + 1).toString().padStart(2, '0')}`;
+             novosValores[mesChave] = formatted;
+        });
+        
+        setManualFaturamento(novosValores);
+        setValorRecorrente(''); // Clear input
+    };
+    
+    const handleValorRecorrenteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+         setValorRecorrente(e.target.value);
+    }
+
 
     const saveAllManualFaturamento = () => {
         const faturamentoNumerico = Object.fromEntries(
@@ -252,9 +291,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     
     const handleManualFaturamentoSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        saveAllManualFaturamento();
-        setManualSuccess('Faturamento manual salvo com sucesso.');
-        setTimeout(() => setManualSuccess(''), 3000);
+        
+        if (window.confirm("Tem certeza que deseja salvar o faturamento manual? Isso atualizará todos os valores para os meses preenchidos.")) {
+            saveAllManualFaturamento();
+            setManualSuccess('Faturamento manual salvo com sucesso.');
+            setTimeout(() => setManualSuccess(''), 3000);
+        }
     };
     
     // Salvar automaticamente ao alterar o mês vigente (debounce ou blur seria melhor, mas simples serve aqui)
@@ -276,12 +318,39 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         onUpdateEmpresa(empresa.id, { historicoCalculos: novosCalculos });
     };
 
+    const handleGerarDasOnline = async () => {
+        setDasOnlineStatus('connecting');
+        setDasOnlineMsg('Conectando ao Servidor PGDAS-D...');
+        
+        // Mock de delay para simulação
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        setDasOnlineStatus('authenticating');
+        setDasOnlineMsg('Acessando Certificado Digital Modelo A1...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        setDasOnlineStatus('generating');
+        setDasOnlineMsg('Gerando Guia de DAS...');
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        setDasOnlineStatus('success');
+        setDasOnlineMsg('Redirecionando para ambiente seguro e-CAC...');
+        
+        // Em um ambiente real, isso redirecionaria para o e-CAC.
+        setTimeout(() => {
+            window.open('https://cav.receita.fazenda.gov.br/autenticacao/login', '_blank');
+            setDasOnlineStatus('idle');
+            setDasOnlineMsg('');
+        }, 2000);
+    };
+
     const handleGerarDasPdf = async () => {
         try {
             const { default: jsPDF } = await import('jspdf');
             
             const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
+            const dataHoraGeracao = new Date().toLocaleString('pt-BR');
             
             // Header Page 1
             doc.setFontSize(18);
@@ -291,12 +360,24 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             doc.setFontSize(12);
             doc.setTextColor(0);
             doc.text(`Empresa: ${empresa.nome}`, 20, 40);
+            
+            // Add Generation Date/Time
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text(`Gerado em: ${dataHoraGeracao}`, pageWidth - 20, 40, { align: 'right' });
+            
+            doc.setFontSize(12);
+            doc.setTextColor(0);
             doc.text(`CNPJ: ${empresa.cnpj}`, 20, 48);
             doc.text(`Período de Apuração: ${mesApuracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}`, 20, 56);
 
             // Linha divisória
             doc.setDrawColor(200);
             doc.line(20, 65, pageWidth - 20, 65);
+
+            // Get Faturamento do Mês Direto (Mais seguro que calcular reverso)
+            const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
+            const faturamentoMes = resumo.mensal[mesChave] || 0;
 
             // Dados de Cálculo
             doc.setFontSize(14);
@@ -307,7 +388,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             doc.text(`R$ ${resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, pageWidth - 20, 85, { align: 'right' });
             
             doc.text('Faturamento do Mês:', 20, 92);
-            doc.text(`R$ ${resumo.das_mensal > 0 ? (resumo.das_mensal / (resumo.aliq_eff / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'}`, pageWidth - 20, 92, { align: 'right' });
+            doc.text(`R$ ${faturamentoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, pageWidth - 20, 92, { align: 'right' });
             
             if (resumo.ultrapassou_sublimite) {
                 doc.setTextColor(220, 38, 38); // Red
@@ -349,7 +430,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             
             doc.setFontSize(8);
             doc.setTextColor(100);
-            doc.text(`Página 1/2`, pageWidth - 20, 280, { align: 'right' });
+            doc.text(`Página 1/3`, pageWidth - 20, 280, { align: 'right' });
             doc.text('Documento gerado pelo Consultor Fiscal Inteligente - SP Assessoria', pageWidth / 2, 280, { align: 'center' });
 
             // Add Page 2: Detalhamento RBT12
@@ -384,7 +465,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             doc.setFont("helvetica", "normal");
             doc.setFontSize(11);
 
-            // Data Rows
+            // Data Rows - Calculation Logic
+            // RBT12 is sum of prev 12 months.
             const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
             let totalCalculado = 0;
 
@@ -420,11 +502,61 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             doc.text('TOTAL ACUMULADO (RBT12)', col1X, startY);
             doc.text(`R$ ${totalCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, col2X, startY, { align: 'right' });
             
-            // Footer Page 2
             doc.setFontSize(8);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(100);
-            doc.text(`Página 2/2 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+            doc.text(`Página 2/3 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+
+            // Add Page 3: Histórico Salvo
+            if (empresa.historicoCalculos && empresa.historicoCalculos.length > 0) {
+                doc.addPage();
+                doc.setFontSize(16);
+                doc.setTextColor(14, 165, 233); 
+                doc.text('Histórico de Apurações Salvas', pageWidth / 2, 20, { align: 'center' });
+                
+                doc.setFontSize(10);
+                doc.setTextColor(0);
+
+                startY = 40;
+                
+                // Table Header Page 3
+                doc.setFillColor(240, 245, 250);
+                doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
+                doc.setFont("helvetica", "bold");
+                doc.text('Mês Ref.', 25, startY);
+                doc.text('Anexo', 55, startY);
+                doc.text('RBT12', 90, startY, { align: 'right' });
+                doc.text('Aliq. Ef.', 120, startY, { align: 'right' });
+                doc.text('DAS (R$)', pageWidth - 25, startY, { align: 'right' });
+
+                startY += rowHeight;
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(10);
+
+                empresa.historicoCalculos.forEach((calc, index) => {
+                    if (startY > 270) { // Simple pagination check
+                        doc.addPage();
+                        startY = 40; 
+                    }
+
+                    if (index % 2 === 1) {
+                       doc.setFillColor(250, 250, 250);
+                       doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
+                    }
+
+                    doc.text(calc.mesReferencia, 25, startY);
+                    doc.text(calc.anexo_efetivo, 55, startY);
+                    doc.text(calc.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), 90, startY, { align: 'right' });
+                    doc.text(calc.aliq_eff.toFixed(2) + '%', 120, startY, { align: 'right' });
+                    doc.text(calc.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), pageWidth - 25, startY, { align: 'right' });
+
+                    startY += rowHeight;
+                });
+                
+                doc.setFontSize(8);
+                doc.setTextColor(100);
+                doc.text(`Página 3/3 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+            }
             
             doc.save(`memoria-calculo-${empresa.nome}-${mesApuracao.toISOString().slice(0,7)}.pdf`);
             
@@ -468,35 +600,53 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         }
     };
     
+    const handleAnalyzeTax = async () => {
+        setIsTaxAnalysisLoading(true);
+        try {
+            const details = await fetchCnaeTaxDetails(empresa.cnae);
+            setTaxDetails(details);
+        } catch (e) {
+            console.error(e);
+            // Optionally set an error state for the tax section
+        } finally {
+            setIsTaxAnalysisLoading(false);
+        }
+    }
+    
     const chartData = {
-        labels: Object.keys(resumo.mensal),
+        // Labels: Usar os labels do histórico simulado (Ex: Jan/2024)
+        labels: resumo.historico_simulado.map(h => h.label),
         datasets: [
             {
-                label: 'Faturamento Mensal (R$)',
-                data: Object.values(resumo.mensal),
+                label: 'Faturamento (R$)',
+                data: resumo.historico_simulado.map(h => h.faturamento),
                 backgroundColor: 'rgba(59, 130, 246, 0.5)',
                 borderColor: 'rgba(59, 130, 246, 1)',
                 borderWidth: 1,
-                order: 2
+                order: 2,
+                yAxisID: 'y',
             },
              {
-                label: 'DAS Estimado (R$)',
-                data: Object.values(resumo.mensal).map((v: number) => v * (resumo.aliq_eff / 100)),
+                label: 'DAS Calculado (R$)',
+                // Dados reais do DAS calculados mês a mês com a alíquota daquele período
+                data: resumo.historico_simulado.map(h => h.dasCalculado),
                 type: 'line' as const,
                 borderColor: 'rgba(14, 165, 233, 0.8)', // Sky 500
                 borderWidth: 2,
                 borderDash: [5, 5],
-                pointRadius: 0,
+                pointRadius: 3,
                 order: 1,
                  yAxisID: 'y',
             },
              {
                 label: 'Alíquota Efetiva (%)',
-                data: Array(Object.keys(resumo.mensal).length).fill(resumo.aliq_eff), // Simplificação para visualização
+                // Alíquota real que variou mês a mês
+                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
                 type: 'line' as const,
-                borderColor: 'rgba(239, 68, 68, 0.6)', // Red 500
+                borderColor: 'rgba(239, 68, 68, 0.8)', // Red 500
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
                 borderWidth: 2,
-                pointRadius: 0,
+                pointRadius: 3,
                 order: 0,
                 yAxisID: 'y1',
             }
@@ -513,7 +663,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             },
             title: {
                 display: true,
-                text: 'Evolução do Faturamento e Carga Tributária',
+                text: 'Evolução Real do Faturamento, DAS e Carga Tributária',
             },
             tooltip: {
                  callbacks: {
@@ -522,14 +672,31 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                         if (label) {
                             label += ': ';
                         }
+                        
+                        // Encontra o objeto de histórico correspondente ao index do tooltip
+                        const historyItem = resumo.historico_simulado[context.dataIndex];
+
                         if (context.parsed.y !== null) {
                             if (context.dataset.yAxisID === 'y1') {
                                  label += context.parsed.y.toFixed(2) + '%';
+                                 // Adiciona informação extra se for a linha de alíquota
+                                 if (historyItem && historyItem.rbt12) {
+                                     label += ` (RBT12: R$ ${(historyItem.rbt12/1000).toFixed(0)}k)`;
+                                 }
                             } else {
                                 label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
                             }
                         }
                         return label;
+                    },
+                    afterBody: function(context: any) {
+                        // Informação extra no tooltip: Fator R se aplicável
+                        const index = context[0].dataIndex;
+                        const item = resumo.historico_simulado[index];
+                        if (item && item.anexoAplicado === 'III' && empresa.anexo === 'III_V') {
+                             return `Fator R: ${(item.fatorR * 100).toFixed(1)}% (Anexo III)`;
+                        }
+                        return '';
                     }
                 }
             }
@@ -698,12 +865,29 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                          </p>
                     </div>
                      <div className="flex-shrink-0 flex flex-col gap-2">
-                         <button 
-                            onClick={handleGerarDasPdf}
-                            className="w-full md:w-auto btn-press px-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 shadow-md flex items-center justify-center gap-2"
-                        >
-                            <span>Gerar Extrato DAS</span>
-                         </button>
+                         <div className="flex gap-2 w-full md:w-auto">
+                            <button 
+                                onClick={handleGerarDasPdf}
+                                className="flex-1 btn-press px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 shadow-md flex items-center justify-center gap-2"
+                            >
+                                <DownloadIcon className="w-5 h-5" />
+                                <span>Gerar Extrato DAS</span>
+                            </button>
+                            <button
+                                onClick={handleGerarDasOnline}
+                                disabled={dasOnlineStatus !== 'idle'}
+                                title="Simular integração online com Certificado A1"
+                                className="btn-press px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <GlobeIcon className="w-5 h-5" />
+                                <span className="hidden sm:inline">Cálculo DAS On Line</span>
+                            </button>
+                         </div>
+                         {dasOnlineStatus !== 'idle' && (
+                             <div className="text-xs text-center font-medium text-indigo-600 dark:text-indigo-400 animate-pulse">
+                                 {dasOnlineMsg}
+                             </div>
+                         )}
                          <button 
                             onClick={handleSaveCalculo}
                             className="w-full md:w-auto btn-press px-6 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow-sm flex items-center justify-center gap-2 text-sm"
@@ -780,8 +964,11 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                         <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Importar Notas/Extrato</h3>
                         <form>
                             <label htmlFor="file-upload" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Arquivo CSV (data,valor) ou XML (NF-e) ou Extrato PDF
+                                Importar Notas/Extrato
                             </label>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                Arquivo CSV (data,valor) ou XML (NF-e) ou Extrato PDF
+                            </p>
                             <input
                                 ref={fileInputRef}
                                 id="file-upload"
@@ -793,10 +980,88 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                             />
                         </form>
                         {isLoading && <div className="mt-4"><LoadingSpinner /></div>}
-                        {importError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{importError}</p>}
-                        {importSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400">{importSuccess}</p>}
+                        {importError && (
+                            <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-md">
+                                <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Falhas na importação:</p>
+                                <ul className="list-disc list-inside text-xs text-red-600 dark:text-red-300 max-h-32 overflow-y-auto">
+                                    {importError.map((err, idx) => (
+                                        <li key={idx}>{err}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                        {importSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400 font-medium">{importSuccess}</p>}
                     </div>
                  </div>
+            </div>
+            
+             {/* NOVA SEÇÃO: Análise de Impostos por CNAE */}
+            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm animate-fade-in">
+                <div className="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400">
+                            Análise de Impostos do CNAE {empresa.cnae}
+                        </h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                            Detalhes dos principais tributos incidentes sobre a atividade principal da empresa.
+                        </p>
+                    </div>
+                     {!taxDetails && !isTaxAnalysisLoading && (
+                         <button 
+                            onClick={handleAnalyzeTax}
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors"
+                        >
+                            <DocumentTextIcon className="w-4 h-4" />
+                            Gerar Análise Tributária (IA)
+                        </button>
+                    )}
+                </div>
+
+                {isTaxAnalysisLoading && (
+                    <div className="flex flex-col items-center justify-center py-8">
+                        <LoadingSpinner />
+                        <p className="mt-2 text-sm text-slate-500">Consultando bases legais e alíquotas com IA...</p>
+                    </div>
+                )}
+
+                {taxDetails && (
+                    <div className="overflow-x-auto animate-fade-in">
+                        <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                            <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                                <tr>
+                                    <th scope="col" className="px-4 py-3 rounded-tl-lg">Tributo</th>
+                                    <th scope="col" className="px-4 py-3">Incidência</th>
+                                    <th scope="col" className="px-4 py-3">Alíquota Média (Est.)</th>
+                                    <th scope="col" className="px-4 py-3">Base Legal</th>
+                                    <th scope="col" className="px-4 py-3 rounded-tr-lg">Observação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {taxDetails.map((item, index) => (
+                                    <tr key={index} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                        <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
+                                            {item.tributo}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold 
+                                                ${item.incidencia.toLowerCase().includes('federal') ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 
+                                                  item.incidencia.toLowerCase().includes('estadual') ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' : 
+                                                  'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300'}`}>
+                                                {item.incidencia}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{item.aliquotaMedia}</td>
+                                        <td className="px-4 py-3 text-xs font-mono text-slate-500 dark:text-slate-400">{item.baseLegal}</td>
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.observacao}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <p className="mt-3 text-xs text-slate-400 italic text-right">
+                            * As alíquotas e bases legais são geradas por IA e servem como referência inicial. Consulte a legislação vigente.
+                        </p>
+                    </div>
+                )}
             </div>
             
             {/* Seção de Histórico de Apurações Salvas */}
@@ -843,7 +1108,41 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             )}
 
             <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Faturamento Manual (Últimos 12 Meses)</h3>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Faturamento Manual (Últimos 12 Meses)</h3>
+                    <button 
+                         type="button"
+                         onClick={handleManualFaturamentoSubmit}
+                         className="btn-press px-4 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-sm flex items-center gap-2"
+                    >
+                        <SaveIcon className="w-4 h-4" />
+                        Salvar Faturamento Manual
+                    </button>
+                </div>
+                
+                <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex flex-col sm:flex-row items-end gap-4">
+                     <div className="w-full sm:w-auto">
+                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Preenchimento Rápido (Valor Único)</label>
+                        <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">R$</span>
+                            <input 
+                                type="text" 
+                                value={valorRecorrente}
+                                onChange={handleValorRecorrenteChange}
+                                placeholder="0,00"
+                                className="pl-8 pr-2 py-2 w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                            />
+                        </div>
+                     </div>
+                     <button 
+                        type="button"
+                        onClick={handleAplicarRecorrente}
+                        className="btn-press px-4 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-300 dark:hover:bg-slate-500 text-sm"
+                     >
+                        Aplicar a todos os meses
+                     </button>
+                </div>
+
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
                     Preencha os campos abaixo para usar um faturamento específico no cálculo do RBT12. Se um campo estiver vazio, o sistema usará o valor das notas importadas para aquele mês.
                 </p>
@@ -871,12 +1170,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                             );
                         })}
                     </div>
-                    <div className="text-right mt-6">
-                        <button type="submit" className="btn-press px-6 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500">
-                            Salvar Faturamento Manual
-                        </button>
-                    </div>
-                    {manualSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400 text-right font-medium">{manualSuccess}</p>}
+                    {manualSuccess && <p className="mt-4 text-sm text-green-600 dark:text-green-400 text-right font-medium">{manualSuccess}</p>}
                 </form>
             </div>
 
@@ -884,10 +1178,18 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
             <TabelaAnexo />
 
             <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Faturamento Histórico (Importado + Manual)</h3>
-                {Object.keys(resumo.mensal).length > 0 ? (
-                    <div className="relative h-64">
-                       <SimpleChart type="bar" options={chartOptions} data={chartData} />
+                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Histórico Real de Apuração (12 meses)</h3>
+                {resumo.historico_simulado.length > 0 ? (
+                    <div className="relative h-80">
+                       <SimpleChart 
+                            type="bar" 
+                            options={chartOptions} 
+                            data={chartData}
+                            key={JSON.stringify(chartData)} 
+                        />
+                        <p className="mt-2 text-xs text-center text-slate-400">
+                            * O gráfico acima simula o cálculo do DAS mês a mês, considerando o RBT12 e a alíquota efetiva vigentes em cada competência histórica.
+                        </p>
                     </div>
                 ) : (
                     <p className="text-sm text-center text-slate-500 dark:text-slate-400 py-8">Nenhuma nota cadastrada para exibir o gráfico.</p>

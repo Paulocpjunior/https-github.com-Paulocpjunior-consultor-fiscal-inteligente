@@ -41,100 +41,112 @@ export const FavoriteItemSchema = z.object({
 });
 export type FavoriteItem = z.infer<typeof FavoriteItemSchema>;
 
-export const HistoryItemSchema = z.object({
-    id: z.string(), // Unique ID for each history item
-    queries: z.array(z.string()),
-    type: SearchTypeSchema,
-    mode: z.enum(['single', 'compare']),
-    timestamp: z.number(),
-    // Optional fields for service searches
-    municipio: z.string().optional(),
-    alias: z.string().optional(),
-    responsavel: z.string().optional(),
-    regimeTributario: z.string().optional(),
-    aliquotaIcms: z.string().optional(),
-    aliquotaPisCofins: z.string().optional(),
-    aliquotaIss: z.string().optional(),
-    // Optional field for Reforma Tributária
-    cnae: z.string().optional(),
-    reformaQuery: z.string().optional(),
-});
-export type HistoryItem = z.infer<typeof HistoryItemSchema>;
+export interface HistoryItem {
+    id: string;
+    timestamp: number;
+    queries: string[];
+    type: SearchType;
+    mode: 'single' | 'compare';
+    municipio?: string;
+    alias?: string;
+    responsavel?: string;
+    cnae?: string;
+    regimeTributario?: string;
+    reformaQuery?: string;
+    aliquotaIcms?: string;
+    aliquotaPisCofins?: string;
+    aliquotaIss?: string;
+}
 
-export const NewsAlertSchema = z.object({
-  title: z.string(),
-  summary: z.string(),
-  source: z.string(),
-});
-export type NewsAlert = z.infer<typeof NewsAlertSchema>;
+export interface NewsAlert {
+    title: string;
+    summary: string;
+    source: string;
+}
 
-export const SimilarServiceSchema = z.object({
-    code: z.string(),
-    description: z.string(),
-});
-export type SimilarService = z.infer<typeof SimilarServiceSchema>;
+export interface SimilarService {
+    code: string;
+    description: string;
+}
 
-export const CnaeSuggestionSchema = z.object({
-  code: z.string(),
-  description: z.string(),
-});
-export type CnaeSuggestion = z.infer<typeof CnaeSuggestionSchema>;
+export interface CnaeSuggestion {
+    code: string;
+    description: string;
+}
 
-// --- Tipos para o Módulo Simples Nacional ---
+export interface CnpjData {
+    razaoSocial: string;
+    nomeFantasia: string;
+}
 
-export const SimplesNacionalAnexoSchema = z.enum(['I', 'II', 'III', 'IV', 'V', 'III_V']);
-export type SimplesNacionalAnexo = z.infer<typeof SimplesNacionalAnexoSchema>;
+export type SimplesNacionalAnexo = 'I' | 'II' | 'III' | 'IV' | 'V' | 'III_V';
 
-export const CnpjDataSchema = z.object({
-    razaoSocial: z.string(),
-    nomeFantasia: z.string(),
-});
-export type CnpjData = z.infer<typeof CnpjDataSchema>;
+export interface SimplesHistoricoCalculo {
+    id: string;
+    dataCalculo: number;
+    mesReferencia: string;
+    rbt12: number;
+    aliq_eff: number;
+    fator_r: number;
+    das_mensal: number;
+    anexo_efetivo: string;
+}
 
-export const SimplesHistoricoCalculoSchema = z.object({
-    id: z.string(),
-    dataCalculo: z.number(), // Timestamp de quando foi salvo
-    mesReferencia: z.string(), // "2024-01"
-    rbt12: z.number(),
-    aliq_eff: z.number(),
-    fator_r: z.number(),
-    das_mensal: z.number(),
-    anexo_efetivo: z.string(),
-});
-export type SimplesHistoricoCalculo = z.infer<typeof SimplesHistoricoCalculoSchema>;
+export interface SimplesNacionalEmpresa {
+    id: string;
+    nome: string;
+    cnpj: string;
+    cnae: string;
+    anexo: SimplesNacionalAnexo;
+    folha12: number;
+    faturamentoManual?: { [key: string]: number };
+    historicoCalculos?: SimplesHistoricoCalculo[];
+}
 
-export const SimplesNacionalEmpresaSchema = z.object({
-    id: z.string(),
-    nome: z.string(),
-    cnpj: z.string(),
-    cnae: z.string(),
-    anexo: SimplesNacionalAnexoSchema,
-    folha12: z.number(),
-    faturamentoManual: z.record(z.string(), z.number()).optional(),
-    historicoCalculos: z.array(SimplesHistoricoCalculoSchema).optional(),
-});
-export type SimplesNacionalEmpresa = z.infer<typeof SimplesNacionalEmpresaSchema>;
+export interface SimplesNacionalNota {
+    id: string;
+    empresaId: string;
+    data: number;
+    valor: number;
+    origem: string;
+    descricao: string;
+}
 
-export const SimplesNacionalNotaSchema = z.object({
-    id: z.string(),
-    empresaId: z.string(),
-    data: z.number(), // Stored as timestamp
-    valor: z.number(),
-    origem: z.enum(['CSV', 'XML NFe', 'Manual']),
-    descricao: z.string().optional(),
-});
-export type SimplesNacionalNota = z.infer<typeof SimplesNacionalNotaSchema>;
+export interface SimplesCalculoMensal {
+    competencia: string; // YYYY-MM
+    label: string; // Mes/Ano
+    faturamento: number;
+    rbt12: number;
+    aliquotaEfetiva: number;
+    fatorR: number;
+    dasCalculado: number;
+    anexoAplicado: string;
+}
 
-export const SimplesNacionalResumoSchema = z.object({
-    rbt12: z.number(),
-    aliq_nom: z.number(),
-    aliq_eff: z.number(),
-    das: z.number(), // DAS Estimado 12 meses (projeção)
-    das_mensal: z.number(), // Valor do DAS referente ao mês de apuração
-    mensal: z.record(z.string(), z.number()),
-    anexo_efetivo: z.enum(['I', 'II', 'III', 'IV', 'V']),
-    fator_r: z.number(),
-    folha_12: z.number(),
-    ultrapassou_sublimite: z.boolean(), // Novo campo para alerta de sub-limite
-});
-export type SimplesNacionalResumo = z.infer<typeof SimplesNacionalResumoSchema>;
+export interface SimplesNacionalResumo {
+    rbt12: number;
+    aliq_nom: number;
+    aliq_eff: number;
+    das: number;
+    das_mensal: number;
+    mensal: { [key: string]: number };
+    historico_simulado: SimplesCalculoMensal[];
+    anexo_efetivo: SimplesNacionalAnexo;
+    fator_r: number;
+    folha_12: number;
+    ultrapassou_sublimite: boolean;
+}
+
+export interface CnaeTaxDetail {
+    tributo: string;
+    incidencia: string;
+    aliquotaMedia: string;
+    baseLegal: string;
+    observacao: string;
+}
+
+export interface SimplesNacionalImportResult {
+    successCount: number;
+    failCount: number;
+    errors: string[];
+}
