@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
@@ -776,16 +777,16 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                         {folhaSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400">{folhaSuccess}</p>}
                     </div>
                      <div>
-                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Importar Notas</h3>
+                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Importar Notas/Extrato</h3>
                         <form>
                             <label htmlFor="file-upload" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Arquivo CSV (data,valor) ou XML (NF-e):
+                                Arquivo CSV (data,valor) ou XML (NF-e) ou Extrato PDF
                             </label>
                             <input
                                 ref={fileInputRef}
                                 id="file-upload"
                                 type="file"
-                                accept=".csv,.xml"
+                                accept=".csv,.xml,.pdf"
                                 onChange={handleFileChange}
                                 disabled={isLoading}
                                 className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-slate-700 dark:file:text-sky-300 dark:hover:file:bg-slate-600"

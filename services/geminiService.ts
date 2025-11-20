@@ -1,6 +1,3 @@
-
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnpjData } from '../types';
 
@@ -331,7 +328,18 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Você é um editor de notícias fiscais para contadores no Brasil. Com base nas informações mais recentes que você possui, liste as 3 notícias ou atualizações regulatórias mais impactantes sobre tributos (CFOP, NCM, ICMS, IPI, PIS/COFINS, etc.) no Brasil. Para cada uma, forneça um título chamativo, um resumo conciso de 2-3 frases, e o link da fonte principal.`;
+    
+    // Prompt optimized for Google Search tool usage
+    const prompt = `Você é um editor de notícias fiscais. Pesquise e liste as 3 notícias ou atualizações regulatórias mais recentes e impactantes sobre tributos (CFOP, NCM, ICMS, IPI, PIS/COFINS, Simples Nacional) no Brasil.
+    
+    Formate a resposta estritamente como um array JSON, sem markdown (sem \`\`\`json), seguindo este esquema:
+    [
+      {
+        "title": "Título da notícia",
+        "summary": "Resumo curto",
+        "source": "Link da fonte"
+      }
+    ]`;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
@@ -339,39 +347,28 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
                 model: "gemini-2.5-flash",
                 contents: prompt,
                 config: {
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: {
-                                    type: Type.STRING,
-                                    description: 'O título da notícia ou atualização fiscal.',
-                                },
-                                summary: {
-                                    type: Type.STRING,
-                                    description: 'Um resumo conciso da notícia em 2-3 frases.',
-                                },
-                                source: {
-                                    type: Type.STRING,
-                                    description: 'A URL da fonte principal da notícia.',
-                                },
-                            },
-                            required: ["title", "summary", "source"],
-                        },
-                    },
+                    tools: [{ googleSearch: {} }], // Enable search for latest info
                 },
             });
             
-            const jsonText = response.text.trim();
-            // A simple validation to ensure it's an array-like structure
-            if (jsonText.startsWith('[') && jsonText.endsWith(']')) {
-                 return JSON.parse(jsonText) as NewsAlert[];
-            } else {
-                console.error("Gemini did not return a valid JSON array for news alerts:", jsonText);
-                throw new Error("A resposta da API para as notícias não estava no formato esperado.");
+            let jsonText = response.text.trim();
+            // Cleanup markdown if present
+            if (jsonText.startsWith('```')) {
+                jsonText = jsonText.replace(/^```(json)?/, '').replace(/```$/, '').trim();
             }
+
+            // Basic cleanup to ensure we have the array part
+            const firstBracket = jsonText.indexOf('[');
+            const lastBracket = jsonText.lastIndexOf(']');
+            if (firstBracket !== -1 && lastBracket !== -1) {
+                jsonText = jsonText.substring(firstBracket, lastBracket + 1);
+            }
+
+            const alerts = JSON.parse(jsonText) as NewsAlert[];
+            if (Array.isArray(alerts)) {
+                return alerts.slice(0, 3);
+            }
+             throw new Error("Formato JSON inválido na resposta.");
         } catch (error) {
             if (isRetryableError(error) && attempt < MAX_RETRIES - 1) {
                 const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
@@ -380,12 +377,13 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
                 continue;
             }
 
-            // For other errors or if max retries are reached, use the centralized handler
+            // For other errors or if max retries are reached
+            console.error("Failed to fetch news alerts:", error);
+            // We handle this by throwing, which is caught by the component
             throw handleGeminiError(error, "últimas atualizações fiscais");
         }
     }
     
-    // This part should be unreachable if logic is correct, but as a fallback:
     throw new Error('Falha ao buscar notícias após múltiplas tentativas.');
 };
 
