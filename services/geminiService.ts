@@ -324,7 +324,8 @@ export const fetchComparison = async (type: SearchType, query1: string, query2: 
 
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     if (!process.env.API_KEY) {
-        throw new Error("A API_KEY não está configurada.");
+        // Return empty to avoid crash on missing key for background task
+        return [];
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -368,23 +369,27 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
             if (Array.isArray(alerts)) {
                 return alerts.slice(0, 3);
             }
-             throw new Error("Formato JSON inválido na resposta.");
+             // Fail silently if format is wrong
+             return [];
         } catch (error) {
-            if (isRetryableError(error) && attempt < MAX_RETRIES - 1) {
-                const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-                console.warn(`Retryable error on news alerts. Retrying in ${delay}ms... (Attempt ${attempt + 1}/${MAX_RETRIES})`);
-                await sleep(delay);
-                continue;
+            if (isRetryableError(error)) {
+                if (attempt < MAX_RETRIES - 1) {
+                    const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+                    // Silently retry
+                    await sleep(delay);
+                    continue;
+                }
+                // Quota exceeded or retries failed, return empty
+                return [];
             }
 
-            // For other errors or if max retries are reached
-            console.error("Failed to fetch news alerts:", error);
-            // We handle this by throwing, which is caught by the component
-            throw handleGeminiError(error, "últimas atualizações fiscais");
+            // For other errors, log warning but don't crash the widget
+            console.warn("Failed to fetch news alerts:", error);
+            return [];
         }
     }
     
-    throw new Error('Falha ao buscar notícias após múltiplas tentativas.');
+    return [];
 };
 
 export const fetchSimilarServices = async (serviceQuery: string): Promise<SimilarService[]> => {
