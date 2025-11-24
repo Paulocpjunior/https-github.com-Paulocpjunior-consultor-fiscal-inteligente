@@ -2,7 +2,7 @@
 import React from 'react';
 import ThemeSwitcher from './ThemeSwitcher';
 import Logo from './Logo';
-import { MenuIcon, UserIcon, ShieldIcon } from './Icons';
+import { MenuIcon, UserIcon, ShieldIcon, UserGroupIcon } from './Icons';
 import { User } from '../types';
 
 interface HeaderProps {
@@ -13,9 +13,10 @@ interface HeaderProps {
     user?: User | null;
     onLogout?: () => void;
     onShowLogs?: () => void;
+    onShowUsers?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onMenuClick, description, user, onLogout, onShowLogs }) => {
+const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onMenuClick, description, user, onLogout, onShowLogs, onShowUsers }) => {
   return (
     <header className="w-full py-6 md:py-8">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -46,14 +47,27 @@ const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onMenuClick, descri
               </div>
           )}
 
-          {user?.role === 'admin' && onShowLogs && (
-              <button
-                  onClick={onShowLogs}
-                  className="btn-press p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-amber-50 dark:hover:bg-slate-800 hover:text-amber-600 dark:hover:text-amber-500 transition-colors"
-                  title="Logs de Acesso"
-              >
-                  <ShieldIcon className="w-6 h-6" />
-              </button>
+          {user?.role === 'admin' && (
+              <>
+                {onShowUsers && (
+                    <button
+                        onClick={onShowUsers}
+                        className="btn-press p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-slate-800 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Gerenciar Usuários"
+                    >
+                        <UserGroupIcon className="w-6 h-6" />
+                    </button>
+                )}
+                {onShowLogs && (
+                    <button
+                        onClick={onShowLogs}
+                        className="btn-press p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-amber-50 dark:hover:bg-slate-800 hover:text-amber-600 dark:hover:text-amber-500 transition-colors"
+                        title="Logs de Acesso"
+                    >
+                        <ShieldIcon className="w-6 h-6" />
+                    </button>
+                )}
+              </>
           )}
 
           <ThemeSwitcher theme={theme} toggleTheme={toggleTheme} />

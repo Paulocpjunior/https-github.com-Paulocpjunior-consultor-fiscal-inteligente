@@ -34,7 +34,7 @@ export const register = async (name: string, email: string, password: string): P
         throw new Error(`Cadastro permitido apenas para e-mails ${REQUIRED_DOMAIN}`);
     }
 
-    const users = getUsers();
+    const users = getUsersInternal();
     // Check existence case-insensitively
     const emailExists = users.some(u => normalizeEmail(u.email) === cleanEmail);
     if (emailExists) {
@@ -55,7 +55,7 @@ export const register = async (name: string, email: string, password: string): P
         email: cleanEmail, // Save normalized
         role,
         passwordHash: hashPassword(cleanPassword),
-        isVerified: true, // Auto-verify (Email verification disabled)
+        isVerified: true, // Auto-verify
     };
 
     users.push(newUser);
@@ -74,7 +74,7 @@ export const login = async (email: string, password: string): Promise<{ user: Us
         throw new Error(`Domínio inválido. Use um e-mail ${REQUIRED_DOMAIN}`);
     }
 
-    const users = getUsers();
+    const users = getUsersInternal();
     
     // 1. First find the user by email
     const userIndex = users.findIndex(u => normalizeEmail(u.email) === cleanEmail);
@@ -85,16 +85,35 @@ export const login = async (email: string, password: string): Promise<{ user: Us
         throw new Error('Usuário não encontrado. Verifique o e-mail ou realize o cadastro.');
     }
 
-    // 2. Then check password
-    const targetHash = hashPassword(cleanPassword);
-    if (user.passwordHash !== targetHash) {
+    // 2. Then check password with fallback strategy
+    const targetHashTrimmed = hashPassword(cleanPassword);
+    const targetHashRaw = hashPassword(password); // Try without trimming (legacy fix)
+
+    let passwordMatch = false;
+    let needsUpdate = false;
+
+    if (user.passwordHash === targetHashTrimmed) {
+        passwordMatch = true;
+    } else if (user.passwordHash === targetHashRaw) {
+        // User registered with untrimmed password previously. 
+        // Allow login but update hash to trimmed version for future.
+        passwordMatch = true;
+        needsUpdate = true;
+        user.passwordHash = targetHashTrimmed; 
+    }
+
+    if (!passwordMatch) {
         console.warn(`Login failed for ${cleanEmail}: Password mismatch`);
         throw new Error('Senha incorreta. Tente novamente.');
     }
 
-    // 3. Auto-Verify logic (Fix for stuck users from previous versions)
+    // 3. Auto-Correction (Verification or Legacy Hash)
     if (!user.isVerified) {
         user.isVerified = true;
+        needsUpdate = true;
+    }
+
+    if (needsUpdate) {
         users[userIndex] = user;
         localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
     }
@@ -147,24 +166,52 @@ export const logAction = (user: User, action: string) => {
     localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(updatedLogs));
 };
 
+// --- Admin User Management Functions ---
+
+export const getAllUsers = (): User[] => {
+    const users = getUsersInternal();
+    return users.map(({ passwordHash, ...user }) => user);
+};
+
+export const resetUserPassword = (userId: string): boolean => {
+    const users = getUsersInternal();
+    const index = users.findIndex(u => u.id === userId);
+    if (index === -1) return false;
+
+    // Reset to default '123456'
+    users[index].passwordHash = hashPassword('123456');
+    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+    return true;
+};
+
+export const deleteUser = (userId: string): boolean => {
+    let users = getUsersInternal();
+    const initialLength = users.length;
+    users = users.filter(u => u.id !== userId);
+    
+    if (users.length < initialLength) {
+        localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+        return true;
+    }
+    return false;
+};
+
 // --- Private Helpers ---
 
-const getUsers = (): (User & { passwordHash: string, isVerified?: boolean, verificationCode?: string })[] => {
+const getUsersInternal = (): (User & { passwordHash: string, isVerified?: boolean })[] => {
     try {
         const usersStr = localStorage.getItem(STORAGE_KEY_USERS);
         const parsed = usersStr ? JSON.parse(usersStr) : [];
         const userList = Array.isArray(parsed) ? parsed : [];
 
-        // Auto-seed Master Admin if missing (Robustez para evitar 'User not found')
+        // Auto-seed Master Admin if missing
         const masterEmailNormalized = normalizeEmail(MASTER_ADMIN_EMAIL);
         if (!userList.some((u: any) => normalizeEmail(u.email) === masterEmailNormalized)) {
             const defaultPass = '123456';
-            console.info(`[Auth] Master Admin criado automaticamente. Senha padrão: ${defaultPass}`);
-            
             const masterUser = {
                 id: 'master-admin-seed',
                 name: 'Administrador Master',
-                email: MASTER_ADMIN_EMAIL, // Keep original case for display
+                email: MASTER_ADMIN_EMAIL,
                 role: 'admin',
                 passwordHash: hashPassword(defaultPass),
                 isVerified: true
@@ -181,7 +228,6 @@ const getUsers = (): (User & { passwordHash: string, isVerified?: boolean, verif
 };
 
 const createSession = (user: User) => {
-    // Ensure we don't accidentally save the hash in the session
     const { passwordHash, ...safeUser } = user as any;
     localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(safeUser));
 };

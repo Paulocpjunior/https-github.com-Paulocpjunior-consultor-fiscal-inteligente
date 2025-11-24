@@ -12,6 +12,7 @@ import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa'
 import InitialStateDisplay from './components/InitialStateDisplay';
 import SimilarServicesDisplay from './components/SimilarServicesDisplay';
 import AccessLogsModal from './components/AccessLogsModal';
+import UserManagementModal from './components/UserManagementModal';
 import { PopularSuggestions } from './components/PopularSuggestions';
 import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo, SimplesNacionalImportResult, SimplesNacionalAtividade, User } from './types';
 import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSuggestions } from './services/geminiService';
@@ -52,6 +53,7 @@ const App: React.FC = () => {
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [isUsersModalOpen, setIsUsersModalOpen] = useState(false);
 
   const [searchType, setSearchType] = useState<SearchType>(SearchType.CFOP);
   const [mode, setMode] = useState<'single' | 'compare'>('single');
@@ -845,6 +847,7 @@ const App: React.FC = () => {
                 user={currentUser}
                 onLogout={handleLogout}
                 onShowLogs={currentUser.role === 'admin' ? () => setIsLogsModalOpen(true) : undefined}
+                onShowUsers={currentUser.role === 'admin' ? () => setIsUsersModalOpen(true) : undefined}
             />
             
             <div className="flex flex-col md:flex-row gap-6">
@@ -876,8 +879,9 @@ const App: React.FC = () => {
             <Footer />
         </div>
         
-        {/* Admin Access Logs Modal */}
+        {/* Admin Modals */}
         <AccessLogsModal isOpen={isLogsModalOpen} onClose={() => setIsLogsModalOpen(false)} />
+        <UserManagementModal isOpen={isUsersModalOpen} onClose={() => setIsUsersModalOpen(false)} currentUserEmail={currentUser.email} />
     </div>
   );
 };
