@@ -28,6 +28,20 @@ export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> =>
         return {
             razaoSocial: data.razao_social,
             nomeFantasia: data.nome_fantasia || '',
+            cnaePrincipal: { 
+                codigo: String(data.cnae_fiscal), 
+                descricao: data.cnae_fiscal_descricao 
+            },
+            cnaesSecundarios: data.cnaes_secundarios?.map((c: any) => ({
+                codigo: String(c.codigo),
+                descricao: c.descricao
+            })) || [],
+            logradouro: data.logradouro,
+            numero: data.numero,
+            bairro: data.bairro,
+            municipio: data.municipio,
+            uf: data.uf,
+            cep: data.cep
         };
     } catch (error: any) {
         console.error("Erro na consulta de CNPJ:", error);

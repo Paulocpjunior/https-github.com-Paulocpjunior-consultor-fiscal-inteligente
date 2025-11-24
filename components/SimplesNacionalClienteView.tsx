@@ -41,6 +41,18 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
         return simplesService.calcularResumoEmpresa(empresa, notas, mesApuracao);
     }, [empresa, notas, mesApuracao]);
 
+    const discriminacaoImpostos = useMemo(() => {
+        return simplesService.calcularDiscriminacaoImpostos(
+            resumo.anexo_efetivo,
+            resumo.faixa_index,
+            resumo.das_mensal
+        );
+    }, [resumo]);
+
+    const percentuaisImpostos = useMemo(() => {
+        return simplesService.REPARTICAO_IMPOSTOS[resumo.anexo_efetivo]?.[Math.min(resumo.faixa_index, 5)] || {};
+    }, [resumo]);
+
     const handleExportPDF = async () => {
         setIsExporting(true);
         
@@ -215,7 +227,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
             const mesChave = `${mesIteracao.getFullYear()}-${(mesIteracao.getMonth() + 1).toString().padStart(2, '0')}`;
             const valor = resumo.mensal[mesChave] || 0;
             breakdown.push({
-                mes: mesIteracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' }),
+                mes: (mesIteracao as any).toLocaleString('pt-BR', { month: 'short', year: 'numeric' }),
                 valor: valor
             });
         }
@@ -268,7 +280,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                          <div>
                             <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wide">Período de Apuração</p>
                             <p className="text-lg font-bold text-slate-800 dark:text-slate-200 capitalize">
-                                {mesApuracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+                                {(mesApuracao as any).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
                             </p>
                          </div>
                          
@@ -281,7 +293,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                             >
                                 {mesesOptions.map(date => (
                                     <option key={date.toISOString()} value={date.toISOString().substring(0, 7)}>
-                                        {date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
+                                        {(date as any).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
                                     </option>
                                 ))}
                             </select>
@@ -361,7 +373,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                                         <div key={index} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-100 dark:border-slate-700">
                                             <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 capitalize">{item.mes}</span>
                                             <span className="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">
-                                                {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                {(item.valor as any).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     ))}
@@ -370,11 +382,61 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                                     <div className="text-right">
                                         <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mr-2">Total Acumulado:</span>
                                         <span className="text-lg font-bold text-sky-700 dark:text-sky-400">
-                                            R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            R$ {(resumo.rbt12 as any).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </span>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                        
+                        {/* Memória de Cálculo - Discriminação dos Impostos */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm break-inside-avoid">
+                            <div className="bg-slate-50 dark:bg-slate-700/50 px-6 py-3 border-b border-slate-200 dark:border-slate-700">
+                                <h3 className="font-bold text-slate-700 dark:text-slate-200 text-sm">
+                                    Discriminação Estimada dos Tributos (Memória de Cálculo)
+                                </h3>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                                        <tr>
+                                            <th scope="col" className="px-6 py-3">Tributo / Ente</th>
+                                            <th scope="col" className="px-6 py-3 text-center">% Partilha</th>
+                                            <th scope="col" className="px-6 py-3 text-right">Valor (R$)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {Object.entries(discriminacaoImpostos).map(([imposto, valor], index) => {
+                                             const percentual = percentuaisImpostos[imposto] || 0;
+                                             return (
+                                                <tr key={imposto} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                    <td className="px-6 py-3 font-medium text-slate-900 dark:text-white">
+                                                        {imposto}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-center">
+                                                        {percentual.toFixed(2)}%
+                                                    </td>
+                                                    <td className="px-6 py-3 text-right font-mono text-slate-700 dark:text-slate-200">
+                                                        {(valor as any).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                             );
+                                        })}
+                                        {Object.keys(discriminacaoImpostos).length === 0 && (
+                                            <tr>
+                                                <td colSpan={3} className="px-6 py-4 text-center text-slate-400">
+                                                    Nenhum imposto calculado ou valor do DAS zerado.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {resumo.ultrapassou_sublimite && (
+                                <div className="px-6 py-3 bg-slate-50 dark:bg-slate-900/50 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-200 dark:border-slate-700">
+                                    * Nota: Devido ao sublimite excedido, ICMS e ISS não compõem o cálculo acima.
+                                </div>
+                            )}
                         </div>
 
                         {/* Gráfico */}
@@ -398,7 +460,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                         <Logo className="h-8 w-auto text-slate-600 dark:text-slate-400" />
                      </div>
                     <p className="text-xs text-slate-400 dark:text-slate-500">
-                        Documento gerado em {new Date().toLocaleDateString('pt-BR')} • SP Assessoria Contábil
+                        Documento gerado em {(new Date() as any).toLocaleDateString('pt-BR')} • SP Assessoria Contábil
                     </p>
                 </footer>
             </div>

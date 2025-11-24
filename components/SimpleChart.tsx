@@ -1,12 +1,11 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Chart, registerables, ChartTypeRegistry, ChartConfiguration } from 'chart.js';
+import { Chart, registerables, ChartConfiguration, ChartTypeRegistry } from 'chart.js';
 
-// Registra todos os componentes necessários do Chart.js (controladores, elementos, escalas, etc.)
-// Isso é equivalente a usar o 'chart.js/auto' mas funciona melhor em alguns ambientes ESM.
+// Register Chart.js components
 Chart.register(...registerables);
 
-interface SimpleChartProps {
+export interface SimpleChartProps {
     type: keyof ChartTypeRegistry;
     data: any;
     options?: any;
@@ -19,27 +18,35 @@ const SimpleChart: React.FC<SimpleChartProps> = ({ type, data, options }) => {
     useEffect(() => {
         if (!canvasRef.current) return;
 
-        // Destrói instância anterior se existir para evitar vazamento de memória ou sobreposição
+        // Destroy previous instance
         if (chartRef.current) {
             chartRef.current.destroy();
+            chartRef.current = null;
         }
 
-        // Cria nova instância do gráfico
-        chartRef.current = new Chart(canvasRef.current, {
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
+        // Create new chart
+        chartRef.current = new Chart(ctx, {
             type,
             data,
             options
         } as ChartConfiguration);
 
-        // Limpeza ao desmontar
         return () => {
             if (chartRef.current) {
                 chartRef.current.destroy();
+                chartRef.current = null;
             }
         };
     }, [type, data, options]);
 
-    return <canvas ref={canvasRef} />;
+    return (
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <canvas ref={canvasRef} />
+        </div>
+    );
 };
 
 export default SimpleChart;

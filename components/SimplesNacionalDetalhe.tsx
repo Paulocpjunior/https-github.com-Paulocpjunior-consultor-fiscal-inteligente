@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo, CnaeTaxDetail, SimplesNacionalImportResult } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo, CnaeTaxDetail, SimplesNacionalImportResult, SimplesNacionalAtividade, SimplesItemCalculo, SimplesHistoricoCalculo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
 import { fetchSimplesNacionalExplanation, fetchCnaeDescription, fetchCnaeTaxDetails } from '../services/geminiService';
 import LoadingSpinner from './LoadingSpinner';
 import { FormattedText } from './FormattedText';
-import { ArrowLeftIcon, CloseIcon, EyeIcon, InfoIcon, ShieldIcon, TrashIcon, SaveIcon, DocumentTextIcon, DownloadIcon, GlobeIcon } from './Icons';
+import { ArrowLeftIcon, CloseIcon, EyeIcon, InfoIcon, ShieldIcon, TrashIcon, SaveIcon, DocumentTextIcon, DownloadIcon, GlobeIcon, PlusIcon, AnimatedCheckIcon, BriefcaseIcon, HistoryIcon } from './Icons';
 import SimpleChart from './SimpleChart';
-import { ANEXOS_TABELAS } from '../services/simplesNacionalService';
+import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS } from '../services/simplesNacionalService';
 
 interface SimplesNacionalDetalheProps {
     empresa: SimplesNacionalEmpresa;
@@ -20,13 +20,19 @@ interface SimplesNacionalDetalheProps {
     onShowClienteView: () => void;
 }
 
+interface CnaeAnalysisResult {
+    cnae: string;
+    role: 'Principal' | 'Secundário';
+    details: CnaeTaxDetail[];
+    error?: string;
+}
+
 const getMesesApuracaoOptions = (): Date[] => {
     const options = [];
     const today = new Date();
     today.setDate(1); // Normaliza para o primeiro dia do mês
     
     // Gera opções para os próximos 12 meses e os últimos 24 meses
-    // Total: 36 meses de flexibilidade
     for (let i = -12; i < 24; i++) {
         const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
         options.push(date);
@@ -35,7 +41,7 @@ const getMesesApuracaoOptions = (): Date[] => {
 };
 
 const getPeriodoManual = (mesApuracao: Date): Date[] => {
-    const period = [];
+    const period: Date[] = [];
     const dataInicioPeriodo = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
      for (let i = 0; i < 12; i++) {
         const date = new Date(dataInicioPeriodo.getFullYear(), dataInicioPeriodo.getMonth() + i, 1);
@@ -56,6 +62,10 @@ const EditEmpresaModal: React.FC<{
         cnae: empresa.cnae,
         anexo: empresa.anexo,
     });
+    
+    const [atividadesSecundarias, setAtividadesSecundarias] = useState<SimplesNacionalAtividade[]>(empresa.atividadesSecundarias || []);
+    const [newCnae, setNewCnae] = useState('');
+    const [newAnexo, setNewAnexo] = useState<SimplesNacionalAnexo>('III');
 
     useEffect(() => {
         setFormData({
@@ -64,6 +74,7 @@ const EditEmpresaModal: React.FC<{
             cnae: empresa.cnae,
             anexo: empresa.anexo,
         });
+        setAtividadesSecundarias(empresa.atividadesSecundarias || []);
     }, [empresa]);
 
     if (!isOpen) return null;
@@ -72,16 +83,30 @@ const EditEmpresaModal: React.FC<{
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
+    const handleAddActivity = () => {
+        if (!newCnae.trim()) return;
+        setAtividadesSecundarias([...atividadesSecundarias, { cnae: newCnae, anexo: newAnexo }]);
+        setNewCnae('');
+        setNewAnexo('III');
+    };
+
+    const handleRemoveActivity = (index: number) => {
+        setAtividadesSecundarias(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(formData);
+        onSave({
+            ...formData,
+            atividadesSecundarias
+        });
         onClose();
     };
 
     return (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b dark:border-slate-700">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center p-4 border-b dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Editar Empresa</h3>
                     <button onClick={onClose} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
                         <CloseIcon className="w-5 h-5" />
@@ -96,26 +121,139 @@ const EditEmpresaModal: React.FC<{
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNPJ</label>
                         <input type="text" name="cnpj" value={formData.cnpj} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNAE</label>
-                        <input type="text" name="cnae" value={formData.cnae} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNAE Principal</label>
+                            <input type="text" name="cnae" value={formData.cnae} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Anexo Principal</label>
+                            <select name="anexo" value={formData.anexo} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600">
+                                <option value="I">Anexo I</option>
+                                <option value="II">Anexo II</option>
+                                <option value="III">Anexo III</option>
+                                <option value="IV">Anexo IV</option>
+                                <option value="V">Anexo V</option>
+                                <option value="III_V">Anexo III/V (Fator R)</option>
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Anexo</label>
-                        <select name="anexo" value={formData.anexo} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600">
-                            <option value="I">Anexo I</option>
-                            <option value="II">Anexo II</option>
-                            <option value="III">Anexo III</option>
-                            <option value="IV">Anexo IV</option>
-                            <option value="V">Anexo V</option>
-                            <option value="III_V">Anexo III/V (Fator R)</option>
-                        </select>
+
+                    {/* Secondary Activities Section */}
+                    <div className="border-t dark:border-slate-700 pt-4">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Outras Atividades (CNAEs)</label>
+                        <div className="flex gap-2 mb-2">
+                             <input 
+                                type="text" 
+                                value={newCnae} 
+                                onChange={(e) => setNewCnae(e.target.value)}
+                                placeholder="CNAE Secundário" 
+                                className="flex-grow p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 text-sm"
+                             />
+                             <select 
+                                value={newAnexo} 
+                                onChange={(e) => setNewAnexo(e.target.value as SimplesNacionalAnexo)}
+                                className="w-28 p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 text-sm"
+                             >
+                                <option value="I">Anexo I</option>
+                                <option value="II">Anexo II</option>
+                                <option value="III">Anexo III</option>
+                                <option value="IV">Anexo IV</option>
+                                <option value="V">Anexo V</option>
+                                <option value="III_V">III/V</option>
+                             </select>
+                             <button type="button" onClick={handleAddActivity} className="p-2 bg-sky-100 text-sky-600 rounded-md hover:bg-sky-200 flex items-center justify-center">
+                                <PlusIcon className="w-5 h-5" />
+                             </button>
+                        </div>
+                        <ul className="space-y-2 max-h-40 overflow-y-auto">
+                            {atividadesSecundarias.map((item, index) => (
+                                <li key={index} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm">
+                                    <span>{item.cnae} <span className="text-slate-400 text-xs">({item.anexo})</span></span>
+                                    <button type="button" onClick={() => handleRemoveActivity(index)} className="text-red-500 hover:text-red-700 p-1">
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
                     </div>
+
                     <div className="flex justify-end pt-4">
                         <button type="button" onClick={onClose} className="mr-2 px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md dark:text-slate-300 dark:hover:bg-slate-700">Cancelar</button>
                         <button type="submit" className="px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700">Salvar</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    );
+};
+
+const HistoryDetailsModal: React.FC<{
+    data: SimplesHistoricoCalculo | null;
+    isOpen: boolean;
+    onClose: () => void;
+}> = ({ data, isOpen, onClose }) => {
+    if (!isOpen || !data) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] animate-fade-in" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md animate-pop-in" onClick={e => e.stopPropagation()}>
+                <div className="bg-sky-600 p-4 rounded-t-xl flex justify-between items-center">
+                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                        <HistoryIcon className="w-5 h-5" />
+                        Detalhes da Apuração
+                    </h3>
+                    <button onClick={onClose} className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20">
+                        <CloseIcon className="w-5 h-5" />
+                    </button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div className="text-center mb-6">
+                         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Mês de Referência</p>
+                         <p className="text-2xl font-bold text-slate-800 dark:text-slate-100 capitalize">{data.mesReferencia}</p>
+                         <p className="text-xs text-slate-400 mt-1">Calculado em: {new Date(data.dataCalculo).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">RBT12</p>
+                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.rbt12)}
+                            </p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Alíquota Efetiva</p>
+                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
+                                {data.aliq_eff.toFixed(2)}%
+                            </p>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Fator R</p>
+                            <p className={`font-mono font-semibold ${data.fator_r >= 0.28 ? 'text-green-600' : 'text-orange-500'}`}>
+                                {(data.fator_r * 100).toFixed(2)}%
+                            </p>
+                        </div>
+                         <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Enquadramento</p>
+                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
+                                {data.anexo_efetivo}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-600 dark:text-slate-300 font-bold">Valor do DAS</span>
+                            <span className="text-xl font-bold text-sky-600 dark:text-sky-400">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.das_mensal)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <button onClick={onClose} className="w-full mt-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 font-semibold transition-colors">
+                        Fechar
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -131,18 +269,25 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     const [folha12, setFolha12] = useState(empresa.folha12.toString());
     const [folhaSuccess, setFolhaSuccess] = useState('');
     
+    // State for File Import Flow
+    const [fileToImport, setFileToImport] = useState<File | null>(null);
+
     // State for CNAE validation modal
     const [isCnaeModalOpen, setIsCnaeModalOpen] = useState(false);
     const [cnaeValidationResult, setCnaeValidationResult] = useState<SearchResult | null>(null);
     const [isCnaeLoading, setIsCnaeLoading] = useState(false);
     const [cnaeError, setCnaeError] = useState<string | null>(null);
+    const [cnaeToValidate, setCnaeToValidate] = useState('');
 
-    // State for Tax Analysis Table
-    const [taxDetails, setTaxDetails] = useState<CnaeTaxDetail[] | null>(null);
+    // State for Tax Analysis Table (Multi-CNAE)
+    const [taxAnalysisResults, setTaxAnalysisResults] = useState<CnaeAnalysisResult[] | null>(null);
     const [isTaxAnalysisLoading, setIsTaxAnalysisLoading] = useState(false);
 
     // State for Edit Empresa Modal
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    
+    // State for History Details Modal
+    const [selectedHistorico, setSelectedHistorico] = useState<SimplesHistoricoCalculo | null>(null);
 
     // State for Manual Invoicing
     const [mesApuracao, setMesApuracao] = useState(new Date());
@@ -151,9 +296,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     const [dasOnlineStatus, setDasOnlineStatus] = useState<'idle' | 'connecting' | 'authenticating' | 'generating' | 'success'>('idle');
     const [dasOnlineMsg, setDasOnlineMsg] = useState('');
     
-    // Apuração do mês vigente input state
-    const [faturamentoMesVigente, setFaturamentoMesVigente] = useState('');
+    // --- NEW LOGIC: Breakdown Revenue by CNAE (not just Anexo) ---
+    const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, string>>({});
     
+    // --- NEW LOGIC: Tax Settings (Retained ISS / ICMS ST) per CNAE ---
+    const [configuracaoPorCnae, setConfiguracaoPorCnae] = useState<Record<string, { issRetido: boolean, icmsSt: boolean }>>({});
+    
+    // --- NEW LOGIC: Quick Add Secondary CNAE ---
+    const [isAddingCnae, setIsAddingCnae] = useState(false);
+    const [quickCnae, setQuickCnae] = useState('');
+    const [quickAnexo, setQuickAnexo] = useState<SimplesNacionalAnexo>('III');
+
     // Preenchimento recorrente
     const [valorRecorrente, setValorRecorrente] = useState('');
 
@@ -182,49 +335,115 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                 ])
             )
         );
-        // Reset tax details when company changes (though in this view, company usually doesn't change dynamically without unmount)
-        setTaxDetails(null);
+        // Reset tax details when company changes
+        setTaxAnalysisResults(null);
+        setFileToImport(null);
+        setImportSuccess(null);
+        setImportError(null);
+        setSelectedHistorico(null);
     }, [empresa]);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const resumo = useMemo(() => {
-        return simplesService.calcularResumoEmpresa(empresa, notas, mesApuracao);
-    }, [empresa, notas, mesApuracao]);
-    
-    // Sincronizar o input do mês vigente com o manualFaturamento
+    // Lista Completa de Atividades (CNAE + Anexo)
+    const allActivities = useMemo(() => {
+        const list = [
+            { cnae: empresa.cnae, anexo: empresa.anexo, role: 'Principal' }
+        ];
+        if (empresa.atividadesSecundarias) {
+            empresa.atividadesSecundarias.forEach(act => {
+                list.push({ cnae: act.cnae, anexo: act.anexo, role: 'Secundário' });
+            });
+        }
+        return list;
+    }, [empresa]);
+
+    // Inicializa o faturamento discriminado
     useEffect(() => {
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-        setFaturamentoMesVigente(manualFaturamento[mesChave] || '');
-    }, [mesApuracao, manualFaturamento]);
+        const totalMes = manualFaturamento[mesChave] || '0,00';
+        
+        const currentTotalBreakdown = Object.values(faturamentoPorCnae).reduce((acc: number, val: string) => {
+             return acc + parseFloat(val.replace(/\./g, '').replace(',', '.') || '0');
+        }, 0);
 
+        if (currentTotalBreakdown === 0 && totalMes !== '0,00') {
+             // Se tem total mas não tem breakdown, atribui ao principal (simplificação)
+             // ou mantém vazio para forçar usuário a discriminar se quiser
+             // Por UX, vamos atribuir ao CNAE Principal
+             setFaturamentoPorCnae({ [empresa.cnae]: totalMes });
+        } else if (totalMes === '0,00' && currentTotalBreakdown === 0) {
+             setFaturamentoPorCnae({});
+        }
+        
+        if (Object.keys(configuracaoPorCnae).length === 0) {
+             const initConfig: Record<string, { issRetido: boolean, icmsSt: boolean }> = {};
+             allActivities.forEach(act => {
+                 initConfig[act.cnae] = { issRetido: false, icmsSt: false };
+             });
+             setConfiguracaoPorCnae(initConfig);
+        }
+    }, [mesApuracao, manualFaturamento, empresa.cnae, allActivities]);
 
-    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const resumo = useMemo(() => {
+        // Constrói os itens de cálculo detalhados para o serviço
+        const itensCalculo: SimplesItemCalculo[] = [];
+
+        allActivities.forEach(act => {
+            const valStr = faturamentoPorCnae[act.cnae] || '0';
+            const val = parseFloat(String(valStr).replace(/\./g, '').replace(',', '.') || '0');
+            const config = configuracaoPorCnae[act.cnae] || { issRetido: false, icmsSt: false };
+
+            if (val > 0) {
+                itensCalculo.push({
+                    cnae: act.cnae,
+                    anexo: act.anexo,
+                    valor: val,
+                    issRetido: config.issRetido,
+                    icmsSt: config.icmsSt
+                });
+            }
+        });
+
+        return simplesService.calcularResumoEmpresa(empresa, notas, mesApuracao, { 
+            fullHistory: true,
+            itensCalculo: itensCalculo
+        });
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, configuracaoPorCnae, allActivities]);
+
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (!file) return;
+        if (file) {
+            setFileToImport(file);
+            setImportSuccess(null);
+            setImportError(null);
+        }
+    };
+
+    const handleConfirmImport = async () => {
+        if (!fileToImport) return;
 
         setIsLoading(true);
         setImportError(null);
         setImportSuccess(null);
 
-        const result = await onImport(empresa.id, file);
+        const result = await onImport(empresa.id, fileToImport);
 
         if (result.failCount > 0) {
             setImportError(result.errors);
             if (result.successCount > 0) {
-                setImportSuccess(`Importação parcial: ${result.successCount} notas importadas com sucesso. ${result.failCount} falharam.`);
-            } else {
-                 setImportSuccess(null);
+                setImportSuccess(`Importação parcial: ${result.successCount} registros importados. ${result.failCount} falharam.`);
             }
         } else if (result.successCount > 0) {
-            setImportSuccess(`${result.successCount} nota(s) importada(s) com sucesso.`);
+            setImportSuccess(`${result.successCount} registro(s) importado(s) e preenchidos com sucesso.`);
         } else {
-             setImportError(["Nenhuma nota foi encontrada ou processada no arquivo."]);
+             setImportError(["Nenhum dado válido encontrado."]);
         }
         
         if(fileInputRef.current) {
             fileInputRef.current.value = "";
         }
+        setFileToImport(null);
         setIsLoading(false);
     };
 
@@ -250,11 +469,41 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         setManualFaturamento(prev => ({ ...prev, [mesChave]: formatted }));
     };
     
-    const handleFaturamentoMesVigenteChange = (valor: string) => {
-        const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
+    const handleCnaeRevenueChange = (cnae: string, valor: string) => {
         const formatted = formatCurrencyInput(valor);
-        setManualFaturamento(prev => ({ ...prev, [mesChave]: formatted }));
+        setFaturamentoPorCnae(prev => ({ ...prev, [cnae]: formatted }));
     };
+
+    const toggleTaxConfig = (cnae: string, type: 'issRetido' | 'icmsSt') => {
+        setConfiguracaoPorCnae(prev => {
+            const current = prev[cnae] || { issRetido: false, icmsSt: false };
+            return {
+                ...prev,
+                [cnae]: { ...current, [type]: !current[type] }
+            };
+        });
+    };
+    
+    const handleQuickAddCnae = () => {
+        if (!quickCnae.trim()) return;
+        
+        const currentSecundarias = empresa.atividadesSecundarias || [];
+        const updatedSecundarias = [...currentSecundarias, { cnae: quickCnae, anexo: quickAnexo }];
+        
+        onUpdateEmpresa(empresa.id, { atividadesSecundarias: updatedSecundarias });
+        
+        setIsAddingCnae(false);
+        setQuickCnae('');
+        setQuickAnexo('III');
+    };
+
+    const totalDiscriminadoString = useMemo(() => {
+        let total = 0;
+        Object.values(faturamentoPorCnae).forEach((valStr: string) => {
+            total += parseFloat(valStr.replace(/\./g, '').replace(',', '.') || '0');
+        });
+        return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(total);
+    }, [faturamentoPorCnae]);
     
     const handleAplicarRecorrente = () => {
         if (!valorRecorrente) return;
@@ -269,19 +518,20 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         });
         
         setManualFaturamento(novosValores);
-        setValorRecorrente(''); // Clear input
+        setValorRecorrente(''); 
     };
     
     const handleValorRecorrenteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-         setValorRecorrente(e.target.value);
+         const formatted = formatCurrencyInput(e.target.value);
+         setValorRecorrente(formatted);
     }
-
 
     const saveAllManualFaturamento = () => {
         const faturamentoNumerico = Object.fromEntries(
             Object.entries(manualFaturamento)
                 .map(([key, value]): [string, number] => {
-                    const cleanValue = (value as string).replace(/\./g, '').replace(',', '.');
+                    const valStr = String(value);
+                    const cleanValue = valStr.replace(/\./g, '').replace(',', '.');
                     return [key, parseFloat(cleanValue)];
                 })
                 .filter(([, value]) => !isNaN(value))
@@ -299,9 +549,25 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         }
     };
     
-    // Salvar automaticamente ao alterar o mês vigente (debounce ou blur seria melhor, mas simples serve aqui)
-    const handleMesVigenteBlur = () => {
-        saveAllManualFaturamento();
+    const handleSaveMesVigenteClick = () => {
+        // Atualiza o mês corrente no histórico geral com a soma dos CNAEs
+        const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
+        const updatedManualFaturamento = { ...manualFaturamento, [mesChave]: totalDiscriminadoString };
+        setManualFaturamento(updatedManualFaturamento);
+        
+        // Salva no banco
+        const faturamentoNumerico = Object.fromEntries(
+            Object.entries(updatedManualFaturamento)
+                .map(([key, value]): [string, number] => {
+                    const cleanValue = String(value).replace(/\./g, '').replace(',', '.');
+                    return [key, parseFloat(cleanValue)];
+                })
+                .filter(([, value]) => !isNaN(value))
+        );
+        
+        onSaveFaturamentoManual(empresa.id, faturamentoNumerico);
+        setManualSuccess('Faturamento vigente atualizado!');
+        setTimeout(() => setManualSuccess(''), 3000);
     };
 
     const handleSaveCalculo = () => {
@@ -314,29 +580,28 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     };
     
     const handleDeleteCalculo = (calculoId: string) => {
+        if (!window.confirm("Tem certeza que deseja excluir este cálculo do histórico?")) return;
         const novosCalculos = empresa.historicoCalculos?.filter(c => c.id !== calculoId);
-        onUpdateEmpresa(empresa.id, { historicoCalculos: novosCalculos });
+        if (novosCalculos) {
+            onUpdateEmpresa(empresa.id, { historicoCalculos: novosCalculos });
+            if (selectedHistorico?.id === calculoId) {
+                setSelectedHistorico(null);
+            }
+        }
     };
 
     const handleGerarDasOnline = async () => {
         setDasOnlineStatus('connecting');
         setDasOnlineMsg('Conectando ao Servidor PGDAS-D...');
-        
-        // Mock de delay para simulação
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
+        await new Promise<void>(resolve => setTimeout(resolve, 2000));
         setDasOnlineStatus('authenticating');
         setDasOnlineMsg('Acessando Certificado Digital Modelo A1...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
+        await new Promise<void>(resolve => setTimeout(resolve, 2000));
         setDasOnlineStatus('generating');
         setDasOnlineMsg('Gerando Guia de DAS...');
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
+        await new Promise<void>(resolve => setTimeout(resolve, 1500));
         setDasOnlineStatus('success');
         setDasOnlineMsg('Redirecionando para ambiente seguro e-CAC...');
-        
-        // Em um ambiente real, isso redirecionaria para o e-CAC.
         setTimeout(() => {
             window.open('https://cav.receita.fazenda.gov.br/autenticacao/login', '_blank');
             setDasOnlineStatus('idle');
@@ -347,179 +612,205 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     const handleGerarDasPdf = async () => {
         try {
             const { default: jsPDF } = await import('jspdf');
-            
             const doc = new jsPDF();
             const pageWidth = doc.internal.pageSize.getWidth();
             const dataHoraGeracao = new Date().toLocaleString('pt-BR');
             
-            // Header Page 1
             doc.setFontSize(18);
-            doc.setTextColor(14, 165, 233); // Sky 600
+            doc.setTextColor(14, 165, 233); 
             doc.text('Memória de Cálculo - DAS', pageWidth / 2, 20, { align: 'center' });
             
             doc.setFontSize(12);
             doc.setTextColor(0);
             doc.text(`Empresa: ${empresa.nome}`, 20, 40);
-            
-            // Add Generation Date/Time
             doc.setFontSize(10);
             doc.setTextColor(100);
             doc.text(`Gerado em: ${dataHoraGeracao}`, pageWidth - 20, 40, { align: 'right' });
-            
             doc.setFontSize(12);
             doc.setTextColor(0);
             doc.text(`CNPJ: ${empresa.cnpj}`, 20, 48);
             doc.text(`Período de Apuração: ${mesApuracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}`, 20, 56);
-
-            // Linha divisória
             doc.setDrawColor(200);
             doc.line(20, 65, pageWidth - 20, 65);
 
-            // Get Faturamento do Mês Direto (Mais seguro que calcular reverso)
             const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
             const faturamentoMes = resumo.mensal[mesChave] || 0;
 
-            // Dados de Cálculo
             doc.setFontSize(14);
             doc.text('Base de Cálculo', 20, 75);
-            
             doc.setFontSize(10);
             doc.text('Receita Bruta 12 Meses (RBT12):', 20, 85);
-            doc.text(`R$ ${resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, pageWidth - 20, 85, { align: 'right' });
-            
+            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.rbt12)}`, pageWidth - 20, 85, { align: 'right' });
             doc.text('Faturamento do Mês:', 20, 92);
-            doc.text(`R$ ${faturamentoMes.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, pageWidth - 20, 92, { align: 'right' });
+            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faturamentoMes)}`, pageWidth - 20, 92, { align: 'right' });
             
             if (resumo.ultrapassou_sublimite) {
-                doc.setTextColor(220, 38, 38); // Red
+                doc.setTextColor(220, 38, 38); 
                 doc.text('ALERTA: RBT12 excedeu o Sub-limite de R$ 3.600.000,00.', 20, 102);
                 doc.text('ICMS/ISS recolhidos fora do DAS.', 20, 107);
                 doc.setTextColor(0);
             }
 
             doc.line(20, 115, pageWidth - 20, 115);
-
-            // Alíquotas
             doc.setFontSize(14);
             doc.text('Apuração da Alíquota', 20, 125);
             
-            doc.setFontSize(10);
-            doc.text('Anexo Aplicado:', 20, 135);
-            doc.text(`Anexo ${resumo.anexo_efetivo}`, pageWidth - 20, 135, { align: 'right' });
-            
-            if (empresa.anexo === 'III_V') {
-                doc.text('Fator R:', 20, 142);
-                doc.text(`${(resumo.fator_r * 100).toFixed(2)}%`, pageWidth - 20, 142, { align: 'right' });
+            if (resumo.detalhamento_anexos && resumo.detalhamento_anexos.length > 0) {
+                let yPos = 135;
+                resumo.detalhamento_anexos.forEach(det => {
+                    doc.setFontSize(10);
+                    let label = `Atividade Anexo ${det.anexo}`;
+                    if(det.issRetido) label += " (Sem ISS)";
+                    if(det.icmsSt) label += " (Sem ICMS)";
+
+                    doc.text(`${label}: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(det.faturamento)}`, 20, yPos);
+                    doc.text(`Aliq. Efetiva: ${det.aliquotaEfetiva.toFixed(4)}%`, pageWidth - 60, yPos, { align: 'right'});
+                    doc.text(`DAS: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(det.valorDas)}`, pageWidth - 20, yPos, { align: 'right'});
+                    yPos += 6;
+                });
+                if (empresa.anexo === 'III_V') {
+                    doc.text(`Fator R Global: ${(resumo.fator_r * 100).toFixed(2)}%`, 20, yPos + 4);
+                }
+                doc.setFontSize(12);
+                doc.setFont("helvetica", "bold");
+                doc.text(`Alíquota Média Ponderada: ${resumo.aliq_eff.toFixed(4)}%`, pageWidth - 20, yPos + 4, { align: 'right' });
+                doc.setFont("helvetica", "normal");
+            } else {
+                doc.setFontSize(10);
+                doc.text('Anexo Aplicado:', 20, 135);
+                doc.text(`Anexo ${resumo.anexo_efetivo}`, pageWidth - 20, 135, { align: 'right' });
+                if (empresa.anexo === 'III_V') {
+                    doc.text('Fator R:', 20, 142);
+                    doc.text(`${(resumo.fator_r * 100).toFixed(2)}%`, pageWidth - 20, 142, { align: 'right' });
+                }
+                doc.text('Alíquota Efetiva Calculada:', 20, 149);
+                doc.setFontSize(12);
+                doc.setFont("helvetica", "bold");
+                doc.text(`${resumo.aliq_eff.toFixed(4)}%`, pageWidth - 20, 149, { align: 'right' });
+                doc.setFont("helvetica", "normal");
             }
-            
-            doc.text('Alíquota Efetiva Calculada:', 20, 149);
-            doc.setFontSize(12);
-            doc.setFont("helvetica", "bold");
-            doc.text(`${resumo.aliq_eff.toFixed(4)}%`, pageWidth - 20, 149, { align: 'right' });
-            doc.setFont("helvetica", "normal");
 
             doc.setDrawColor(0);
             doc.setLineWidth(0.5);
-            doc.rect(20, 160, pageWidth - 40, 30);
-            
+            doc.rect(20, 170, pageWidth - 40, 30);
             doc.setFontSize(16);
-            doc.text('Valor a Pagar (DAS)', pageWidth / 2, 172, { align: 'center' });
+            doc.text('Valor a Pagar (DAS)', pageWidth / 2, 182, { align: 'center' });
             doc.setFontSize(22);
             doc.setTextColor(14, 165, 233);
-            doc.text(`R$ ${resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, pageWidth / 2, 185, { align: 'center' });
-            
+            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.das_mensal)}`, pageWidth / 2, 195, { align: 'center' });
             doc.setFontSize(8);
             doc.setTextColor(100);
-            doc.text(`Página 1/3`, pageWidth - 20, 280, { align: 'right' });
+            doc.text(`Página 1/4`, pageWidth - 20, 280, { align: 'right' });
             doc.text('Documento gerado pelo Consultor Fiscal Inteligente - SP Assessoria', pageWidth / 2, 280, { align: 'center' });
 
-            // Add Page 2: Detalhamento RBT12
             doc.addPage();
-
-            // Header Page 2
             doc.setFontSize(16);
-            doc.setTextColor(14, 165, 233); // Sky 600
+            doc.setTextColor(14, 165, 233);
             doc.text('Detalhamento da Receita Bruta (RBT12)', pageWidth / 2, 20, { align: 'center' });
-
             doc.setFontSize(10);
             doc.setTextColor(100);
             doc.text('Histórico dos últimos 12 meses anteriores à apuração', pageWidth / 2, 26, { align: 'center' });
-            
             doc.setFontSize(12);
             doc.setTextColor(0);
-            
-            // Table Setup
             let startY = 40;
             const col1X = 30;
             const col2X = pageWidth - 30;
             const rowHeight = 10;
-            
-            // Table Header
-            doc.setFillColor(240, 245, 250); // Light blueish gray
+            doc.setFillColor(240, 245, 250); 
             doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
             doc.setFont("helvetica", "bold");
             doc.text('Competência', col1X, startY);
             doc.text('Receita Bruta', col2X, startY, { align: 'right' });
-            
             startY += rowHeight;
             doc.setFont("helvetica", "normal");
             doc.setFontSize(11);
-
-            // Data Rows - Calculation Logic
-            // RBT12 is sum of prev 12 months.
             const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
             let totalCalculado = 0;
-
             for (let i = 0; i < 12; i++) {
                 const mesIteracao = new Date(dataInicioPeriodoRBT12.getFullYear(), dataInicioPeriodoRBT12.getMonth() + i, 1);
                 const mesChave = `${mesIteracao.getFullYear()}-${(mesIteracao.getMonth() + 1).toString().padStart(2, '0')}`;
                 const valor = resumo.mensal[mesChave] || 0;
                 totalCalculado += valor;
-
                 const mesLabel = mesIteracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
                 const mesLabelCapitalized = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
-                
-                // Striping for readability
                 if (i % 2 === 1) {
                    doc.setFillColor(250, 250, 250);
                    doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
                 }
-
                 doc.text(mesLabelCapitalized, col1X, startY);
-                doc.text(`R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, col2X, startY, { align: 'right' });
-                
+                doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(valor)}`, col2X, startY, { align: 'right' });
                 startY += rowHeight;
             }
-
-            // Total Row
             startY += 2;
             doc.setDrawColor(14, 165, 233);
             doc.setLineWidth(0.5);
             doc.line(20, startY - 8, pageWidth - 20, startY - 8);
-            
             doc.setFont("helvetica", "bold");
             doc.setFontSize(12);
             doc.text('TOTAL ACUMULADO (RBT12)', col1X, startY);
-            doc.text(`R$ ${totalCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, col2X, startY, { align: 'right' });
-            
+            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(totalCalculado)}`, col2X, startY, { align: 'right' });
             doc.setFontSize(8);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(100);
-            doc.text(`Página 2/3 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+            doc.text(`Página 2/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
 
-            // Add Page 3: Histórico Salvo
+            doc.addPage();
+            doc.setFontSize(16);
+            doc.setTextColor(14, 165, 233); 
+            doc.text('Memória de Cálculo - Discriminação dos Tributos', pageWidth / 2, 20, { align: 'center' });
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text('Repartição do valor do DAS entre os entes federativos e tributos', pageWidth / 2, 26, { align: 'center' });
+            doc.setFontSize(12);
+            doc.setTextColor(0);
+            doc.text(`Valor Total do DAS: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.das_mensal)}`, 20, 40);
+            startY = 55;
+            const colImp = 20;
+            const colPerc = pageWidth / 2;
+            const colVal = pageWidth - 20;
+            doc.setFillColor(240, 245, 250);
+            doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.text("Tributo / Ente", colImp + 5, startY);
+            doc.text("% Partilha (no DAS)", colPerc, startY, { align: 'center' });
+            doc.text("Valor (R$)", colVal - 5, startY, { align: 'right' });
+            startY += 10;
+            doc.setFont("helvetica", "normal");
+            const percentuaisReparticao = REPARTICAO_IMPOSTOS[resumo.anexo_efetivo]?.[Math.min(resumo.faixa_index, 5)];
+            const discriminacao = simplesService.calcularDiscriminacaoImpostos(resumo.anexo_efetivo, resumo.faixa_index, resumo.das_mensal);
+            let index = 0;
+            Object.entries(discriminacao).forEach(([imposto, valor]) => {
+                if (index % 2 === 1) {
+                    doc.setFillColor(252, 252, 252);
+                    doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
+                }
+                doc.setDrawColor(230);
+                doc.line(20, startY + 4, pageWidth - 20, startY + 4);
+                doc.text(imposto, colImp + 5, startY);
+                const percentual = percentuaisReparticao ? percentuaisReparticao[imposto] : 0;
+                doc.text(`${percentual.toFixed(2)}%`, colPerc, startY, { align: 'center' });
+                doc.text(new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format((valor as number)), colVal - 5, startY, { align: 'right' });
+                startY += 10;
+                index++;
+            });
+            if (resumo.ultrapassou_sublimite) {
+                startY += 10;
+                doc.setFontSize(10);
+                doc.setTextColor(220, 38, 38);
+                doc.text("* Nota: Devido ao sublimite de faturamento excedido, os percentuais de ICMS/ISS não estão incluídos neste cálculo.", 20, startY, { maxWidth: pageWidth - 40 });
+            }
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(`Página 3/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+
             if (empresa.historicoCalculos && empresa.historicoCalculos.length > 0) {
                 doc.addPage();
                 doc.setFontSize(16);
                 doc.setTextColor(14, 165, 233); 
                 doc.text('Histórico de Apurações Salvas', pageWidth / 2, 20, { align: 'center' });
-                
                 doc.setFontSize(10);
                 doc.setTextColor(0);
-
                 startY = 40;
-                
-                // Table Header Page 3
                 doc.setFillColor(240, 245, 250);
                 doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
                 doc.setFont("helvetica", "bold");
@@ -528,41 +819,34 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                 doc.text('RBT12', 90, startY, { align: 'right' });
                 doc.text('Aliq. Ef.', 120, startY, { align: 'right' });
                 doc.text('DAS (R$)', pageWidth - 25, startY, { align: 'right' });
-
                 startY += rowHeight;
                 doc.setFont("helvetica", "normal");
                 doc.setFontSize(10);
-
-                empresa.historicoCalculos.forEach((calc, index) => {
-                    if (startY > 270) { // Simple pagination check
+                empresa.historicoCalculos.forEach((calc, i) => {
+                    if (startY > 270) { 
                         doc.addPage();
                         startY = 40; 
                     }
-
-                    if (index % 2 === 1) {
+                    if (i % 2 === 1) {
                        doc.setFillColor(250, 250, 250);
                        doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
                     }
-
                     doc.text(calc.mesReferencia, 25, startY);
                     doc.text(calc.anexo_efetivo, 55, startY);
-                    doc.text(calc.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), 90, startY, { align: 'right' });
+                    const rbt12Formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(calc.rbt12);
+                    doc.text(rbt12Formatted, 90, startY, { align: 'right' });
                     doc.text(calc.aliq_eff.toFixed(2) + '%', 120, startY, { align: 'right' });
-                    doc.text(calc.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), pageWidth - 25, startY, { align: 'right' });
-
+                    const dasFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(calc.das_mensal);
+                    doc.text(dasFormatted, pageWidth - 25, startY, { align: 'right' });
                     startY += rowHeight;
                 });
-                
                 doc.setFontSize(8);
                 doc.setTextColor(100);
-                doc.text(`Página 3/3 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+                doc.text(`Página 4/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
             }
             
             doc.save(`memoria-calculo-${empresa.nome}-${mesApuracao.toISOString().slice(0,7)}.pdf`);
-            
-            // Salvar automaticamente ao gerar o PDF
             handleSaveCalculo();
-            
         } catch (e) {
             console.error('Erro ao gerar PDF', e);
             alert('Não foi possível gerar o PDF.');
@@ -572,7 +856,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
     const handleChatSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!chatPergunta.trim()) return;
-
         setIsChatLoading(true);
         setChatResult(null);
         try {
@@ -585,75 +868,97 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
         }
     };
 
-    const handleValidateCnae = async () => {
+    const handleValidateCnae = (cnae: string) => {
         setIsCnaeLoading(true);
         setCnaeError(null);
         setCnaeValidationResult(null);
         setIsCnaeModalOpen(true);
-        try {
-            const result = await fetchCnaeDescription(empresa.cnae);
+        setCnaeToValidate(cnae);
+        fetchCnaeDescription(cnae).then(result => {
             setCnaeValidationResult(result);
-        } catch (e: any) {
+        }).catch (e => {
             setCnaeError(e.message || 'Ocorreu um erro desconhecido.');
-        } finally {
+        }).finally(() => {
             setIsCnaeLoading(false);
-        }
+        });
     };
     
     const handleAnalyzeTax = async () => {
         setIsTaxAnalysisLoading(true);
+        setTaxAnalysisResults(null);
         try {
-            const details = await fetchCnaeTaxDetails(empresa.cnae);
-            setTaxDetails(details);
+            const activitiesToAnalyze = [
+                { cnae: empresa.cnae, role: 'Principal' as const },
+                ...(empresa.atividadesSecundarias || []).map(a => ({ cnae: a.cnae, role: 'Secundário' as const }))
+            ];
+            const promises = activitiesToAnalyze.map(async (activity) => {
+                try {
+                    const details = await fetchCnaeTaxDetails(activity.cnae);
+                    return {
+                        cnae: activity.cnae,
+                        role: activity.role,
+                        details: details
+                    };
+                } catch (e: any) {
+                    return {
+                        cnae: activity.cnae,
+                        role: activity.role,
+                        details: [],
+                        error: e.message || 'Falha na análise'
+                    };
+                }
+            });
+            const finalResults = await Promise.all(promises);
+            setTaxAnalysisResults(finalResults);
         } catch (e) {
             console.error(e);
-            // Optionally set an error state for the tax section
         } finally {
             setIsTaxAnalysisLoading(false);
         }
     }
     
-    const chartData = {
-        // Labels: Usar os labels do histórico simulado (Ex: Jan/2024)
-        labels: resumo.historico_simulado.map(h => h.label),
-        datasets: [
-            {
-                label: 'Faturamento (R$)',
-                data: resumo.historico_simulado.map(h => h.faturamento),
-                backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                borderColor: 'rgba(59, 130, 246, 1)',
-                borderWidth: 1,
-                order: 2,
-                yAxisID: 'y',
-            },
-             {
-                label: 'DAS Calculado (R$)',
-                // Dados reais do DAS calculados mês a mês com a alíquota daquele período
-                data: resumo.historico_simulado.map(h => h.dasCalculado),
-                type: 'line' as const,
-                borderColor: 'rgba(14, 165, 233, 0.8)', // Sky 500
-                borderWidth: 2,
-                borderDash: [5, 5],
-                pointRadius: 3,
-                order: 1,
-                 yAxisID: 'y',
-            },
-             {
-                label: 'Alíquota Efetiva (%)',
-                // Alíquota real que variou mês a mês
-                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
-                type: 'line' as const,
-                borderColor: 'rgba(239, 68, 68, 0.8)', // Red 500
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                borderWidth: 2,
-                pointRadius: 3,
-                order: 0,
-                yAxisID: 'y1',
-            }
-        ],
-    };
+    const chartData = useMemo(() => {
+        if (!resumo.historico_simulado || resumo.historico_simulado.length === 0) return null;
+        
+        return {
+            labels: resumo.historico_simulado.map(h => h.label),
+            datasets: [
+                {
+                    label: 'Faturamento (R$)',
+                    data: resumo.historico_simulado.map(h => h.faturamento),
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1,
+                    order: 2,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'DAS Calculado (R$)',
+                    data: resumo.historico_simulado.map(h => h.dasCalculado),
+                    type: 'line' as const,
+                    borderColor: 'rgba(14, 165, 233, 0.8)', 
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 3,
+                    order: 1,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Alíquota Efetiva (%)',
+                    data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
+                    type: 'line' as const,
+                    borderColor: 'rgba(239, 68, 68, 0.8)', 
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    order: 0,
+                    yAxisID: 'y1',
+                }
+            ],
+        };
+    }, [resumo.historico_simulado]);
 
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
@@ -669,34 +974,15 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                  callbacks: {
                     label: function(context: any) {
                         let label = context.dataset.label || '';
-                        if (label) {
-                            label += ': ';
-                        }
-                        
-                        // Encontra o objeto de histórico correspondente ao index do tooltip
-                        const historyItem = resumo.historico_simulado[context.dataIndex];
-
+                        if (label) label += ': ';
                         if (context.parsed.y !== null) {
                             if (context.dataset.yAxisID === 'y1') {
                                  label += context.parsed.y.toFixed(2) + '%';
-                                 // Adiciona informação extra se for a linha de alíquota
-                                 if (historyItem && historyItem.rbt12) {
-                                     label += ` (RBT12: R$ ${(historyItem.rbt12/1000).toFixed(0)}k)`;
-                                 }
                             } else {
                                 label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
                             }
                         }
                         return label;
-                    },
-                    afterBody: function(context: any) {
-                        // Informação extra no tooltip: Fator R se aplicável
-                        const index = context[0].dataIndex;
-                        const item = resumo.historico_simulado[index];
-                        if (item && item.anexoAplicado === 'III' && empresa.anexo === 'III_V') {
-                             return `Fator R: ${(item.fatorR * 100).toFixed(1)}% (Anexo III)`;
-                        }
-                        return '';
                     }
                 }
             }
@@ -707,85 +993,197 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                 type: 'linear' as const,
                 display: true,
                 position: 'left' as const,
-                title: {
-                    display: true,
-                    text: 'Valor (R$)'
-                }
+                title: { display: true, text: 'Valores (R$)' }
             },
             y1: {
                 beginAtZero: true,
                 type: 'linear' as const,
                 display: true,
                 position: 'right' as const,
-                title: {
-                    display: true,
-                    text: 'Alíquota (%)'
-                },
-                grid: {
-                    drawOnChartArea: false,
-                },
+                title: { display: true, text: 'Alíquota (%)' },
+                grid: { drawOnChartArea: false },
             },
-        }
-    };
+        },
+    }), []);
 
-    const mesesApuracaoOptions = getMesesApuracaoOptions();
-    const periodoManual = getPeriodoManual(mesApuracao);
+    return (
+        <div className="space-y-6 animate-fade-in pb-10">
+            {/* Header e Ações Principais */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                    <button onClick={() => onBack()} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                        <ArrowLeftIcon className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+                    </button>
+                    <div>
+                        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                            {empresa.nome}
+                        </h2>
+                        <div className="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400 items-center">
+                           <span>CNPJ: {empresa.cnpj}</span>
+                           <span>•</span>
+                           <div className="flex items-center gap-1">
+                               <BriefcaseIcon className="w-4 h-4" />
+                               <span className="font-semibold text-slate-600 dark:text-slate-300">Principal:</span> {empresa.cnae}
+                               <button 
+                                   onClick={() => handleValidateCnae(empresa.cnae)}
+                                   className="text-xs bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/30 dark:hover:bg-sky-800 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded border border-sky-100 dark:border-sky-800 transition-colors"
+                               >
+                                   Validar
+                               </button>
+                           </div>
+                        </div>
+                        
+                        {/* Secondary CNAEs */}
+                        {empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-2">
+                                {empresa.atividadesSecundarias.map((sec, idx) => (
+                                    <div key={idx} className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                                        <span className="font-semibold">Sec:</span> {sec.cnae}
+                                         <button 
+                                           onClick={() => handleValidateCnae(sec.cnae)}
+                                           className="text-sky-600 hover:underline ml-1"
+                                           title="Validar atividade"
+                                       >
+                                           <InfoIcon className="w-3 h-3" />
+                                       </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={() => setIsEditModalOpen(true)} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm">
+                        Editar Empresa
+                    </button>
+                    <button onClick={onShowClienteView} className="px-3 py-2 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200 text-sm flex items-center gap-2">
+                        <EyeIcon className="w-4 h-4" />
+                        Modo Cliente
+                    </button>
+                </div>
+            </div>
 
-    const TabelaAnexo: React.FC = () => {
-        const tabela = ANEXOS_TABELAS[resumo.anexo_efetivo];
-        
-        if (!tabela) return null;
+            {/* Cards de Resumo */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">RBT12 (Receita Bruta 12m)</p>
+                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Alíquota Efetiva</p>
+                    <p className="text-xl font-bold text-sky-600 dark:text-sky-400 mt-1">{resumo.aliq_eff.toFixed(2)}%</p>
+                    <p className="text-xs text-slate-400">Nominal: {resumo.aliq_nom}%</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">DAS Estimado (Mês)</p>
+                    <p className="text-xl font-bold text-green-600 dark:text-green-400 mt-1">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Fator R</p>
+                    <p className={`text-xl font-bold mt-1 ${resumo.fator_r >= 0.28 ? 'text-green-600' : 'text-orange-500'}`}>
+                        {(resumo.fator_r * 100).toFixed(1)}%
+                    </p>
+                    <p className="text-xs text-slate-400">Folha: R$ {resumo.folha_12.toLocaleString('pt-BR', { compactDisplay: 'short', notation: 'compact' })}</p>
+                </div>
+            </div>
 
-        return (
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">
-                    Enquadramento Atual: Tabela do Anexo {resumo.anexo_efetivo}
+            {/* Tax Analysis Section */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                        <ShieldIcon className="w-5 h-5 text-sky-600" />
+                        Análise Tributária (IA)
+                    </h3>
+                     <button 
+                        onClick={() => handleAnalyzeTax()} 
+                        disabled={isTaxAnalysisLoading}
+                        className="text-sm text-sky-600 hover:underline disabled:opacity-50"
+                    >
+                        {isTaxAnalysisLoading ? 'Analisando...' : 'Atualizar Análise'}
+                    </button>
+                </div>
+                
+                {isTaxAnalysisLoading ? (
+                    <LoadingSpinner />
+                ) : taxAnalysisResults ? (
+                    <div className="space-y-6">
+                        {taxAnalysisResults.map((result, idx) => (
+                            <div key={idx} className="border-t border-slate-100 dark:border-slate-700 pt-4 first:border-0 first:pt-0">
+                                <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${result.role === 'Principal' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-600'}`}>
+                                        {result.role}
+                                    </span>
+                                    CNAE {result.cnae}
+                                </h4>
+                                
+                                {result.error ? (
+                                    <p className="text-sm text-red-500">{result.error}</p>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
+                                            <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                                                <tr>
+                                                    <th className="px-4 py-2">Tributo</th>
+                                                    <th className="px-4 py-2">Incidência</th>
+                                                    <th className="px-4 py-2">Alíquota Média</th>
+                                                    <th className="px-4 py-2">Base Legal</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {result.details.map((tax, tIdx) => (
+                                                    <tr key={tIdx} className="border-b dark:border-slate-700">
+                                                        <td className="px-4 py-2 font-medium">{tax.tributo}</td>
+                                                        <td className="px-4 py-2">{tax.incidencia}</td>
+                                                        <td className="px-4 py-2">{tax.aliquotaMedia}</td>
+                                                        <td className="px-4 py-2 text-xs">{tax.baseLegal}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Clique em "Atualizar Análise" para ver a tabela de impostos incidentes.</p>
+                )}
+            </div>
+
+            {/* Reference Table - Annex Ranges */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mt-6">
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                    <DocumentTextIcon className="w-5 h-5 text-sky-600" />
+                    Tabela de Referência: Anexo {resumo.anexo_efetivo}
                 </h3>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
                             <tr>
                                 <th className="px-4 py-2">Faixa</th>
-                                <th className="px-4 py-2">Receita Bruta em 12 meses (R$)</th>
+                                <th className="px-4 py-2">Receita Bruta em 12 Meses (Até R$)</th>
                                 <th className="px-4 py-2 text-center">Alíquota Nominal</th>
                                 <th className="px-4 py-2 text-right">Valor a Deduzir (R$)</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {tabela.map((faixa, index) => {
-                                const isLast = index === tabela.length - 1;
-                                const prevLimit = index > 0 ? tabela[index - 1].limite : 0;
-                                const currentLimit = faixa.limite;
-                                
-                                // Verifica se é a faixa ativa baseada no RBT12
-                                let isActive = false;
-                                if (index === 0) {
-                                    isActive = resumo.rbt12 <= currentLimit;
-                                } else {
-                                    isActive = resumo.rbt12 > prevLimit && resumo.rbt12 <= currentLimit;
-                                }
-                                // Se estourou a última faixa
-                                if (isLast && resumo.rbt12 > currentLimit) {
-                                    isActive = true; 
-                                }
-
+                            {ANEXOS_TABELAS[resumo.anexo_efetivo]?.map((faixa, index) => {
+                                const isCurrentFaixa = index === resumo.faixa_index;
                                 return (
-                                    <tr 
-                                        key={index} 
-                                        className={`border-b dark:border-slate-700 ${isActive ? 'bg-emerald-50 dark:bg-emerald-900/20 border-l-4 border-l-emerald-500' : ''}`}
-                                    >
-                                        <td className={`px-4 py-2 ${isActive ? 'font-bold text-emerald-700 dark:text-emerald-400' : ''}`}>
+                                    <tr key={index} className={`border-b dark:border-slate-700 ${isCurrentFaixa ? 'bg-sky-50 dark:bg-sky-900/20 border-l-4 border-sky-500' : ''}`}>
+                                        <td className="px-4 py-2 font-medium">
                                             {index + 1}ª Faixa
-                                            {isActive && <span className="ml-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Atual</span>}
+                                            {isCurrentFaixa && <span className="ml-2 text-xs font-bold text-sky-600">(Atual)</span>}
                                         </td>
                                         <td className="px-4 py-2">
-                                            {index === 0 
-                                                ? `Até ${currentLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                                                : `De ${(prevLimit + 0.01).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} até ${currentLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                                            }
+                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faixa.limite)}
                                         </td>
-                                        <td className="px-4 py-2 text-center">{faixa.aliquota.toFixed(2)}%</td>
-                                        <td className="px-4 py-2 text-right">{faixa.parcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                        <td className="px-4 py-2 text-center">
+                                            {faixa.aliquota}%
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faixa.parcela)}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -793,308 +1191,382 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                     </table>
                 </div>
             </div>
-        );
-    };
 
-    return (
-        <div className="space-y-6 animate-fade-in">
-             <div className="flex justify-between items-center">
-                <button onClick={onBack} className="flex items-center gap-2 text-sm font-semibold text-sky-600 dark:text-sky-400 hover:underline">
-                    <ArrowLeftIcon className="w-4 h-4" />
-                    Voltar para o Painel
-                </button>
-                 <button onClick={onShowClienteView} className="flex items-center gap-2 text-sm font-semibold text-sky-600 dark:text-sky-400 hover:underline">
-                     <EyeIcon className="w-4 h-4" />
-                    Visualização do Cliente
-                </button>
+            {/* Charts */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 h-96 mt-6">
+                {chartData ? (
+                     <SimpleChart type="bar" options={chartOptions} data={chartData} />
+                ) : (
+                    <div className="h-full flex items-center justify-center text-slate-400">
+                        Sem dados para exibir o gráfico.
+                    </div>
+                )}
             </div>
             
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm flex justify-between items-start">
-                <div>
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{empresa.nome}</h2>
-                    <p className="mt-1 text-slate-500 dark:text-slate-400">{empresa.cnpj}</p>
-                </div>
-                <button onClick={() => setIsEditModalOpen(true)} className="btn-press text-sm text-sky-600 dark:text-sky-400 hover:underline">
-                    Editar Empresa
-                </button>
+            {/* Actions Bar */}
+            <div className="flex flex-wrap gap-3 items-center justify-between bg-slate-50 dark:bg-slate-900 p-4 rounded-lg">
+                 <div className="flex items-center gap-3">
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".pdf,.csv,.xml"
+                        onChange={handleFileChange}
+                        className="hidden"
+                    />
+                    <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="btn-press px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium flex items-center gap-2"
+                    >
+                        <DocumentTextIcon className="w-4 h-4" />
+                        Importar Notas/Extrato
+                    </button>
+                    
+                    {fileToImport && (
+                        <div className="flex items-center gap-2 animate-fade-in">
+                            <span className="text-sm text-slate-600 dark:text-slate-400 italic max-w-[150px] truncate">
+                                {fileToImport.name}
+                            </span>
+                            <button 
+                                onClick={() => handleConfirmImport()}
+                                disabled={isLoading}
+                                className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700 disabled:opacity-50"
+                            >
+                                {isLoading ? 'Processando...' : 'SALVAR'}
+                            </button>
+                            <button 
+                                onClick={() => { setFileToImport(null); if(fileInputRef.current) fileInputRef.current.value = ''; }}
+                                className="p-1 text-slate-400 hover:text-red-500"
+                            >
+                                <CloseIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
+                 </div>
+
+                 <div className="flex gap-2">
+                     <button 
+                         onClick={() => handleSaveCalculo()}
+                         className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-semibold flex items-center gap-2 btn-press"
+                     >
+                         <SaveIcon className="w-4 h-4" />
+                         Salvar Apuração
+                     </button>
+                     <button 
+                         onClick={() => handleGerarDasPdf()}
+                         className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm font-semibold flex items-center gap-2 btn-press"
+                     >
+                         <DownloadIcon className="w-4 h-4" />
+                         Gerar Extrato DAS
+                     </button>
+                     <button 
+                         onClick={() => handleGerarDasOnline()}
+                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold flex items-center gap-2 btn-press"
+                     >
+                         <GlobeIcon className="w-4 h-4" />
+                         Cálculo DAS On Line
+                     </button>
+                 </div>
             </div>
 
-            {/* Seção de Apuração do Mês Vigente */}
-            <div className="p-6 bg-gradient-to-r from-sky-50 to-blue-50 dark:from-slate-800 dark:to-slate-800 border border-sky-100 dark:border-slate-700 rounded-lg shadow-sm">
-                 <div className="flex flex-col md:flex-row justify-between md:items-end gap-6">
-                    <div className="flex-grow">
-                        <label htmlFor="mes-apuracao" className="block text-xs font-bold text-sky-800 dark:text-sky-300 uppercase tracking-wider mb-2">
-                            Mês de Apuração
-                        </label>
+            {/* Feedback Messages */}
+            {importSuccess && (
+                <div className="p-4 bg-green-50 border-l-4 border-green-500 text-green-700 dark:bg-green-900/20 dark:text-green-300 animate-fade-in">
+                    <p className="font-bold">Sucesso!</p>
+                    <p className="text-sm">{importSuccess}</p>
+                </div>
+            )}
+            {importError && (
+                <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 dark:bg-red-900/20 dark:text-red-300 animate-fade-in">
+                    <p className="font-bold">Erros na Importação:</p>
+                    <ul className="list-disc ml-5 text-sm">
+                        {importError.map((err, idx) => <li key={idx}>{err}</li>)}
+                    </ul>
+                </div>
+            )}
+            {saveCalculoSuccess && (
+                <div className="fixed bottom-10 right-10 bg-white dark:bg-slate-800 p-4 rounded-lg shadow-xl border border-green-200 dark:border-green-900 z-50 animate-fade-in flex items-center gap-3">
+                    <div className="bg-green-100 dark:bg-green-900 rounded-full p-2">
+                        <AnimatedCheckIcon className="w-6 h-6" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-green-700 dark:text-green-400">Sucesso</p>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">{saveCalculoSuccess}</p>
+                    </div>
+                </div>
+            )}
+            
+            {/* DAS Online Integration Overlay */}
+            {dasOnlineStatus !== 'idle' && (
+                 <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-[100] animate-fade-in">
+                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-2xl max-w-md w-full text-center">
+                        <LoadingSpinner />
+                        <h3 className="mt-6 text-xl font-bold text-slate-800 dark:text-slate-100">Integração PGDAS-D</h3>
+                        <p className="mt-2 text-sky-600 dark:text-sky-400 font-semibold animate-pulse">{dasOnlineMsg}</p>
+                        <div className="mt-6 w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                            <div 
+                                className="h-full bg-sky-500 transition-all duration-500 ease-out"
+                                style={{ 
+                                    width: dasOnlineStatus === 'connecting' ? '25%' : 
+                                           dasOnlineStatus === 'authenticating' ? '50%' : 
+                                           dasOnlineStatus === 'generating' ? '75%' : '100%' 
+                                }}
+                            />
+                        </div>
+                    </div>
+                 </div>
+            )}
+
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 {/* Manual Revenue Input */}
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
+                     <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Faturamento do Mês Vigente</h3>
                         <select 
-                            id="mes-apuracao"
                             value={mesApuracao.toISOString().substring(0, 7)}
                             onChange={e => setMesApuracao(new Date(e.target.value + '-02'))}
-                            className="w-full md:max-w-xs pl-4 pr-10 py-2.5 bg-white dark:bg-slate-700 border border-sky-200 dark:border-slate-600 text-lg font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm"
+                            className="bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-sm rounded-md px-2 py-1"
                         >
-                            {mesesApuracaoOptions.map(date => (
+                            {getMesesApuracaoOptions().map(date => (
                                 <option key={date.toISOString()} value={date.toISOString().substring(0, 7)}>
                                     {date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
                                 </option>
                             ))}
                         </select>
                     </div>
-
-                    <div className="flex-grow">
-                        <label htmlFor="faturamento-vigente" className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">
-                            Faturamento do Mês (R$)
-                        </label>
-                        <div className="relative">
-                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
-                             <input 
-                                type="text" 
-                                id="faturamento-vigente"
-                                value={faturamentoMesVigente}
-                                onChange={e => handleFaturamentoMesVigenteChange(e.target.value)}
-                                onBlur={handleMesVigenteBlur}
-                                placeholder="0,00"
-                                className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-lg font-mono text-right focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="flex-grow p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 text-center md:text-right">
-                         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-semibold">Valor a Recolher (DAS)</p>
-                         <p className="text-2xl font-bold text-sky-600 dark:text-sky-400 mt-1">
-                            R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                         </p>
-                    </div>
-                     <div className="flex-shrink-0 flex flex-col gap-2">
-                         <div className="flex gap-2 w-full md:w-auto">
-                            <button 
-                                onClick={handleGerarDasPdf}
-                                className="flex-1 btn-press px-4 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 shadow-md flex items-center justify-center gap-2"
-                            >
-                                <DownloadIcon className="w-5 h-5" />
-                                <span>Gerar Extrato DAS</span>
-                            </button>
-                            <button
-                                onClick={handleGerarDasOnline}
-                                disabled={dasOnlineStatus !== 'idle'}
-                                title="Simular integração online com Certificado A1"
-                                className="btn-press px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <GlobeIcon className="w-5 h-5" />
-                                <span className="hidden sm:inline">Cálculo DAS On Line</span>
-                            </button>
-                         </div>
-                         {dasOnlineStatus !== 'idle' && (
-                             <div className="text-xs text-center font-medium text-indigo-600 dark:text-indigo-400 animate-pulse">
-                                 {dasOnlineMsg}
-                             </div>
-                         )}
-                         <button 
-                            onClick={handleSaveCalculo}
-                            className="w-full md:w-auto btn-press px-6 py-2 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700 shadow-sm flex items-center justify-center gap-2 text-sm"
-                        >
-                            <SaveIcon className="w-4 h-4" />
-                            <span>Salvar Apuração</span>
-                        </button>
-                         {saveCalculoSuccess && <p className="text-center text-xs text-emerald-600 font-medium animate-fade-in">{saveCalculoSuccess}</p>}
-                    </div>
-                 </div>
-            </div>
-
-            {/* Alerta de Sub-limite */}
-            {resumo.ultrapassou_sublimite && (
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 dark:border-orange-400 rounded-r-lg animate-fade-in">
-                    <div className="flex items-start">
-                        <ShieldIcon className="w-6 h-6 text-orange-600 dark:text-orange-400 mr-3 mt-0.5" />
-                        <div>
-                            <h3 className="font-bold text-orange-800 dark:text-orange-200">Atenção: Sub-limite Estadual/Municipal Excedido</h3>
-                            <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
-                                O RBT12 da empresa ultrapassou R$ 3.600.000,00. O ICMS e o ISS <strong>não estão incluídos</strong> no cálculo do DAS acima e devem ser apurados e recolhidos separadamente em guias próprias (DAM/GARE), conforme a legislação estadual e municipal.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm space-y-3">
-                    <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-2">Dados da Empresa</h3>
-                     <div className="flex justify-between items-center text-sm">
-                         <span className="text-slate-500">CNAE:</span>
-                         <div className="flex items-center gap-2">
-                            <span className="font-semibold">{empresa.cnae}</span>
-                            <button onClick={handleValidateCnae} title="Validar CNAE com fonte oficial" className="btn-press text-slate-400 hover:text-sky-600 dark:hover:text-sky-400">
-                                <InfoIcon className="w-5 h-5" />
-                            </button>
-                         </div>
-                     </div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Anexo Base:</span><span className="font-semibold">{empresa.anexo === 'III_V' ? 'Fator R (III/V)' : `Anexo ${empresa.anexo}`}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Anexo Efetivo:</span><span className="font-semibold">Anexo {resumo.anexo_efetivo}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Notas cadastradas:</span><span className="font-semibold">{notas.length}</span></div>
-
-                     <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 pt-4 border-t dark:border-slate-700">RBT12 & Fator R (Apuração: {mesApuracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' })})</h3>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">RBT12:</span><span className="font-semibold">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Folha 12 Meses:</span><span className="font-semibold">R$ {resumo.folha_12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Fator R:</span><span className="font-semibold">{(resumo.fator_r * 100).toFixed(1)}%</span></div>
                     
-                     <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 pt-4 border-t dark:border-slate-700">Tributação Estimada</h3>
-                    <div className="flex justify-between text-sm"><span className="text-slate-500">Alíquota Nominal:</span><span className="font-semibold">{resumo.aliq_nom.toFixed(2)}%</span></div>
-                    <div className="flex justify-between font-bold"><span className="text-slate-500">Alíquota Efetiva:</span><span className="text-sky-600 dark:text-sky-400">{resumo.aliq_eff.toFixed(2)}%</span></div>
-                    <div className="flex justify-between font-bold py-1 border-t border-b border-slate-100 dark:border-slate-700 my-1">
-                         <span className="text-slate-700 dark:text-slate-200">DAS (Mês Apuração):</span>
-                         <span className="text-sky-600 dark:text-sky-400">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-slate-400"><span className="">DAS Estimado (12m):</span><span className="">R$ {resumo.das.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                 </div>
-
-                 <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm space-y-6">
-                    <div>
-                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Atualizar Folha 12 meses (Fator R)</h3>
-                        <form onSubmit={handleFolhaSubmit} className="flex items-center gap-2">
-                             <input
-                                type="text"
-                                value={folha12}
-                                onChange={(e) => setFolha12(e.target.value)}
-                                className="w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                            />
-                            <button type="submit" className="btn-press px-4 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700">Salvar</button>
-                        </form>
-                        {folhaSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400">{folhaSuccess}</p>}
-                    </div>
-                     <div>
-                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Importar Notas/Extrato</h3>
-                        <form>
-                            <label htmlFor="file-upload" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Importar Notas/Extrato
-                            </label>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                Arquivo CSV (data,valor) ou XML (NF-e) ou Extrato PDF
-                            </p>
-                            <input
-                                ref={fileInputRef}
-                                id="file-upload"
-                                type="file"
-                                accept=".csv,.xml,.pdf"
-                                onChange={handleFileChange}
-                                disabled={isLoading}
-                                className="mt-2 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-slate-700 dark:file:text-sky-300 dark:hover:file:bg-slate-600"
-                            />
-                        </form>
-                        {isLoading && <div className="mt-4"><LoadingSpinner /></div>}
-                        {importError && (
-                            <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-md">
-                                <p className="text-sm font-semibold text-red-700 dark:text-red-400 mb-1">Falhas na importação:</p>
-                                <ul className="list-disc list-inside text-xs text-red-600 dark:text-red-300 max-h-32 overflow-y-auto">
-                                    {importError.map((err, idx) => (
-                                        <li key={idx}>{err}</li>
-                                    ))}
-                                </ul>
+                    <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                        {allActivities.map((act, index) => (
+                            <div key={index} className="border-b border-slate-200 dark:border-slate-600 last:border-0 pb-4 last:pb-0">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                        {act.role === 'Principal' ? 'Principal' : 'Secundária'} - CNAE {act.cnae}
+                                    </span>
+                                    <span className="text-xs px-2 py-0.5 bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300 rounded-full">
+                                        Anexo {act.anexo}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="relative flex-grow">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">R$</span>
+                                        <input 
+                                            type="text"
+                                            value={faturamentoPorCnae[act.cnae] || ''}
+                                            onChange={(e) => handleCnaeRevenueChange(act.cnae, e.target.value)}
+                                            className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md text-right font-mono"
+                                            placeholder="0,00"
+                                        />
+                                    </div>
+                                    {/* Tax Configuration Checkboxes */}
+                                    <div className="flex flex-col gap-1">
+                                        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={configuracaoPorCnae[act.cnae]?.issRetido || false}
+                                                onChange={() => toggleTaxConfig(act.cnae, 'issRetido')}
+                                                className="rounded text-sky-600 focus:ring-sky-500"
+                                            />
+                                            Retenção ISS
+                                        </label>
+                                        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={configuracaoPorCnae[act.cnae]?.icmsSt || false}
+                                                onChange={() => toggleTaxConfig(act.cnae, 'icmsSt')}
+                                                className="rounded text-sky-600 focus:ring-sky-500"
+                                            />
+                                            ICMS ST
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
+                        ))}
+                        
+                        {/* Quick Add Secondary CNAE Section */}
+                        {isAddingCnae ? (
+                            <div className="bg-white dark:bg-slate-800 p-3 rounded border border-slate-300 dark:border-slate-500 animate-fade-in">
+                                <div className="flex gap-2 mb-2">
+                                    <input 
+                                        type="text" 
+                                        value={quickCnae} 
+                                        onChange={(e) => setQuickCnae(e.target.value)}
+                                        placeholder="CNAE Secundário" 
+                                        className="flex-grow p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-sm"
+                                    />
+                                    <select 
+                                        value={quickAnexo} 
+                                        onChange={(e) => setQuickAnexo(e.target.value as SimplesNacionalAnexo)}
+                                        className="w-24 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-sm"
+                                    >
+                                        <option value="I">An. I</option>
+                                        <option value="II">An. II</option>
+                                        <option value="III">An. III</option>
+                                        <option value="IV">An. IV</option>
+                                        <option value="V">An. V</option>
+                                        <option value="III_V">III/V</option>
+                                    </select>
+                                </div>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={() => setIsAddingCnae(false)} className="text-xs text-slate-500 hover:underline">Cancelar</button>
+                                    <button 
+                                        onClick={() => handleQuickAddCnae()} 
+                                        className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                                        disabled={!quickCnae.trim()}
+                                    >
+                                        Adicionar
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button 
+                                onClick={() => setIsAddingCnae(true)}
+                                className="w-full text-xs text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/20 py-1 rounded border border-dashed border-sky-300 flex items-center justify-center gap-1"
+                            >
+                                <PlusIcon className="w-3 h-3" />
+                                Adicionar CNAE Secundário
+                            </button>
                         )}
-                        {importSuccess && <p className="mt-2 text-sm text-green-600 dark:text-green-400 font-medium">{importSuccess}</p>}
-                    </div>
-                 </div>
-            </div>
-            
-             {/* NOVA SEÇÃO: Análise de Impostos por CNAE */}
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm animate-fade-in">
-                <div className="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400">
-                            Análise de Impostos do CNAE {empresa.cnae}
-                        </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                            Detalhes dos principais tributos incidentes sobre a atividade principal da empresa.
-                        </p>
-                    </div>
-                     {!taxDetails && !isTaxAnalysisLoading && (
+                        
+                        <div className="flex justify-between items-center pt-2 border-t border-slate-300 dark:border-slate-600">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">Total do Mês:</span>
+                            <span className="font-mono font-bold text-lg text-slate-900 dark:text-white">R$ {totalDiscriminadoString}</span>
+                        </div>
+                        
                          <button 
-                            onClick={handleAnalyzeTax}
-                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors"
-                        >
-                            <DocumentTextIcon className="w-4 h-4" />
-                            Gerar Análise Tributária (IA)
-                        </button>
-                    )}
+                             onClick={() => handleSaveMesVigenteClick()}
+                             className="w-full mt-2 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 transition-colors flex justify-center items-center gap-2"
+                         >
+                             <SaveIcon className="w-4 h-4" />
+                             Salvar Vigente
+                         </button>
+                         {manualSuccess && <p className="text-xs text-green-600 dark:text-green-400 text-center">{manualSuccess}</p>}
+                    </div>
+
+                    <div className="mt-6">
+                        <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-3">Histórico Manual</h4>
+                        <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600">
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Preenchimento em Lote (Últimos 12 meses)</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text"
+                                    value={valorRecorrente}
+                                    onChange={handleValorRecorrenteChange}
+                                    placeholder="Valor Recorrente (R$)"
+                                    className="flex-grow p-2 text-sm border rounded-md dark:bg-slate-800 dark:border-slate-600"
+                                />
+                                <button 
+                                    onClick={handleAplicarRecorrente}
+                                    className="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-xs font-bold hover:bg-slate-300"
+                                >
+                                    Aplicar a Todos
+                                </button>
+                            </div>
+                        </div>
+                        <form onSubmit={handleManualFaturamentoSubmit} className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                            {getPeriodoManual(mesApuracao).map(date => {
+                                const mesChave = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+                                return (
+                                    <div key={mesChave} className="flex items-center justify-between text-sm">
+                                        <span className="text-slate-600 dark:text-slate-400 w-24">
+                                            {date.toLocaleString('pt-BR', { month: 'short', year: 'numeric' })}:
+                                        </span>
+                                        <input
+                                            type="text"
+                                            value={manualFaturamento[mesChave] || ''}
+                                            onChange={(e) => handleManualFaturamentoChange(mesChave, e.target.value)}
+                                            className="flex-grow bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1 text-right font-mono"
+                                            placeholder="0,00"
+                                        />
+                                    </div>
+                                );
+                            })}
+                            <button type="submit" className="w-full mt-2 bg-sky-100 text-sky-700 py-1 rounded hover:bg-sky-200 text-sm font-semibold">
+                                Salvar Histórico Completo
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
-                {isTaxAnalysisLoading && (
-                    <div className="flex flex-col items-center justify-center py-8">
-                        <LoadingSpinner />
-                        <p className="mt-2 text-sm text-slate-500">Consultando bases legais e alíquotas com IA...</p>
+                {/* ChatBot Section */}
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm flex flex-col h-full">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <InfoIcon className="w-5 h-5 text-sky-500" />
+                        Assistente IA do Simples
+                    </h3>
+                    <div className="flex-grow overflow-y-auto mb-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 border border-slate-100 dark:border-slate-700 min-h-[200px]">
+                        {chatResult ? (
+                            <div className="prose prose-sm prose-slate dark:prose-invert">
+                                <FormattedText text={chatResult.text} />
+                            </div>
+                        ) : (
+                            <p className="text-slate-400 text-sm text-center mt-10">
+                                Olá! Tenho o contexto da sua empresa.<br/>Pergunte-me sobre o cálculo do DAS, fator R ou mudança de faixa.
+                            </p>
+                        )}
+                        {isChatLoading && <LoadingSpinner />}
                     </div>
-                )}
-
-                {taxDetails && (
-                    <div className="overflow-x-auto animate-fade-in">
-                        <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                            <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                                <tr>
-                                    <th scope="col" className="px-4 py-3 rounded-tl-lg">Tributo</th>
-                                    <th scope="col" className="px-4 py-3">Incidência</th>
-                                    <th scope="col" className="px-4 py-3">Alíquota Média (Est.)</th>
-                                    <th scope="col" className="px-4 py-3">Base Legal</th>
-                                    <th scope="col" className="px-4 py-3 rounded-tr-lg">Observação</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {taxDetails.map((item, index) => (
-                                    <tr key={index} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                        <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
-                                            {item.tributo}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold 
-                                                ${item.incidencia.toLowerCase().includes('federal') ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' : 
-                                                  item.incidencia.toLowerCase().includes('estadual') ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300' : 
-                                                  'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300'}`}>
-                                                {item.incidencia}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{item.aliquotaMedia}</td>
-                                        <td className="px-4 py-3 text-xs font-mono text-slate-500 dark:text-slate-400">{item.baseLegal}</td>
-                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{item.observacao}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <p className="mt-3 text-xs text-slate-400 italic text-right">
-                            * As alíquotas e bases legais são geradas por IA e servem como referência inicial. Consulte a legislação vigente.
-                        </p>
-                    </div>
-                )}
+                    <form onSubmit={handleChatSubmit} className="relative">
+                        <input 
+                            type="text" 
+                            value={chatPergunta}
+                            onChange={(e) => setChatPergunta(e.target.value)}
+                            placeholder="Ex: Por que minha alíquota aumentou?"
+                            className="w-full pl-4 pr-12 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                        />
+                        <button 
+                            type="submit"
+                            disabled={!chatPergunta.trim() || isChatLoading}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-sky-600 text-white rounded-md hover:bg-sky-700 disabled:opacity-50"
+                        >
+                            <ArrowLeftIcon className="w-4 h-4 rotate-180" />
+                        </button>
+                    </form>
+                </div>
             </div>
             
-            {/* Seção de Histórico de Apurações Salvas */}
+            {/* Histórico de Apurações (Table View) */}
             {empresa.historicoCalculos && empresa.historicoCalculos.length > 0 && (
-                <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                    <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Histórico de Apurações Salvas</h3>
+                <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mt-6">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                        <HistoryIcon className="w-5 h-5 text-sky-600" />
+                        Histórico de Apurações Salvas
+                    </h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
                             <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
                                 <tr>
                                     <th className="px-4 py-2">Mês Ref.</th>
-                                    <th className="px-4 py-2">Anexo</th>
-                                    <th className="px-4 py-2 text-right">RBT12</th>
-                                    <th className="px-4 py-2 text-center">Aliq. Efetiva</th>
-                                    <th className="px-4 py-2 text-center">Fator R</th>
-                                    <th className="px-4 py-2 text-right">Valor DAS</th>
+                                    <th className="px-4 py-2 text-right">RBT12 (R$)</th>
+                                    <th className="px-4 py-2 text-center">Anexo</th>
+                                    <th className="px-4 py-2 text-center">Alíquota Ef.</th>
+                                    <th className="px-4 py-2 text-right">DAS (R$)</th>
                                     <th className="px-4 py-2 text-center">Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {empresa.historicoCalculos.map((calc) => (
-                                    <tr key={calc.id} className="border-b dark:border-slate-700">
-                                        <td className="px-4 py-2 font-medium">{calc.mesReferencia}</td>
-                                        <td className="px-4 py-2"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-semibold">{calc.anexo_efetivo || '-'}</span></td>
-                                        <td className="px-4 py-2 text-right">R$ {calc.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        <td className="px-4 py-2 text-center">{calc.aliq_eff.toFixed(2)}%</td>
-                                        <td className="px-4 py-2 text-center">{(calc.fator_r * 100).toFixed(2)}%</td>
-                                        <td className="px-4 py-2 text-right font-bold text-sky-600">R$ {calc.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        <td className="px-4 py-2 text-center">
+                                {empresa.historicoCalculos.map((hist) => (
+                                    <tr key={hist.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                        <td className="px-4 py-2 font-medium">{hist.mesReferencia}</td>
+                                        <td className="px-4 py-2 text-right">
+                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(hist.rbt12)}
+                                        </td>
+                                        <td className="px-4 py-2 text-center">{hist.anexo_efetivo}</td>
+                                        <td className="px-4 py-2 text-center">{hist.aliq_eff.toFixed(2)}%</td>
+                                        <td className="px-4 py-2 text-right font-bold text-slate-700 dark:text-slate-200">
+                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(hist.das_mensal)}
+                                        </td>
+                                        <td className="px-4 py-2 text-center flex justify-center gap-2">
                                             <button 
-                                                onClick={() => handleDeleteCalculo(calc.id)}
-                                                className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
-                                                title="Excluir apuração salva"
+                                                onClick={() => setSelectedHistorico(hist)}
+                                                className="p-1 text-sky-600 hover:bg-sky-50 rounded dark:hover:bg-sky-900/20"
+                                                title="Ver Detalhes"
+                                            >
+                                                <EyeIcon className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeleteCalculo(hist.id)}
+                                                className="p-1 text-red-500 hover:bg-red-50 rounded dark:hover:bg-red-900/20"
+                                                title="Excluir do Histórico"
                                             >
                                                 <TrashIcon className="w-4 h-4" />
                                             </button>
@@ -1107,168 +1579,43 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa
                 </div>
             )}
 
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Faturamento Manual (Últimos 12 Meses)</h3>
-                    <button 
-                         type="button"
-                         onClick={handleManualFaturamentoSubmit}
-                         className="btn-press px-4 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-sm flex items-center gap-2"
-                    >
-                        <SaveIcon className="w-4 h-4" />
-                        Salvar Faturamento Manual
-                    </button>
-                </div>
-                
-                <div className="mb-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex flex-col sm:flex-row items-end gap-4">
-                     <div className="w-full sm:w-auto">
-                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Preenchimento Rápido (Valor Único)</label>
-                        <div className="relative">
-                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">R$</span>
-                            <input 
-                                type="text" 
-                                value={valorRecorrente}
-                                onChange={handleValorRecorrenteChange}
-                                placeholder="0,00"
-                                className="pl-8 pr-2 py-2 w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                            />
-                        </div>
-                     </div>
-                     <button 
-                        type="button"
-                        onClick={handleAplicarRecorrente}
-                        className="btn-press px-4 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold rounded-md hover:bg-slate-300 dark:hover:bg-slate-500 text-sm"
-                     >
-                        Aplicar a todos os meses
-                     </button>
-                </div>
+            <EditEmpresaModal 
+                empresa={empresa}
+                isOpen={isEditModalOpen}
+                onClose={() => setIsEditModalOpen(false)}
+                onSave={(data) => {
+                    onUpdateEmpresa(empresa.id, data);
+                    setIsEditModalOpen(false);
+                }}
+            />
 
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                    Preencha os campos abaixo para usar um faturamento específico no cálculo do RBT12. Se um campo estiver vazio, o sistema usará o valor das notas importadas para aquele mês.
-                </p>
-                <form onSubmit={handleManualFaturamentoSubmit}>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        {periodoManual.map(mes => {
-                            const mesChave = `${mes.getFullYear()}-${(mes.getMonth() + 1).toString().padStart(2, '0')}`;
-                            return (
-                                <div key={mesChave}>
-                                    <label htmlFor={`fat-${mesChave}`} className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">
-                                        {mes.toLocaleString('pt-BR', { month: 'short', year: 'numeric' })}
-                                    </label>
-                                    <div className="relative">
-                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold pointer-events-none">R$</span>
-                                        <input
-                                            type="text"
-                                            id={`fat-${mesChave}`}
-                                            value={manualFaturamento[mesChave] || ''}
-                                            onChange={e => handleManualFaturamentoChange(mesChave, e.target.value)}
-                                            placeholder="0,00"
-                                            className="w-full pl-8 pr-2 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-right font-mono"
-                                        />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                    {manualSuccess && <p className="mt-4 text-sm text-green-600 dark:text-green-400 text-right font-medium">{manualSuccess}</p>}
-                </form>
-            </div>
-
-            {/* NOVA SEÇÃO: TABELA DO ANEXO */}
-            <TabelaAnexo />
-
-            <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Histórico Real de Apuração (12 meses)</h3>
-                {resumo.historico_simulado.length > 0 ? (
-                    <div className="relative h-80">
-                       <SimpleChart 
-                            type="bar" 
-                            options={chartOptions} 
-                            data={chartData}
-                            key={JSON.stringify(chartData)} 
-                        />
-                        <p className="mt-2 text-xs text-center text-slate-400">
-                            * O gráfico acima simula o cálculo do DAS mês a mês, considerando o RBT12 e a alíquota efetiva vigentes em cada competência histórica.
-                        </p>
-                    </div>
-                ) : (
-                    <p className="text-sm text-center text-slate-500 dark:text-slate-400 py-8">Nenhuma nota cadastrada para exibir o gráfico.</p>
-                )}
-            </div>
-            
-             <div className="p-6 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
-                <h3 className="text-lg font-bold text-sky-700 dark:text-sky-400 mb-4">Assistente Tributário IA</h3>
-                <form onSubmit={handleChatSubmit}>
-                    <textarea 
-                        value={chatPergunta}
-                        onChange={(e) => setChatPergunta(e.target.value)}
-                        placeholder="Ex: Explique por que o DAS estimado está nesse valor e se há risco de mudança de faixa."
-                        className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        rows={3}
-                        disabled={isChatLoading}
-                    />
-                    <div className="text-right mt-2">
-                         <button type="submit" className="btn-press px-6 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700 disabled:opacity-50" disabled={isChatLoading}>
-                            {isChatLoading ? 'Analisando...' : 'Perguntar'}
-                        </button>
-                    </div>
-                </form>
-                {isChatLoading && <div className="mt-4"><LoadingSpinner /></div>}
-                {chatResult && (
-                    <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                        <div className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-700 dark:text-slate-200">
-                           <FormattedText text={chatResult.text} />
-                        </div>
-                         {chatResult.sources && chatResult.sources.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700">
-                                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Fontes Consultadas:</h4>
-                                <ul className="mt-2 space-y-1 text-xs">
-                                    {chatResult.sources.map((source, index) => (
-                                        <li key={index}>
-                                            <a 
-                                                href={source.web.uri} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="text-sky-600 dark:text-sky-400 hover:underline break-all"
-                                            >
-                                                {source.web.title || source.web.uri}
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-
+            {/* CNAE Validation Modal */}
             {isCnaeModalOpen && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsCnaeModalOpen(false)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center p-4 border-b dark:border-slate-700">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Descrição Oficial do CNAE: {empresa.cnae}</h3>
-                             <button onClick={() => setIsCnaeModalOpen(false)} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
-                                <CloseIcon className="w-5 h-5" />
+                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsCnaeModalOpen(false)}>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Validação de CNAE: {cnaeToValidate}</h3>
+                            <button onClick={() => setIsCnaeModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <CloseIcon className="w-6 h-6" />
                             </button>
                         </div>
-                        <div className="p-6 overflow-y-auto">
-                            {isCnaeLoading && <LoadingSpinner />}
-                            {cnaeError && <p className="text-red-600 dark:text-red-400">{cnaeError}</p>}
-                            {cnaeValidationResult && (
-                                <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
-                                    <FormattedText text={cnaeValidationResult.text} />
-                                </div>
-                            )}
-                        </div>
+                        {isCnaeLoading ? (
+                            <LoadingSpinner />
+                        ) : cnaeValidationResult ? (
+                            <div className="prose prose-slate dark:prose-invert max-w-none">
+                                <FormattedText text={cnaeValidationResult.text} />
+                            </div>
+                        ) : cnaeError ? (
+                            <p className="text-red-500">{cnaeError}</p>
+                        ) : null}
                     </div>
-                </div>
+                 </div>
             )}
             
-            <EditEmpresaModal 
-                empresa={empresa} 
-                isOpen={isEditModalOpen} 
-                onClose={() => setIsEditModalOpen(false)} 
-                onSave={(data) => onUpdateEmpresa(empresa.id, data)} 
+            <HistoryDetailsModal 
+                data={selectedHistorico}
+                isOpen={!!selectedHistorico}
+                onClose={() => setSelectedHistorico(null)}
             />
         </div>
     );

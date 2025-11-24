@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, laz
 import Header from './components/Header';
 import Footer from './components/Footer';
 import LoadingSpinner from './components/LoadingSpinner';
+import LoginScreen from './components/LoginScreen';
 import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
 import FavoritesSidebar from './components/FavoritesSidebar';
@@ -10,10 +11,12 @@ import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
 import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa';
 import InitialStateDisplay from './components/InitialStateDisplay';
 import SimilarServicesDisplay from './components/SimilarServicesDisplay';
+import AccessLogsModal from './components/AccessLogsModal';
 import { PopularSuggestions } from './components/PopularSuggestions';
-import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo, SimplesNacionalImportResult } from './types';
+import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo, SimplesNacionalImportResult, SimplesNacionalAtividade, User } from './types';
 import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSuggestions } from './services/geminiService';
 import * as simplesService from './services/simplesNacionalService';
+import * as authService from './services/authService';
 import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon } from './components/Icons';
 
 // Lazy load heavy components
@@ -22,6 +25,7 @@ const SimplesNacionalClienteView = lazy(() => import('./components/SimplesNacion
 const ResultsDisplay = lazy(() => import('./components/ResultsDisplay'));
 const ComparisonDisplay = lazy(() => import('./components/ComparisonDisplay'));
 const ReformaResultDisplay = lazy(() => import('./components/ReformaResultDisplay'));
+const LucroPresumidoRealDashboard = lazy(() => import('./components/LucroPresumidoRealDashboard'));
 
 const searchDescriptions: Record<SearchType, string> = {
     [SearchType.CFOP]: "Consulte códigos de operação e entenda a aplicação e tributação.",
@@ -29,6 +33,7 @@ const searchDescriptions: Record<SearchType, string> = {
     [SearchType.SERVICO]: "Análise de retenção de ISS, local de incidência e alíquotas.",
     [SearchType.REFORMA_TRIBUTARIA]: "Simule o impacto da Reforma Tributária (IBS/CBS) para sua atividade.",
     [SearchType.SIMPLES_NACIONAL]: "Gestão de empresas do Simples, cálculo de DAS e Fator R.",
+    [SearchType.LUCRO_PRESUMIDO_REAL]: "Simulador comparativo de carga tributária entre regimes.",
 };
 
 const App: React.FC = () => {
@@ -43,6 +48,10 @@ const App: React.FC = () => {
     document.documentElement.classList.remove('dark');
     return 'light';
   });
+
+  // Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
 
   const [searchType, setSearchType] = useState<SearchType>(SearchType.CFOP);
   const [mode, setMode] = useState<'single' | 'compare'>('single');
@@ -91,6 +100,9 @@ const App: React.FC = () => {
   useEffect(() => {
     // This effect runs once on component mount
     try {
+        const user = authService.getCurrentUser();
+        setCurrentUser(user);
+
         const storedFavorites = localStorage.getItem('fiscal-consultant-favorites');
         if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
 
@@ -128,6 +140,16 @@ const App: React.FC = () => {
   
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  // Auth Handlers
+  const handleLoginSuccess = (user: User) => {
+      setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+      authService.logout();
+      setCurrentUser(null);
   };
 
   const saveFavorites = (newFavorites: FavoriteItem[]) => {
@@ -267,11 +289,13 @@ const App: React.FC = () => {
   
   const handleTypeChange = (newType: SearchType) => {
     setSearchType(newType);
-    if (newType !== SearchType.SIMPLES_NACIONAL) {
+    if (newType !== SearchType.SIMPLES_NACIONAL && newType !== SearchType.LUCRO_PRESUMIDO_REAL) {
         clearSearch();
     } else {
-        setSimplesView('dashboard');
-        setSelectedSimplesEmpresaId(null);
+        if(newType === SearchType.SIMPLES_NACIONAL) {
+            setSimplesView('dashboard');
+            setSelectedSimplesEmpresaId(null);
+        }
     }
   };
   
@@ -389,10 +413,14 @@ const App: React.FC = () => {
   };
 
     // --- Simples Nacional Handlers ---
-    const handleSaveSimplesEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto') => {
-        const newEmpresa = simplesService.saveEmpresa(nome, cnpj, cnae, anexo);
+    const handleSaveSimplesEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => {
+        const newEmpresa = simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias);
         setSimplesEmpresas(prev => [...prev, newEmpresa]);
         setSimplesView('dashboard');
+        
+        if (currentUser && currentUser.role === 'admin') {
+            authService.logAction(currentUser, `Criou empresa: ${nome}`);
+        }
     };
     
     const handleUpdateSimplesEmpresa = (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
@@ -406,12 +434,20 @@ const App: React.FC = () => {
     const handleSelectSimplesEmpresa = (id: string, view: 'detalhe' | 'cliente' = 'detalhe') => {
         setSelectedSimplesEmpresaId(id);
         setSimplesView(view);
+        
+        const empresa = simplesEmpresas.find(e => e.id === id);
+        if (currentUser && empresa) {
+            authService.logAction(currentUser, `Acessou empresa: ${empresa.nome} (${view})`);
+        }
     };
 
     const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
         try {
             const result = await simplesService.parseAndSaveNotas(empresaId, file);
             setSimplesNotas(simplesService.getAllNotas());
+            if (result.successCount > 0) {
+                setSimplesEmpresas(simplesService.getEmpresas());
+            }
             return result;
         } catch (e: any) {
             return { successCount: 0, failCount: 0, errors: [e.message || 'Erro desconhecido ao processar o arquivo.'] };
@@ -444,7 +480,7 @@ const App: React.FC = () => {
     return [];
   }, [result, comparisonResult]);
 
-  const searchTypes = [SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA, SearchType.SIMPLES_NACIONAL];
+  const searchTypes = [SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL];
 
   const getButtonText = () => {
     if (isLoading) return 'Analisando...';
@@ -499,8 +535,17 @@ const App: React.FC = () => {
                     empresas={simplesEmpresas} 
                     notas={simplesNotas}
                     onSelectEmpresa={handleSelectSimplesEmpresa} 
-                    onAddNew={() => setSimplesView('nova')} 
+                    onAddNew={() => setSimplesView('nova')}
+                    currentUser={currentUser} 
                 />;
+    }
+
+    if (searchType === SearchType.LUCRO_PRESUMIDO_REAL) {
+        return (
+            <Suspense fallback={<LoadingSpinner />}>
+                <LucroPresumidoRealDashboard currentUser={currentUser} />
+            </Suspense>
+        );
     }
 
     return (
@@ -517,6 +562,7 @@ const App: React.FC = () => {
         </div>
         
         <form onSubmit={handleFormSubmit} className="space-y-4">
+            {/* Form Content */}
             {searchType === SearchType.REFORMA_TRIBUTARIA ? (
                 <>
                     <div className={`grid grid-cols-1 ${mode === 'compare' ? 'md:grid-cols-2' : ''} gap-4`}>
@@ -618,6 +664,7 @@ const App: React.FC = () => {
                 </div>
             )}
 
+            {/* Similar Filter Sections */}
             {searchType === SearchType.SERVICO && (
                 <details className="p-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
                     <summary className="font-semibold text-slate-700 dark:text-slate-300 cursor-pointer flex justify-between items-center">
@@ -674,6 +721,7 @@ const App: React.FC = () => {
                                             placeholder="0.00"
                                             className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
                                             step="0.01"
+                                            min="0"
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
                                     </div>
@@ -685,11 +733,13 @@ const App: React.FC = () => {
                                     <div className="relative">
                                         <LocationIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 dark:text-blue-400 pointer-events-none" />
                                         <input
-                                            type="text"
+                                            type="number"
                                             value={aliquotaIcms}
                                             onChange={(e) => setAliquotaIcms(e.target.value)}
                                             placeholder="0.00"
                                             className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            step="0.01"
+                                            min="0"
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
                                     </div>
@@ -707,6 +757,7 @@ const App: React.FC = () => {
                                             placeholder="0.00"
                                             className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
                                             step="0.01"
+                                            min="0"
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
                                     </div>
@@ -769,6 +820,20 @@ const App: React.FC = () => {
     );
   }
 
+  // If not authenticated, show login screen
+  if (!currentUser) {
+      return (
+        <>
+          <LoginScreen onLoginSuccess={handleLoginSuccess} />
+          <div className="fixed bottom-4 right-4 flex gap-2">
+             <button onClick={toggleTheme} className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg">
+                {theme === 'light' ? '🌙' : '☀️'}
+             </button>
+          </div>
+        </>
+      );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors font-sans">
         <div className="container mx-auto px-4 max-w-7xl">
@@ -777,6 +842,9 @@ const App: React.FC = () => {
                 toggleTheme={toggleTheme} 
                 onMenuClick={() => setIsSidebarOpen(true)} 
                 description={searchDescriptions[searchType]}
+                user={currentUser}
+                onLogout={handleLogout}
+                onShowLogs={currentUser.role === 'admin' ? () => setIsLogsModalOpen(true) : undefined}
             />
             
             <div className="flex flex-col md:flex-row gap-6">
@@ -807,6 +875,9 @@ const App: React.FC = () => {
             </div>
             <Footer />
         </div>
+        
+        {/* Admin Access Logs Modal */}
+        <AccessLogsModal isOpen={isLogsModalOpen} onClose={() => setIsLogsModalOpen(false)} />
     </div>
   );
 };

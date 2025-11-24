@@ -1,7 +1,12 @@
-import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult } from '../types';
-import { extractInvoiceDataFromPdf } from './geminiService';
 
-// ----------------- TABELAS SIMPLES – ANEXOS I–V (2025) -----------------
+import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo } from '../types';
+import { extractInvoiceDataFromPdf, extractPgdasDataFromPdf } from './geminiService';
+
+// ----------------- CONSTANTES E LOCALSTORAGE -----------------
+
+const STORAGE_KEY_EMPRESAS = 'simples_nacional_empresas';
+const STORAGE_KEY_NOTAS = 'simples_nacional_notas';
+
 export const ANEXOS_TABELAS: Record<'I' | 'II' | 'III' | 'IV' | 'V', { limite: number; aliquota: number; parcela: number }[]> = {
     "I": [  // Comércio
         {"limite": 180000.00,  "aliquota": 4.0,   "parcela": 0.0},
@@ -45,24 +50,196 @@ export const ANEXOS_TABELAS: Record<'I' | 'II' | 'III' | 'IV' | 'V', { limite: n
     ],
 };
 
-// Sub-limite para recolhimento de ICMS/ISS dentro do Simples (R$ 3.600.000,00)
+export const REPARTICAO_IMPOSTOS: Record<string, Array<Record<string, number>>> = {
+    "I": [ // Comércio
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS/PASEP": 2.76, "CPP": 41.50, "ICMS": 34.00 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS/PASEP": 2.76, "CPP": 41.50, "ICMS": 34.00 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS/PASEP": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS/PASEP": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS/PASEP": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        { "IRPJ": 13.50, "CSLL": 10.00, "COFINS": 28.27, "PIS/PASEP": 6.13, "CPP": 42.10, "ICMS": 0.00 },
+    ],
+    "II": [ // Indústria
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS/PASEP": 2.49, "CPP": 37.50, "ICMS": 32.00, "IPI": 7.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS/PASEP": 2.49, "CPP": 37.50, "ICMS": 32.00, "IPI": 7.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS/PASEP": 2.49, "CPP": 37.50, "ICMS": 32.00, "IPI": 7.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS/PASEP": 2.49, "CPP": 37.50, "ICMS": 32.00, "IPI": 7.50 },
+        { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS/PASEP": 2.49, "CPP": 37.50, "ICMS": 32.00, "IPI": 7.50 },
+        { "IRPJ": 8.50, "CSLL": 7.50, "COFINS": 20.96, "PIS/PASEP": 4.54, "CPP": 23.50, "ICMS": 0.00, "IPI": 35.00 },
+    ],
+    "III": [ // Serviços (Locação, Contabilidade, etc)
+        { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS/PASEP": 2.78, "CPP": 43.40, "ISS": 33.50 },
+        { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 14.05, "PIS/PASEP": 3.05, "CPP": 43.40, "ISS": 32.00 },
+        { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS/PASEP": 2.96, "CPP": 43.40, "ISS": 32.50 },
+        { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS/PASEP": 2.96, "CPP": 43.40, "ISS": 32.50 },
+        { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS/PASEP": 2.78, "CPP": 43.40, "ISS": 33.50 },
+        { "IRPJ": 35.00, "CSLL": 15.00, "COFINS": 16.03, "PIS/PASEP": 3.47, "CPP": 30.50, "ISS": 0.00 },
+    ],
+    "IV": [ // Serviços (Advocacia, Construção, etc - CPP recolhido fora)
+        { "IRPJ": 18.80, "CSLL": 15.20, "COFINS": 17.67, "PIS/PASEP": 3.83, "ISS": 44.50, "CPP": 0.00 },
+        { "IRPJ": 19.80, "CSLL": 15.20, "COFINS": 20.55, "PIS/PASEP": 4.45, "ISS": 40.00, "CPP": 0.00 },
+        { "IRPJ": 20.80, "CSLL": 15.20, "COFINS": 19.73, "PIS/PASEP": 4.27, "ISS": 40.00, "CPP": 0.00 },
+        { "IRPJ": 17.80, "CSLL": 19.20, "COFINS": 18.90, "PIS/PASEP": 4.10, "ISS": 40.00, "CPP": 0.00 },
+        { "IRPJ": 18.80, "CSLL": 19.20, "COFINS": 18.08, "PIS/PASEP": 3.92, "ISS": 40.00, "CPP": 0.00 },
+        { "IRPJ": 53.50, "CSLL": 21.50, "COFINS": 20.55, "PIS/PASEP": 4.45, "ISS": 0.00, "CPP": 0.00 },
+    ],
+    "V": [ // Serviços Especiais
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 33.75, "ICMS": 14.92 },
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 33.75 },
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 33.75 },
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 33.75 },
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 33.75 },
+        { "IRPJ": 5.50, "CSLL": 3.00, "COFINS": 11.49, "PIS/PASEP": 2.49, "CPP": 28.85, "ISS": 0.00 },
+    ]
+};
+
 const SUBLIMITE_ESTADUAL_MUNICIPAL = 3600000;
 
-// ----------------- CÁLCULOS -----------------
+// ----------------- PERSISTÊNCIA (LocalStorage) -----------------
 
-export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof ANEXOS_TABELAS): { nom: number; eff: number } => {
+export const getEmpresas = (): SimplesNacionalEmpresa[] => {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY_EMPRESAS);
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        console.error('Erro ao carregar empresas', e);
+        return [];
+    }
+};
+
+export const saveEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]): SimplesNacionalEmpresa => {
+    const empresas = getEmpresas();
+    
+    // Sugestão automática básica se 'auto' for selecionado
+    let finalAnexo: SimplesNacionalAnexo = 'III'; // Default seguro
+    if (anexo === 'auto') {
+        finalAnexo = sugerirAnexoPorCnae(cnae);
+    } else {
+        finalAnexo = anexo;
+    }
+
+    const newEmpresa: SimplesNacionalEmpresa = {
+        id: crypto.randomUUID(),
+        nome,
+        cnpj,
+        cnae,
+        anexo: finalAnexo,
+        folha12: 0,
+        atividadesSecundarias: atividadesSecundarias || []
+    };
+    
+    empresas.push(newEmpresa);
+    localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
+    return newEmpresa;
+};
+
+export const updateEmpresa = (id: string, data: Partial<SimplesNacionalEmpresa>): SimplesNacionalEmpresa | null => {
+    const empresas = getEmpresas();
+    const index = empresas.findIndex(e => e.id === id);
+    if (index === -1) return null;
+
+    const updated = { ...empresas[index], ...data };
+    empresas[index] = updated;
+    localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
+    return updated;
+};
+
+export const getEmpresaById = (id: string): SimplesNacionalEmpresa | undefined => {
+    const empresas = getEmpresas();
+    return empresas.find(e => e.id === id);
+};
+
+export const getAllNotas = (): Record<string, SimplesNacionalNota[]> => {
+    try {
+        const data = localStorage.getItem(STORAGE_KEY_NOTAS);
+        return data ? JSON.parse(data) : {};
+    } catch (e) {
+        console.error('Erro ao carregar notas', e);
+        return {};
+    }
+};
+
+export const getNotasByEmpresa = (empresaId: string): SimplesNacionalNota[] => {
+    const allNotas = getAllNotas();
+    return allNotas[empresaId] || [];
+};
+
+export const saveNotas = (notas: SimplesNacionalNota[]) => {
+    const allNotas = getAllNotas();
+    if (notas.length === 0) return;
+    
+    const empresaId = notas[0].empresaId;
+    const existing = allNotas[empresaId] || [];
+    
+    // Evitar duplicatas exatas
+    allNotas[empresaId] = [...existing, ...notas];
+    
+    localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(allNotas));
+};
+
+export const updateFolha12 = (empresaId: string, folha12: number): SimplesNacionalEmpresa | null => {
+    return updateEmpresa(empresaId, { folha12 });
+};
+
+export const saveFaturamentoManual = (empresaId: string, faturamento: { [key: string]: number }): SimplesNacionalEmpresa | null => {
+    return updateEmpresa(empresaId, { faturamentoManual: faturamento });
+};
+
+export const saveHistoricoCalculo = (empresaId: string, resumo: SimplesNacionalResumo, mesApuracao: Date): SimplesNacionalEmpresa | null => {
+    const empresa = getEmpresaById(empresaId);
+    if (!empresa) return null;
+
+    const mesReferencia = mesApuracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
+    
+    const novoCalculo: SimplesHistoricoCalculo = {
+        id: crypto.randomUUID(),
+        dataCalculo: Date.now(),
+        mesReferencia: mesReferencia,
+        rbt12: resumo.rbt12,
+        aliq_eff: resumo.aliq_eff,
+        fator_r: resumo.fator_r,
+        das_mensal: resumo.das_mensal,
+        anexo_efetivo: `Anexo ${resumo.anexo_efetivo}`
+    };
+
+    // Remove cálculos anteriores para o mesmo mês de referência para evitar duplicação
+    const historicoAtual = empresa.historicoCalculos ? empresa.historicoCalculos.filter(h => h.mesReferencia !== mesReferencia) : [];
+    
+    return updateEmpresa(empresaId, { historicoCalculos: [novoCalculo, ...historicoAtual] });
+};
+
+
+// ----------------- UTILITÁRIOS E CÁLCULOS -----------------
+
+export const sugerirAnexoPorCnae = (cnae: string): SimplesNacionalAnexo => {
+    const cleanCnae = cnae.replace(/\D/g, '');
+    
+    if (cleanCnae.startsWith('47')) return 'I'; // Comércio Varejista
+    if (cleanCnae.startsWith('46')) return 'I'; // Comércio Atacadista
+    if (cleanCnae.startsWith('10') || cleanCnae.startsWith('25') || cleanCnae.startsWith('31')) return 'II'; // Indústrias comuns
+    if (cleanCnae.startsWith('620')) return 'III_V'; // TI (Fator R)
+    if (cleanCnae.startsWith('692')) return 'III'; // Contabilidade
+    if (cleanCnae.startsWith('691')) return 'IV'; // Advocacia
+    if (cleanCnae.startsWith('412')) return 'IV'; // Construção Civil
+    if (cleanCnae.startsWith('812')) return 'IV'; // Limpeza
+    
+    return 'III'; // Default mais comum para serviços
+};
+
+export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof ANEXOS_TABELAS): { nom: number; eff: number; faixaIndex: number } => {
     if (receita12 <= 0) {
-        // Retorna a alíquota da primeira faixa para referência, mas eff é 0 se não houver RBT12? 
-        // Na prática, se é 0, cai na primeira faixa.
         const primeiraFaixa = ANEXOS_TABELAS[anexo][0];
-        return { nom: primeiraFaixa.aliquota, eff: primeiraFaixa.aliquota }; 
+        return { nom: primeiraFaixa.aliquota, eff: primeiraFaixa.aliquota, faixaIndex: 0 }; 
     }
 
     const tabela = ANEXOS_TABELAS[anexo];
     let faixaEscolhida = tabela[tabela.length - 1];
-    for (const f of tabela) {
-        if (receita12 <= f.limite) {
-            faixaEscolhida = f;
+    let faixaIndex = tabela.length - 1;
+
+    for (let i = 0; i < tabela.length; i++) {
+        if (receita12 <= tabela[i].limite) {
+            faixaEscolhida = tabela[i];
+            faixaIndex = i;
             break;
         }
     }
@@ -71,15 +248,11 @@ export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof A
     const parcela = faixaEscolhida.parcela;
     const aliq_eff = ((receita12 * (aliquota_nom / 100.0)) - parcela) / receita12 * 100.0;
     
-    return { nom: aliquota_nom, eff: Math.max(0, aliq_eff) };
+    return { nom: aliquota_nom, eff: Math.max(0, aliq_eff), faixaIndex };
 };
 
-const resolverAnexoEfetivo = (empresa: SimplesNacionalEmpresa, rbt12: number) => {
-    const anexoBase = empresa.anexo;
-    const folha12 = empresa.folha12;
-    // Fator R calculation: Folha12 / RBT12
+const resolverAnexoEfetivo = (anexoBase: SimplesNacionalAnexo, rbt12: number, folha12: number) => {
     const fatorR = rbt12 > 0 ? folha12 / rbt12 : 0;
-    
     let anexoEfetivo: 'I' | 'II' | 'III' | 'IV' | 'V';
 
     if (anexoBase === 'III_V') {
@@ -91,14 +264,12 @@ const resolverAnexoEfetivo = (empresa: SimplesNacionalEmpresa, rbt12: number) =>
     return { anexoEfetivo, fatorR };
 };
 
-
 export const calcularResumoEmpresa = (
     empresa: SimplesNacionalEmpresa,
     notasDaEmpresa: SimplesNacionalNota[],
     mesApuracao: Date,
-    options: { fullHistory?: boolean } = { fullHistory: true }
+    options: { fullHistory?: boolean; itensCalculo?: SimplesItemCalculo[] } = { fullHistory: true }
 ): SimplesNacionalResumo => {
-    // 1. Agrupar faturamento das notas por mês
     const faturamentoNotasPorMes: { [key: string]: number } = {};
     for (const nota of notasDaEmpresa) {
         const data = new Date(nota.data);
@@ -106,7 +277,6 @@ export const calcularResumoEmpresa = (
         faturamentoNotasPorMes[chave] = (faturamentoNotasPorMes[chave] || 0) + nota.valor;
     }
 
-    // Consolidar com faturamento manual (Manual overrides Notas)
     const faturamentoConsolidado: { [key: string]: number } = { ...faturamentoNotasPorMes };
     if (empresa.faturamentoManual) {
         Object.entries(empresa.faturamentoManual).forEach(([key, value]) => {
@@ -114,7 +284,6 @@ export const calcularResumoEmpresa = (
         });
     }
 
-    // Helper para calcular RBT12 para um mês específico (soma dos 12 anteriores)
     const calcularRBT12ParaMes = (dataReferencia: Date): number => {
         let sum = 0;
         const inicioRBT = new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() - 12, 1);
@@ -126,27 +295,86 @@ export const calcularResumoEmpresa = (
         return sum;
     };
 
-    // 2. Calcular RBT12 ATUAL (para o mês de apuração)
     const rbt12Atual = calcularRBT12ParaMes(mesApuracao);
+    const folha12 = empresa.folha12;
 
-    // 3. Resolver anexo e calcular alíquotas atuais
-    const { anexoEfetivo: anexoEfetivoAtual, fatorR: fatorRAtual } = resolverAnexoEfetivo(empresa, rbt12Atual);
-    const { nom, eff } = calcularAliquotaSimples(rbt12Atual, anexoEfetivoAtual);
+    // Resolução do Anexo Principal e Fator R GLOBAL (para referência)
+    const { anexoEfetivo: anexoEfetivoPrincipal, fatorR: fatorRGlobal } = resolverAnexoEfetivo(empresa.anexo, rbt12Atual, folha12);
+    const { nom, eff, faixaIndex } = calcularAliquotaSimples(rbt12Atual, anexoEfetivoPrincipal);
     
-    // DAS Estimado Anual (Baseado no RBT12 atual)
+    // --- CÁLCULO DO DAS COMPOSTO (Múltiplas Atividades & Retenções) ---
+    let totalDasMensal = 0;
+    const detalhamentoAnexos: DetalhamentoAnexo[] = [];
+    const mesApuracaoChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
+
+    // Se houver discriminação manual detalhada (Itens com Retenção/ST)
+    if (options.itensCalculo && options.itensCalculo.length > 0) {
+        for (const item of options.itensCalculo) {
+            if (item.valor > 0) {
+                // Resolve Anexo Efetivo para a atividade
+                const { anexoEfetivo: anexoEfAtiv } = resolverAnexoEfetivo(item.anexo, rbt12Atual, folha12);
+                
+                // Calcula alíquota nominal e efetiva padrão
+                const { eff: effAtiv, faixaIndex: faixaIdxAtiv } = calcularAliquotaSimples(rbt12Atual, anexoEfAtiv);
+                
+                let effFinal = effAtiv;
+
+                // --- LOGICA DE DEDUÇÃO DE IMPOSTOS (Retenção / ST) ---
+                // Se houver retenção, a alíquota efetiva é reduzida proporcionalmente à participação do imposto no DAS
+                if (item.issRetido || item.icmsSt) {
+                     const reparticao = REPARTICAO_IMPOSTOS[anexoEfAtiv];
+                     if (reparticao) {
+                        const indexSeguro = Math.min(faixaIdxAtiv, reparticao.length - 1);
+                        const percentuais = reparticao[indexSeguro];
+                        
+                        let reducaoPercentual = 0;
+                        if (item.issRetido && percentuais['ISS']) {
+                            reducaoPercentual += percentuais['ISS'];
+                        }
+                        if (item.icmsSt && percentuais['ICMS']) {
+                            reducaoPercentual += percentuais['ICMS'];
+                        }
+                        
+                        // A nova alíquota efetiva é a original menos a parte percentual do imposto retido
+                        // Ex: AliqEf 10%. ISS representa 33.5% do DAS.
+                        // Nova Aliq = 10% * (1 - 0.335) = 6.65%
+                        effFinal = effAtiv * (1 - (reducaoPercentual / 100));
+                     }
+                }
+
+                const valorDasAtiv = item.valor * (effFinal / 100.0);
+                totalDasMensal += valorDasAtiv;
+                
+                detalhamentoAnexos.push({
+                    anexo: anexoEfAtiv,
+                    faturamento: item.valor,
+                    aliquotaEfetiva: effFinal,
+                    valorDas: valorDasAtiv,
+                    issRetido: item.issRetido,
+                    icmsSt: item.icmsSt
+                });
+            }
+        }
+    } else {
+        // Fallback: Assume tudo no anexo principal/efetivo padrão
+        const faturamentoMesApuracao = faturamentoConsolidado[mesApuracaoChave] || 0;
+        totalDasMensal = faturamentoMesApuracao * (eff / 100.0);
+        
+        if (faturamentoMesApuracao > 0) {
+             detalhamentoAnexos.push({
+                anexo: anexoEfetivoPrincipal,
+                faturamento: faturamentoMesApuracao,
+                aliquotaEfetiva: eff,
+                valorDas: totalDasMensal
+            });
+        }
+    }
+    
+    // DAS Estimado (projeção simples baseada na média 12m ou total)
     const dasEstimado = rbt12Atual * (eff / 100.0);
 
-    // 4. Calcular DAS Mensal Atual
-    const mesApuracaoChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-    const faturamentoMesApuracao = faturamentoConsolidado[mesApuracaoChave] || 0;
-    const dasMensalAtual = faturamentoMesApuracao * (eff / 100.0);
-
-    // 5. GERAR HISTÓRICO SIMULADO (Mês a Mês com alíquota dinâmica)
-    // O gráfico precisa mostrar os últimos 12 meses, onde cada mês tem sua PRÓPRIA alíquota baseada no RBT12 daquele momento.
+    // Histórico Simulado (Mantém lógica simples por mês, assumindo anexo principal para histórico passado visual)
     const historicoSimulado: SimplesCalculoMensal[] = [];
-    const mesesParaGrafico = options.fullHistory ? 12 : 0;
-
-    // Começa 11 meses atrás e vai até o mês atual
     const dataInicioGrafico = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 11, 1);
 
     for (let i = 0; i < 12; i++) {
@@ -155,16 +383,9 @@ export const calcularResumoEmpresa = (
         const label = dataRef.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
         
         const faturamentoMes = faturamentoConsolidado[chaveRef] || 0;
-        
-        // RBT12 daquele mês específico
         const rbt12Ref = calcularRBT12ParaMes(dataRef);
-        
-        // Fator R daquele mês
-        const { anexoEfetivo, fatorR } = resolverAnexoEfetivo(empresa, rbt12Ref);
-        
-        // Alíquota daquele mês
+        const { anexoEfetivo, fatorR } = resolverAnexoEfetivo(empresa.anexo, rbt12Ref, folha12);
         const { eff: effRef } = calcularAliquotaSimples(rbt12Ref, anexoEfetivo);
-        
         const dasCalculado = faturamentoMes * (effRef / 100.0);
 
         historicoSimulado.push({
@@ -182,346 +403,187 @@ export const calcularResumoEmpresa = (
     const sortedMensal = Object.fromEntries(Object.entries(faturamentoConsolidado).sort());
     const ultrapassou_sublimite = rbt12Atual > SUBLIMITE_ESTADUAL_MUNICIPAL;
 
+    // Se houver detalhamento composto, calcula a alíquota efetiva média ponderada para exibição
+    const aliquotaEfetivaFinal = totalDasMensal > 0 && detalhamentoAnexos.length > 0
+        ? (totalDasMensal / detalhamentoAnexos.reduce((acc, curr) => acc + curr.faturamento, 0)) * 100
+        : eff;
+
     return {
         rbt12: rbt12Atual,
         aliq_nom: nom,
-        aliq_eff: eff,
+        aliq_eff: aliquotaEfetivaFinal,
         das: dasEstimado,
-        das_mensal: dasMensalAtual,
+        das_mensal: totalDasMensal,
         mensal: sortedMensal,
         historico_simulado: historicoSimulado,
-        anexo_efetivo: anexoEfetivoAtual,
-        fator_r: fatorRAtual,
+        anexo_efetivo: anexoEfetivoPrincipal, // Mantém o principal como referência, mas o cálculo real está no detalhamento
+        fator_r: fatorRGlobal,
         folha_12: empresa.folha12,
         ultrapassou_sublimite,
+        faixa_index: faixaIndex,
+        detalhamento_anexos: detalhamentoAnexos
     };
 };
 
+// Helper for cleaning money strings from OCR
+const sanitizeMoneyValue = (value: any): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value !== 'string') return 0;
 
-// ----------------- PARSERS DE ARQUIVO -----------------
-
-const parseDataBrOuIso = (s: string | null | undefined): Date | null => {
-    if (!s) return null;
-    s = s.trim();
+    // Remove typical noise "R$", spaces, etc.
+    let clean = value.replace(/[R$\s]/g, '');
     
-    // Tenta DD/MM/YYYY
-    const brMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if (brMatch) {
-        return new Date(parseInt(brMatch[3]), parseInt(brMatch[2]) - 1, parseInt(brMatch[1]));
-    }
-    
-    // Tenta formatos ISO-like
-    try {
-        const dt = new Date(s);
-        if (!isNaN(dt.getTime())) {
-            return dt;
-        }
-    } catch (e) { /* ignora */ }
-    
-    return null;
-};
+    // Handle common OCR errors
+    clean = clean.replace(/O/g, '0').replace(/l/g, '1').replace(/S/g, '5');
 
-const convertFileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = reader.result as string;
-            // Remove data URL prefix (e.g., "data:application/pdf;base64,")
-            const base64 = result.split(',')[1];
-            resolve(base64);
-        };
-        reader.onerror = error => reject(error);
-        reader.readAsDataURL(file);
-    });
-};
+    // Try to determine if it uses comma or dot as decimal separator
+    const lastCommaIndex = clean.lastIndexOf(',');
+    const lastDotIndex = clean.lastIndexOf('.');
 
-interface ParserResult {
-    validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[];
-    failCount: number;
-    errors: string[];
-}
-
-const parseCsvToNotas = async (file: File): Promise<ParserResult> => {
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter(line => line.trim());
-    if (lines.length < 2) return { validNotas: [], failCount: 0, errors: ["Arquivo vazio ou sem dados."] };
-
-    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const dataIndex = header.indexOf('data');
-    
-    // Prioritiza 'base de calculo', 'base calculo', 'base_calculo', 'valor servico' antes de 'valor'
-    let valorIndex = header.indexOf('base de calculo');
-    if (valorIndex === -1) valorIndex = header.indexOf('base calculo');
-    if (valorIndex === -1) valorIndex = header.indexOf('base_calculo');
-    if (valorIndex === -1) valorIndex = header.indexOf('valor servico');
-    if (valorIndex === -1) valorIndex = header.indexOf('valor');
-    
-    const descIndex = header.indexOf('descricao');
-
-    if (dataIndex === -1 || valorIndex === -1) {
-        return { validNotas: [], failCount: lines.length - 1, errors: ["Colunas 'data' e/ou 'valor' não encontradas no cabeçalho."] };
+    if (lastCommaIndex > lastDotIndex) {
+        // Likely Brazilian format: 1.000,00
+        clean = clean.replace(/\./g, '').replace(',', '.');
+    } else {
+        // Likely US format: 1,000.00 or already clean number
+        clean = clean.replace(/,/g, '');
     }
 
-    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
-    const errors: string[] = [];
-    let failCount = 0;
-
-    for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',');
-        const dataStr = values[dataIndex];
-        const valorStr = values[valorIndex]?.replace(',', '.');
-        const descStr = descIndex > -1 ? values[descIndex] : '';
-
-        const data = parseDataBrOuIso(dataStr);
-        const valor = parseFloat(valorStr);
-
-        if (data && !isNaN(valor)) {
-            validNotas.push({
-                data: data.getTime(),
-                valor,
-                origem: 'CSV',
-                descricao: descStr,
-            });
-        } else {
-            failCount++;
-            errors.push(`Linha ${i + 1}: Data ou valor inválidos.`);
-        }
-    }
-    return { validNotas, failCount, errors: errors.slice(0, 5) }; // Limit errors to 5 for UI
-};
-
-const parseXmlToNotas = async (file: File): Promise<ParserResult> => {
-    const text = await file.text();
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(text, "application/xml");
-    
-    // Helper para buscar valor de tag independente de namespace
-    const getFirstTagValue = (...tags: string[]) => {
-        for (const tag of tags) {
-            const elements = xmlDoc.getElementsByTagName(tag);
-            if (elements.length > 0 && elements[0].textContent) {
-                return elements[0].textContent;
-            }
-            const elementsNS = xmlDoc.getElementsByTagNameNS("*", tag);
-             if (elementsNS.length > 0 && elementsNS[0].textContent) {
-                return elementsNS[0].textContent;
-            }
-        }
-        return null;
-    }
-
-    const dataEmissaoStr = getFirstTagValue('dhEmi', 'dEmi');
-    const dataPadrao = parseDataBrOuIso(dataEmissaoStr) || new Date();
-
-    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
-    let dets = xmlDoc.getElementsByTagName('det');
-    if (dets.length === 0) {
-        dets = xmlDoc.getElementsByTagNameNS("*", "det");
-    }
-    
-    if (dets.length === 0) return { validNotas: [], failCount: 1, errors: ["Nenhum item <det> encontrado no XML."] };
-
-    let failCount = 0;
-    const errors: string[] = [];
-
-    for (let i = 0; i < dets.length; i++) {
-        const det = dets[i];
-        const getTagVal = (tagName: string) => {
-            const el = det.getElementsByTagName(tagName)[0] || det.getElementsByTagNameNS("*", tagName)[0];
-            return el ? parseFloat(el.textContent || '0') : 0;
-        };
-
-        let valor = getTagVal('vBC');
-        if (valor === 0) valor = getTagVal('vServ');
-        if (valor === 0) valor = getTagVal('vProd');
-
-        const xProdEl = det.getElementsByTagName('xProd')[0] || det.getElementsByTagNameNS("*", "xProd")[0];
-        const descricao = xProdEl ? xProdEl.textContent : '';
-
-        if (!isNaN(valor) && valor > 0) {
-            validNotas.push({
-                data: dataPadrao.getTime(),
-                valor,
-                origem: 'XML NFe',
-                descricao: descricao || 'Item XML',
-            });
-        } else {
-            failCount++;
-            errors.push(`Item ${i + 1}: Valor inválido ou zerado.`);
-        }
-    }
-    return { validNotas, failCount, errors };
-};
-
-const parsePdfToNotas = async (file: File): Promise<ParserResult> => {
-    const base64Data = await convertFileToBase64(file);
-    const extractedData = await extractInvoiceDataFromPdf(base64Data);
-    
-    const validNotas: Omit<SimplesNacionalNota, 'id' | 'empresaId'>[] = [];
-    let failCount = 0;
-    const errors: string[] = [];
-    
-    for (let i = 0; i < extractedData.length; i++) {
-        const item = extractedData[i];
-        const data = parseDataBrOuIso(item.data);
-        
-        if (data && !isNaN(item.valor)) {
-            validNotas.push({
-                data: data.getTime(),
-                valor: item.valor,
-                origem: 'Manual', 
-                descricao: item.descricao || 'Extraído de PDF',
-            });
-        } else {
-            failCount++;
-            errors.push(`Item ${i + 1} (Extraído): Dados incompletos.`);
-        }
-    }
-    
-    return { validNotas, failCount, errors };
+    const parsed = parseFloat(clean);
+    return isNaN(parsed) ? 0 : parsed;
 }
 
 export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
-    let result: ParserResult = { validNotas: [], failCount: 0, errors: [] };
-    
+    const result: SimplesNacionalImportResult = { successCount: 0, failCount: 0, errors: [] };
+    const notasToSave: SimplesNacionalNota[] = [];
+
     try {
-        if (file.name.toLowerCase().endsWith('.csv')) {
-            result = await parseCsvToNotas(file);
-        } else if (file.name.toLowerCase().endsWith('.xml')) {
-            result = await parseXmlToNotas(file);
-        } else if (file.name.toLowerCase().endsWith('.pdf')) {
-            result = await parsePdfToNotas(file);
-        } else {
-            throw new Error("Formato de arquivo não suportado. Use .csv, .xml ou .pdf");
+        if (file.type === 'application/pdf') {
+            // Convert File to Base64
+            const buffer = await file.arrayBuffer();
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+
+            // Check if it's a PGDAS Extract (Revenue History) or Invoices
+            if (file.name.toUpperCase().includes('PGDAS') || file.name.toUpperCase().includes('EXTRATO')) {
+                try {
+                    const pgdasData = await extractPgdasDataFromPdf(base64);
+                    if (pgdasData && pgdasData.length > 0) {
+                         const faturamentoManualUpdate: {[key: string]: number} = {};
+                         pgdasData.forEach(item => {
+                             const parts = item.competencia.split('/');
+                             if (parts.length === 2) {
+                                 // Format YYYY-MM
+                                 const key = `${parts[1]}-${parts[0]}`; 
+                                 faturamentoManualUpdate[key] = sanitizeMoneyValue(item.valor);
+                             }
+                         });
+                         saveFaturamentoManual(empresaId, faturamentoManualUpdate);
+                         result.successCount = pgdasData.length;
+                         return result;
+                    }
+                } catch (e) {
+                    // Fallback to invoice extraction
+                }
+            }
+
+            // Invoice Extraction
+            const extractedData = await extractInvoiceDataFromPdf(base64);
+            
+            extractedData.forEach(item => {
+                 // Parse date DD/MM/YYYY
+                 let timestamp = Date.now();
+                 if (item.data) {
+                    const dateParts = item.data.split('/');
+                    if (dateParts.length === 3) {
+                        timestamp = new Date(Number(dateParts[2]), Number(dateParts[1]) - 1, Number(dateParts[0])).getTime();
+                    }
+                 }
+                 
+                 const safeValue = sanitizeMoneyValue(item.valor);
+                 
+                 if (safeValue > 0) {
+                     notasToSave.push({
+                         id: crypto.randomUUID(),
+                         empresaId,
+                         data: timestamp,
+                         valor: safeValue,
+                         descricao: item.descricao || 'Nota importada via PDF',
+                         origem: 'PDF Import'
+                     });
+                 }
+            });
+
+        } else if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+             const text = await file.text();
+             const lines = text.split('\n');
+             // Simple CSV parser: Date,Value,Description
+             lines.forEach((line, idx) => {
+                 if (!line.trim() || idx === 0) return; // Skip empty or header
+                 const cols = line.split(',');
+                 if (cols.length >= 2) {
+                     const dateStr = cols[0].trim(); // Assume YYYY-MM-DD or DD/MM/YYYY
+                     let timestamp = Date.parse(dateStr);
+                     if (isNaN(timestamp)) {
+                         // Try DD/MM/YYYY
+                         const parts = dateStr.split('/');
+                         if (parts.length === 3) {
+                             timestamp = new Date(Number(parts[2]), Number(parts[1])-1, Number(parts[0])).getTime();
+                         }
+                     }
+
+                     const val = parseFloat(cols[1].trim());
+                     if (!isNaN(timestamp) && !isNaN(val)) {
+                         notasToSave.push({
+                             id: crypto.randomUUID(),
+                             empresaId,
+                             data: timestamp,
+                             valor: val,
+                             descricao: cols[2]?.trim() || 'Importado CSV',
+                             origem: 'CSV'
+                         });
+                     } else {
+                         result.failCount++;
+                         result.errors.push(`Linha ${idx+1}: Dados inválidos`);
+                     }
+                 }
+             });
         }
+
+        if (notasToSave.length > 0) {
+            saveNotas(notasToSave);
+            result.successCount += notasToSave.length;
+        }
+
     } catch (e: any) {
-        return { successCount: 0, failCount: 1, errors: [e.message || "Erro ao processar arquivo"] };
+        result.errors.push(e.message || "Erro ao processar arquivo.");
     }
 
-    if (result.validNotas.length > 0) {
-        const todasAsNotas = getAllNotas();
-        const notasEmpresa = todasAsNotas[empresaId] || [];
-        
-        const notasParaAdicionar: SimplesNacionalNota[] = result.validNotas.map(n => ({
-            ...n,
-            id: crypto.randomUUID(),
-            empresaId,
-        }));
-
-        const notasAtualizadas = [...notasEmpresa, ...notasParaAdicionar];
-        todasAsNotas[empresaId] = notasAtualizadas;
-        localStorage.setItem('simples-nacional-notas', JSON.stringify(todasAsNotas));
-    }
-    
-    return {
-        successCount: result.validNotas.length,
-        failCount: result.failCount,
-        errors: result.errors
-    };
+    return result;
 };
 
-
-// ----------------- LOCALSTORAGE PERSISTENCE -----------------
-
-export const getEmpresas = (): SimplesNacionalEmpresa[] => {
-    try {
-        const stored = localStorage.getItem('simples-nacional-empresas');
-        if (stored) {
-            return JSON.parse(stored) as SimplesNacionalEmpresa[];
-        }
-    } catch (e) {
-        console.error("Erro ao ler empresas do localStorage", e);
-    }
-    return [];
-};
-
-export const sugerirAnexoPorCnae = (cnae: string): SimplesNacionalAnexo => {
-    if (!cnae) return 'III';
-    const digitos = cnae.replace(/\D/g, '');
-    if (digitos.length < 2) return 'III';
+export const calcularDiscriminacaoImpostos = (
+    anexo: string,
+    faixaIndex: number,
+    valorDasTotal: number
+): Record<string, number> => {
+    const discriminacao: Record<string, number> = {};
     
-    const prefix = parseInt(digitos.substring(0, 2), 10);
-
-    if ([45, 46, 47].includes(prefix)) return 'I';
-    if (prefix >= 10 && prefix <= 33) return 'II';
-    if (prefix >= 68 && prefix <= 75) return 'III_V';
+    if (valorDasTotal <= 0) return discriminacao;
     
-    return 'III';
-};
+    // Ensure faixaIndex is within bounds (0-5)
+    const safeIndex = Math.max(0, Math.min(faixaIndex, 5));
+    const reparticao = REPARTICAO_IMPOSTOS[anexo]?.[safeIndex];
 
-export const saveEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto'): SimplesNacionalEmpresa => {
-    
-    const anexoDefinido = anexo === 'auto' ? sugerirAnexoPorCnae(cnae) : anexo;
-
-    const newEmpresa: SimplesNacionalEmpresa = {
-        id: crypto.randomUUID(),
-        nome,
-        cnpj,
-        cnae,
-        anexo: anexoDefinido,
-        folha12: 0,
-    };
-    
-    const allEmpresas = getEmpresas();
-    allEmpresas.push(newEmpresa);
-    localStorage.setItem('simples-nacional-empresas', JSON.stringify(allEmpresas));
-    
-    return newEmpresa;
-};
-
-export const updateEmpresa = (id: string, data: Partial<SimplesNacionalEmpresa>): SimplesNacionalEmpresa | null => {
-    const allEmpresas = getEmpresas();
-    let updatedEmpresa: SimplesNacionalEmpresa | null = null;
-
-    const updatedEmpresas = allEmpresas.map(e => {
-        if (e.id === id) {
-            updatedEmpresa = { ...e, ...data };
-            return updatedEmpresa;
-        }
-        return e;
-    });
-
-    if (updatedEmpresa) {
-        localStorage.setItem('simples-nacional-empresas', JSON.stringify(updatedEmpresas));
+    if (reparticao) {
+        Object.entries(reparticao).forEach(([imposto, percentual]) => {
+            // Percentual is share of DAS (e.g. 34.00 for ICMS means 34% of the DAS value)
+            discriminacao[imposto] = valorDasTotal * (percentual / 100);
+        });
     }
 
-    return updatedEmpresa;
-};
-
-export const updateFolha12 = (empresaId: string, folha12: number): SimplesNacionalEmpresa | null => {
-    return updateEmpresa(empresaId, { folha12 });
-};
-
-export const saveFaturamentoManual = (empresaId: string, faturamento: { [key: string]: number }): SimplesNacionalEmpresa | null => {
-    return updateEmpresa(empresaId, { faturamentoManual: faturamento });
-};
-
-export const saveHistoricoCalculo = (empresaId: string, resumo: SimplesNacionalResumo, mesApuracao: Date): SimplesNacionalEmpresa | null => {
-    const empresa = getEmpresas().find(e => e.id === empresaId);
-    if (!empresa) return null;
-
-    const novoCalculo: SimplesHistoricoCalculo = {
-        id: crypto.randomUUID(),
-        dataCalculo: Date.now(),
-        mesReferencia: mesApuracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' }),
-        rbt12: resumo.rbt12,
-        aliq_eff: resumo.aliq_eff,
-        fator_r: resumo.fator_r,
-        das_mensal: resumo.das_mensal,
-        anexo_efetivo: resumo.anexo_efetivo
-    };
-
-    const historicoAtual = empresa.historicoCalculos || [];
-    // Opcional: Limitar histórico para não crescer infinitamente ou substituir cálculos do mesmo mês
-    return updateEmpresa(empresaId, { historicoCalculos: [novoCalculo, ...historicoAtual] });
-};
-
-export const getAllNotas = (): Record<string, SimplesNacionalNota[]> => {
-    try {
-        const stored = localStorage.getItem('simples-nacional-notas');
-        return stored ? JSON.parse(stored) : {};
-    } catch (e) {
-        console.error("Erro ao ler notas do localStorage", e);
-    }
-    return {};
+    return discriminacao;
 };

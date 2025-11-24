@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { FormattedText } from './FormattedText';
 import { type SearchResult, SearchType } from '../types';
-import { DownloadIcon, ExternalLinkIcon, LightBulbIcon, StarIcon } from './Icons';
+import { DownloadIcon, ExternalLinkIcon, LightBulbIcon, StarIcon, CalculatorIcon } from './Icons';
 
 interface ResultsDisplayProps {
     result: SearchResult | null;
@@ -128,6 +128,21 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                         Consulta: <span className="font-semibold text-sky-600 dark:text-sky-400">{result.query}</span>
                     </p>
                 </div>
+
+                {/* Optional Context Display */}
+                {result.context && (result.context.aliquotaIcms || result.context.aliquotaPisCofins || result.context.aliquotaIss) && (
+                    <div className="mb-6 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex items-start gap-3">
+                         <CalculatorIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" />
+                         <div>
+                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Contexto Tributário Considerado:</p>
+                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                                 {result.context.aliquotaIss && <span>• ISS: <strong>{result.context.aliquotaIss}%</strong></span>}
+                                 {result.context.aliquotaIcms && <span>• ICMS: <strong>{result.context.aliquotaIcms}%</strong></span>}
+                                 {result.context.aliquotaPisCofins && <span>• PIS/COFINS: <strong>{result.context.aliquotaPisCofins}%</strong></span>}
+                             </div>
+                         </div>
+                    </div>
+                )}
 
                 <div className="prose prose-slate dark:prose-invert max-w-none text-slate-600 dark:text-slate-300">
                     <FormattedText text={result.text} />

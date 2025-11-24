@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnpjData, CnaeTaxDetail } from '../types';
 
@@ -110,9 +111,9 @@ ${REFORMA_OPORTUNIDADES_SEPARATOR}
   const aliasInstruction = alias ? `O usuário também forneceu o alias/termo de busca: "${alias}". Use este termo para ajudar a identificar o subitem correto da LC 116/2003 se o campo principal não for um código, ou como contexto adicional para a análise.` : '';
   const responsavelInstruction = responsavel ? `\n\n**CONTEXTO DO RESPONSÁVEL TRIBUTÁRIO:** A análise deve ser focada na perspectiva de que o responsável pelo recolhimento é o **'${responsavel}'**. Dê ênfase especial a como isso afeta a obrigação de reter o ISS.` : '';
   const regimeInstruction = regimeTributario ? `\n\n**CONTEXTO DO REGIME TRIBUTÁRIO:** A análise deve considerar que a empresa é optante pelo regime do **'${regimeTributario}'**. Dê ênfase a como isso impacta as regras de retenção do ISS, incluindo exceções ou particularidades.` : '';
-  const icmsInstruction = aliquotaIcms ? `\n\n**CONTEXTO DE ALÍQUOTAS (ICMS):** Considere uma alíquota de ICMS de **${aliquotaIcms}%** e explique se há impacto ou relação com o serviço prestado.` : '';
-  const pisCofinsInstruction = aliquotaPisCofins ? `\n\n**CONTEXTO DE ALÍQUOTAS (PIS/COFINS):** Considere uma alíquota de PIS/COFINS de **${aliquotaPisCofins}%** e explique o impacto no serviço, especialmente em relação a retenções.` : '';
-  const issInstruction = aliquotaIss ? `\n\n**CONTEXTO DE ALÍQUOTA (ISS):** A análise deve considerar a alíquota de ISS de **${aliquotaIss}%** informada pelo usuário ao discutir a carga tributária e o valor a ser retido.` : '';
+  const icmsInstruction = aliquotaIcms ? `\n\n**CONTEXTO DE ALÍQUOTAS (ICMS):** O usuário informou uma alíquota de ICMS de **${aliquotaIcms}%**. Considere este valor na análise da carga tributária.` : '';
+  const pisCofinsInstruction = aliquotaPisCofins ? `\n\n**CONTEXTO DE ALÍQUOTAS (PIS/COFINS):** O usuário informou uma alíquota de PIS/COFINS de **${aliquotaPisCofins}%**. Considere este valor para explicar o impacto no custo do serviço.` : '';
+  const issInstruction = aliquotaIss ? `\n\n**CONTEXTO DE ALÍQUOTA (ISS):** Considere a alíquota de ISS de **${aliquotaIss}%** informada para cálculo de retenções.` : '';
   const finalQuery = query || alias || "serviço não especificado";
 
   return `Analise o Subitem da LC 116/2003 relacionado a: "${finalQuery}"${locationPrompt}.
@@ -195,8 +196,21 @@ export const fetchFiscalData = async (type: SearchType, query: string, municipio
         const text = response.text;
         const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
         const sources: GroundingSource[] = groundingChunks?.filter((chunk: any) => chunk.web) || [];
+        
+        // Pass context data back
+        const context = {
+            aliquotaIcms: aliquotaIcms || undefined,
+            aliquotaPisCofins: aliquotaPisCofins || undefined,
+            aliquotaIss: aliquotaIss || undefined
+        };
 
-        return { text, sources, query: finalQuery || 'Análise Geral', timestamp: Date.now() };
+        return { 
+            text, 
+            sources, 
+            query: finalQuery || 'Análise Geral', 
+            timestamp: Date.now(),
+            context: (context.aliquotaIcms || context.aliquotaPisCofins || context.aliquotaIss) ? context : undefined
+        };
     } catch (error) {
         if (isRetryableError(error) && attempt < MAX_RETRIES - 1) {
             const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
@@ -455,7 +469,18 @@ export const fetchCnaeSuggestions = async (searchTerm: string): Promise<CnaeSugg
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Atue como uma API de consulta de CNAE (Classificação Nacional de Atividades Econômicas) do Brasil. Com base no termo de busca "${searchTerm}", retorne uma lista de até 7 CNAEs relevantes. A resposta DEVE ser um array JSON de objetos, onde cada objeto tem as chaves "code" (o código formatado, ex: "47.11-3-02") e "description" (a descrição da atividade).`;
+    
+    const prompt = `Atue como uma API de consulta de CNAE (Classificação Nacional de Atividades Econômicas) do Brasil.
+    
+    Contexto: O usuário está cadastrando uma empresa e busca o código de atividade correto conforme a LEGISLAÇÃO VIGENTE.
+    
+    Busca do usuário: "${searchTerm}"
+    
+    Tarefa: Retorne uma lista de até 7 CNAEs altamente relevantes e VÁLIDOS para esta busca. Se a busca for vaga, tente inferir a atividade comercial mais provável.
+    
+    Retorne um ARRAY JSON puro (sem markdown), onde cada objeto tem:
+    - "code": O código CNAE formatado (ex: "47.11-3-02").
+    - "description": A descrição oficial exata da atividade conforme CONCLA/IBGE.`;
     
     try {
         const response = await ai.models.generateContent({
@@ -652,20 +677,33 @@ export const extractInvoiceDataFromPdf = async (base64Data: string): Promise<{da
     }
     
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Analyze this document (which may be a bank statement, invoice, or list of transactions).
-    Extract all financial transactions or invoice items found.
+    const prompt = `You are a highly advanced OCR engine for financial documents (Bank Statements, Invoices, Receipts).
     
-    IMPORTANT: For the "valor" field, you MUST PRIORITIZE extracting the "Base de Cálculo" (Calculation Base) if it is explicitly listed. 
-    - If a column or field named "Base de Cálculo", "Base Calc", "Vl. Base Calc", or similar exists, use that value for "valor".
-    - If "Base de Cálculo" is not found, use "Valor do Serviço" or "Valor dos Produtos".
-    - Only use "Valor Total" if it is the only value available and likely represents the revenue (e.g., no specific tax base column).
+    Your Goal: Extract transaction rows from complex, messy, or unstructured tables.
     
-    For each item, extract:
-    - "data": The date of the transaction in DD/MM/YYYY format.
-    - "valor": The monetary value (number). *Prioritize 'Base de Cálculo' as per instructions above.*
-    - "descricao": A brief description of the entry.
-
-    Return a JSON Array of objects.`;
+    CRITICAL INSTRUCTIONS FOR COMPLEX TABLES:
+    1. **Layout Analysis**: The document might contain tables with merged rows, wrapped text, or missing grid lines.
+       - If a transaction spans multiple lines (e.g., Date on line 1, Description on lines 1-3, Value on line 3), combine them into a single entry.
+       - Handle columns that are close together or poorly aligned.
+    2. **Inferred Data (Context)**:
+       - If a date is missing in a specific row but exists in a header or a previous row (common in statements), use the context to infer the correct date for that transaction.
+       - If the year is missing, assume the current year or infer from the file context if available (default to current).
+    3. **Noise Reduction**:
+       - IGNORE headers/footers like "Page 1 of 5", "Relatório Gerencial", "Saldo Anterior", "Total Geral", "Transporte", "Subtotal".
+       - Focus ONLY on transactional rows (Date, Description, Value).
+    4. **OCR Correction**:
+       - Correct common numeric OCR errors: 'O' -> '0', 'l' -> '1', 'S' -> '5', 'B' -> '8'.
+       - Ensure values are floats. Handle "1.000,00" (Brazilian) or "1,000.00" (US) formats correctly.
+    5. **Value Prioritization**:
+       - If multiple value columns exist, prioritize "Base de Cálculo" (Tax Base) or "Valor Total" columns.
+    
+    OUTPUT FORMAT:
+    Return a strictly valid JSON Array of objects. Each object must have:
+    - "data": The date in 'DD/MM/YYYY' format.
+    - "valor": The numeric value (float).
+    - "descricao": A concise description.
+    
+    IMPORTANT: Return ONLY the JSON array. Do not use Markdown formatting.`;
 
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -695,11 +733,83 @@ export const extractInvoiceDataFromPdf = async (base64Data: string): Promise<{da
         }
     });
     
-    const jsonText = response.text.trim();
+    let jsonText = response.text.trim();
+    // Clean up potential markdown residue
+    if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+    }
+
     try {
         return JSON.parse(jsonText);
     } catch (e) {
         console.error("Failed to parse Gemini extraction response", e);
-        throw new Error("Falha ao processar os dados extraídos do PDF.");
+        throw new Error("Falha ao processar os dados extraídos do PDF (JSON inválido).");
+    }
+};
+
+export const extractPgdasDataFromPdf = async (base64Data: string): Promise<{ competencia: string, valor: number }[]> => {
+    if (!process.env.API_KEY) {
+        throw new Error("A API_KEY não está configurada.");
+    }
+    
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Enhanced prompt to catch PGDAS History table more reliably
+    const prompt = `Analyze this PDF (Simples Nacional PGDAS-D Extract).
+    
+    Your TASK is to extract the "Previous Gross Revenue" history (Receitas Brutas Anteriores) found in "Section 2.2" (Informações PGDAS-D).
+    
+    LOOK FOR A TABLE WITH HEADERS LIKE:
+    - "PA" or "Período de Apuração" (Format: MM/AAAA or MM/YYYY)
+    - "Receita Bruta" or "Valor" (Format: 0.000,00)
+    
+    CRITICAL RULES:
+    1. IGNORE the current month's revenue summary at the top. Find the HISTORY table.
+    2. IGNORE "Mercado Interno" or "Mercado Externo" sub-headers if they are empty, focus on the TOTAL row if available, or the specific revenue row.
+    3. Extract ONLY: { "competencia": "MM/YYYY", "valor": NUMBER }.
+    4. Convert values to float (e.g., "10.000,00" -> 10000.00).
+    
+    If section 2.2 is missing or empty, return [].
+    
+    OUTPUT JSON ARRAY:
+    [{"competencia": "01/2024", "valor": 5000.00}, ...]`;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+            {
+                inlineData: {
+                    mimeType: 'application/pdf',
+                    data: base64Data
+                }
+            },
+            { text: prompt }
+        ],
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        competencia: { type: Type.STRING },
+                        valor: { type: Type.NUMBER }
+                    },
+                    required: ["competencia", "valor"]
+                }
+            }
+        }
+    });
+    
+    let jsonText = response.text.trim();
+    // Clean up potential markdown residue
+    if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+    }
+    
+    try {
+        return JSON.parse(jsonText);
+    } catch (e) {
+        console.error("Failed to parse PGDAS extraction response", e);
+        return [];
     }
 };

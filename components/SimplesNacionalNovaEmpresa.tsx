@@ -1,11 +1,14 @@
 
-import React, { useState, useEffect } from 'react';
-import { SimplesNacionalAnexo } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { SimplesNacionalAnexo, SimplesNacionalAtividade, CnaeSuggestion } from '../types';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { sugerirAnexoPorCnae } from '../services/simplesNacionalService';
+import { fetchCnaeSuggestions } from '../services/geminiService';
+import { PlusIcon, TrashIcon, SearchIcon, CalculatorIcon } from './Icons';
+import LoadingSpinner from './LoadingSpinner';
 
 interface SimplesNacionalNovaEmpresaProps {
-    onSave: (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto') => void;
+    onSave: (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => void;
     onCancel: () => void;
 }
 
@@ -30,6 +33,18 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     const [nomeFantasia, setNomeFantasia] = useState('');
     const [suggestionMessage, setSuggestionMessage] = useState<string | null>(null);
 
+    // Estado para atividades secundárias
+    const [atividadesSecundarias, setAtividadesSecundarias] = useState<SimplesNacionalAtividade[]>([]);
+    const [newAtividadeCnae, setNewAtividadeCnae] = useState('');
+    const [newAtividadeAnexo, setNewAtividadeAnexo] = useState<SimplesNacionalAnexo>('III');
+
+    // Estado para Busca Inteligente de CNAE
+    const [cnaeSuggestions, setCnaeSuggestions] = useState<CnaeSuggestion[]>([]);
+    const [isSearchingCnae, setIsSearchingCnae] = useState(false);
+    const [activeCnaeField, setActiveCnaeField] = useState<'principal' | 'secundario' | null>(null);
+    const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const suggestionsRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
       if (anexo === 'auto' && cnae.trim().length >= 2) {
         const suggestedAnexo = sugerirAnexoPorCnae(cnae);
@@ -40,6 +55,56 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
       }
     }, [cnae, anexo]);
 
+    // Fecha sugestões ao clicar fora
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+                setCnaeSuggestions([]);
+                setActiveCnaeField(null);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
+
+    const handleSearchCnae = (query: string, field: 'principal' | 'secundario') => {
+        if (field === 'principal') setCnae(query);
+        else setNewAtividadeCnae(query);
+
+        setActiveCnaeField(field);
+
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+        if (query.length < 3) {
+            setCnaeSuggestions([]);
+            return;
+        }
+
+        setIsSearchingCnae(true);
+        searchTimeout.current = setTimeout(async () => {
+            try {
+                const suggestions = await fetchCnaeSuggestions(query);
+                setCnaeSuggestions(suggestions);
+            } catch (error) {
+                console.error("Erro ao buscar sugestões CNAE:", error);
+            } finally {
+                setIsSearchingCnae(false);
+            }
+        }, 600);
+    };
+
+    const handleSelectSuggestion = (suggestion: CnaeSuggestion) => {
+        if (activeCnaeField === 'principal') {
+            setCnae(suggestion.code);
+        } else if (activeCnaeField === 'secundario') {
+            setNewAtividadeCnae(suggestion.code);
+        }
+        setCnaeSuggestions([]);
+        setActiveCnaeField(null);
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!nome.trim() || !cnpj.trim() || !cnae.trim()) {
@@ -47,7 +112,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
             return;
         }
         setError('');
-        onSave(nome, cnpj, cnae, anexo);
+        onSave(nome, cnpj, cnae, anexo, atividadesSecundarias);
     };
 
     const handleCnpjVerification = async () => {
@@ -74,8 +139,52 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         }
     };
 
+    const handleAddAtividade = () => {
+        if (!newAtividadeCnae.trim()) return;
+        
+        setAtividadesSecundarias(prev => [
+            ...prev, 
+            { cnae: newAtividadeCnae, anexo: newAtividadeAnexo }
+        ]);
+        setNewAtividadeCnae('');
+        setNewAtividadeAnexo('III');
+    };
+
+    const handleRemoveAtividade = (index: number) => {
+        setAtividadesSecundarias(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const renderSuggestions = () => {
+        if (cnaeSuggestions.length === 0 && !isSearchingCnae) return null;
+
+        return (
+            <div ref={suggestionsRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto animate-fade-in">
+                {isSearchingCnae && (
+                     <div className="p-4 flex justify-center items-center gap-2 text-sm text-slate-500">
+                        <LoadingSpinner />
+                        <span className="ml-2">Buscando na legislação vigente...</span>
+                     </div>
+                )}
+                {!isSearchingCnae && cnaeSuggestions.map((s) => (
+                    <button
+                        key={s.code}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(s)}
+                        className="w-full text-left px-4 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="font-bold text-sky-600 dark:text-sky-400 text-sm">{s.code}</span>
+                            <span className="text-xs bg-slate-100 dark:bg-slate-600 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-300">CNAE</span>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 truncate">{s.description}</p>
+                    </button>
+                ))}
+            </div>
+        );
+    };
+
     return (
-        <div className="max-w-2xl mx-auto animate-fade-in">
+        <div className="max-w-2xl mx-auto animate-fade-in pb-10">
              <div className="p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6">
                     Cadastrar Nova Empresa
@@ -122,44 +231,115 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                          {nomeFantasia && <p className="mt-1 text-xs text-green-600 dark:text-green-400">Nome Fantasia: {nomeFantasia}</p>}
                     </div>
                     
-                    <div>
-                        <label htmlFor="cnae" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            CNAE Principal
-                        </label>
-                        <input
-                            type="text"
-                            id="cnae"
-                            value={cnae}
-                            onChange={(e) => setCnae(e.target.value)}
-                            placeholder="Ex: 69.20-6-01"
-                            className="mt-1 w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                            required
-                        />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="relative">
+                            <label htmlFor="cnae" className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                CNAE Principal
+                                <SearchIcon className="w-3 h-3 text-slate-400" />
+                            </label>
+                            <input
+                                type="text"
+                                id="cnae"
+                                value={cnae}
+                                onChange={(e) => handleSearchCnae(e.target.value, 'principal')}
+                                placeholder="Busque por código ou atividade..."
+                                className="mt-1 w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                required
+                                autoComplete="off"
+                            />
+                            {activeCnaeField === 'principal' && renderSuggestions()}
+                        </div>
+                        <div>
+                            <label htmlFor="anexo" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Anexo Principal
+                            </label>
+                            <select
+                                id="anexo"
+                                value={anexo}
+                                onChange={(e) => setAnexo(e.target.value as 'auto' | SimplesNacionalAnexo)}
+                                className="mt-1 w-full pl-4 pr-10 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                            >
+                                <option value="auto">Automático (sugerir)</option>
+                                <option value="I">Anexo I – Comércio</option>
+                                <option value="II">Anexo II – Indústria</option>
+                                <option value="III">Anexo III – Serviços (baixa)</option>
+                                <option value="IV">Anexo IV – Serviços (alta)</option>
+                                <option value="V">Anexo V – Serviços especiais</option>
+                                <option value="III_V">III/V (Fator R)</option>
+                            </select>
+                        </div>
                     </div>
-                     <div>
-                        <label htmlFor="anexo" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                           Anexo do Simples
-                        </label>
-                        <select
-                            id="anexo"
-                            value={anexo}
-                            onChange={(e) => setAnexo(e.target.value as 'auto' | SimplesNacionalAnexo)}
-                            className="mt-1 w-full pl-4 pr-10 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        >
-                            <option value="auto">Automático (sugerir pelo CNAE)</option>
-                            <option value="I">Anexo I – Comércio</option>
-                            <option value="II">Anexo II – Indústria</option>
-                            <option value="III">Anexo III – Serviços (baixa complexidade)</option>
-                            <option value="IV">Anexo IV – Serviços (alta complexidade)</option>
-                            <option value="V">Anexo V – Serviços especiais</option>
-                             <option value="III_V">Serviços com Fator R (III/V automático)</option>
-                        </select>
-                        {suggestionMessage && (
-                            <div className="mt-2 p-2 bg-sky-50 dark:bg-sky-900/30 border-l-4 border-sky-500 text-sky-700 dark:text-sky-300 text-sm rounded-r-lg">
-                                <p>{suggestionMessage}</p>
-                            </div>
+                    {suggestionMessage && (
+                        <div className="p-2 bg-sky-50 dark:bg-sky-900/30 border-l-4 border-sky-500 text-sky-700 dark:text-sky-300 text-sm rounded-r-lg flex items-center gap-2">
+                             <CalculatorIcon className="w-4 h-4" />
+                            <p>{suggestionMessage}</p>
+                        </div>
+                    )}
+
+                    {/* Seção de Atividades Secundárias */}
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+                            Atividades Secundárias / Outros CNAEs
+                        </h3>
+                        <div className="flex gap-2 mb-3 relative">
+                             <div className="flex-grow relative">
+                                <input
+                                    type="text"
+                                    value={newAtividadeCnae}
+                                    onChange={(e) => handleSearchCnae(e.target.value, 'secundario')}
+                                    placeholder="Busque CNAE Secundário..."
+                                    className="w-full pl-3 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                    autoComplete="off"
+                                />
+                                {activeCnaeField === 'secundario' && renderSuggestions()}
+                             </div>
+                             <select
+                                value={newAtividadeAnexo}
+                                onChange={(e) => setNewAtividadeAnexo(e.target.value as SimplesNacionalAnexo)}
+                                className="w-32 pl-2 pr-2 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                            >
+                                <option value="I">Anexo I</option>
+                                <option value="II">Anexo II</option>
+                                <option value="III">Anexo III</option>
+                                <option value="IV">Anexo IV</option>
+                                <option value="V">Anexo V</option>
+                                <option value="III_V">III/V</option>
+                            </select>
+                            <button
+                                type="button"
+                                onClick={handleAddAtividade}
+                                className="btn-press p-2 bg-slate-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
+                                title="Adicionar Atividade"
+                            >
+                                <PlusIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {atividadesSecundarias.length > 0 && (
+                            <ul className="space-y-2">
+                                {atividadesSecundarias.map((item, index) => (
+                                    <li key={index} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-sm">
+                                        <div>
+                                            <span className="font-semibold text-slate-700 dark:text-slate-200">{item.cnae}</span>
+                                            <span className="mx-2 text-slate-400">|</span>
+                                            <span className="text-slate-500 dark:text-slate-400">
+                                                {anexoDescriptions[item.anexo].replace('Anexo ', '')}
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveAtividade(index)}
+                                            className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
+                                        >
+                                            <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
                         )}
                     </div>
+
+
                     {error && <p className="text-sm text-red-500">{error}</p>}
                     <div className="flex justify-end gap-4 pt-4">
                         <button
