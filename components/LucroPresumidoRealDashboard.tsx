@@ -75,7 +75,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
     const isMasterAdmin = currentUser?.email === MASTER_ADMIN_EMAIL;
 
     useEffect(() => {
-        setCompanies(lucroService.getEmpresas());
+        lucroService.getEmpresas().then(setCompanies);
     }, []);
 
     // Load financial data when month or company changes
@@ -115,10 +115,10 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
         }
     };
 
-    const handleDeleteEmpresa = (id: string) => {
+    const handleDeleteEmpresa = async (id: string) => {
         if (!isMasterAdmin) return;
         if (window.confirm('Tem certeza que deseja excluir esta empresa?')) {
-            if (lucroService.deleteEmpresa(id)) {
+            if (await lucroService.deleteEmpresa(id)) {
                 setCompanies(prev => prev.filter(c => c.id !== id));
                 if (selectedEmpresaId === id) {
                     setView('list');
@@ -167,7 +167,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
         }
     };
 
-    const handleSaveEmpresa = () => {
+    const handleSaveEmpresa = async () => {
         if (!empresa.nome || !empresa.cnpj) {
             alert('Nome e CNPJ são obrigatórios.');
             return;
@@ -180,15 +180,15 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
 
         let saved: LucroPresumidoEmpresa | null;
         if (selectedEmpresaId) {
-            saved = lucroService.updateEmpresa(selectedEmpresaId, empresaData);
+            saved = await lucroService.updateEmpresa(selectedEmpresaId, empresaData);
         } else {
-            saved = lucroService.saveEmpresa(empresaData);
+            saved = await lucroService.saveEmpresa(empresaData);
             setSelectedEmpresaId(saved.id);
         }
 
         if (saved) {
             setEmpresa(saved); // Update local state with full saved object
-            setCompanies(lucroService.getEmpresas());
+            lucroService.getEmpresas().then(setCompanies);
             setSaveSuccess('Empresa salva com sucesso!');
             setTimeout(() => setSaveSuccess(''), 3000);
         }
@@ -202,7 +202,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
         return financeiro.acumuladoAno + totalMesVigente;
     }, [financeiro.acumuladoAno, totalMesVigente]);
 
-    const handleSaveCalculo = () => {
+    const handleSaveCalculo = async () => {
         if (!selectedEmpresaId) {
             alert("Salve a empresa antes de salvar o cálculo.");
             return;
@@ -220,7 +220,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
             cmv: financeiro.cmv
         };
 
-        const updated = lucroService.addFichaFinanceira(selectedEmpresaId, registro);
+        const updated = await lucroService.addFichaFinanceira(selectedEmpresaId, registro);
         if (updated) {
             setEmpresa(updated); // Update local state to reflect new history
             setCompanies(prev => prev.map(c => c.id === updated.id ? updated : c));

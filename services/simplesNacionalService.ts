@@ -1,6 +1,8 @@
 
 import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo } from '../types';
 import { extractInvoiceDataFromPdf, extractPgdasDataFromPdf } from './geminiService';
+import { db, isFirebaseConfigured } from './firebaseConfig';
+import { collection, getDocs, doc, setDoc, updateDoc, getDoc, addDoc } from 'firebase/firestore';
 
 // ----------------- CONSTANTES E LOCALSTORAGE -----------------
 
@@ -95,31 +97,36 @@ export const REPARTICAO_IMPOSTOS: Record<string, Array<Record<string, number>>> 
 
 const SUBLIMITE_ESTADUAL_MUNICIPAL = 3600000;
 
-// ----------------- PERSISTÊNCIA (LocalStorage) -----------------
+// ----------------- DATA ACCESS LAYER (HYBRID) -----------------
 
-export const getEmpresas = (): SimplesNacionalEmpresa[] => {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY_EMPRESAS);
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        console.error('Erro ao carregar empresas', e);
-        return [];
+export const getEmpresas = async (): Promise<SimplesNacionalEmpresa[]> => {
+    if (isFirebaseConfigured && db) {
+        try {
+            const snapshot = await getDocs(collection(db, 'simples_empresas'));
+            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
+        } catch (e) {
+            console.error("Erro ao buscar empresas no Firebase", e);
+            return [];
+        }
+    } else {
+        try {
+            const data = localStorage.getItem(STORAGE_KEY_EMPRESAS);
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            return [];
+        }
     }
 };
 
-export const saveEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]): SimplesNacionalEmpresa => {
-    const empresas = getEmpresas();
-    
-    // Sugestão automática básica se 'auto' for selecionado
-    let finalAnexo: SimplesNacionalAnexo = 'III'; // Default seguro
+export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]): Promise<SimplesNacionalEmpresa> => {
+    let finalAnexo: SimplesNacionalAnexo = 'III';
     if (anexo === 'auto') {
         finalAnexo = sugerirAnexoPorCnae(cnae);
     } else {
         finalAnexo = anexo;
     }
 
-    const newEmpresa: SimplesNacionalEmpresa = {
-        id: crypto.randomUUID(),
+    const newEmpresaData = {
         nome,
         cnpj,
         cnae,
@@ -127,66 +134,95 @@ export const saveEmpresa = (nome: string, cnpj: string, cnae: string, anexo: Sim
         folha12: 0,
         atividadesSecundarias: atividadesSecundarias || []
     };
-    
-    empresas.push(newEmpresa);
-    localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
-    return newEmpresa;
-};
 
-export const updateEmpresa = (id: string, data: Partial<SimplesNacionalEmpresa>): SimplesNacionalEmpresa | null => {
-    const empresas = getEmpresas();
-    const index = empresas.findIndex(e => e.id === id);
-    if (index === -1) return null;
-
-    const updated = { ...empresas[index], ...data };
-    empresas[index] = updated;
-    localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
-    return updated;
-};
-
-export const getEmpresaById = (id: string): SimplesNacionalEmpresa | undefined => {
-    const empresas = getEmpresas();
-    return empresas.find(e => e.id === id);
-};
-
-export const getAllNotas = (): Record<string, SimplesNacionalNota[]> => {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY_NOTAS);
-        return data ? JSON.parse(data) : {};
-    } catch (e) {
-        console.error('Erro ao carregar notas', e);
-        return {};
+    if (isFirebaseConfigured && db) {
+        const docRef = await addDoc(collection(db, 'simples_empresas'), newEmpresaData);
+        return { id: docRef.id, ...newEmpresaData };
+    } else {
+        const empresas = await getEmpresas(); // Local call is fast
+        const newEmpresa = { id: crypto.randomUUID(), ...newEmpresaData };
+        empresas.push(newEmpresa);
+        localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
+        return newEmpresa;
     }
 };
 
-export const getNotasByEmpresa = (empresaId: string): SimplesNacionalNota[] => {
-    const allNotas = getAllNotas();
-    return allNotas[empresaId] || [];
+export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmpresa>): Promise<SimplesNacionalEmpresa | null> => {
+    if (isFirebaseConfigured && db) {
+        const docRef = doc(db, 'simples_empresas', id);
+        await updateDoc(docRef, data);
+        const updatedSnap = await getDoc(docRef);
+        return { id: updatedSnap.id, ...updatedSnap.data() } as SimplesNacionalEmpresa;
+    } else {
+        const empresas = await getEmpresas();
+        const index = empresas.findIndex(e => e.id === id);
+        if (index === -1) return null;
+        const updated = { ...empresas[index], ...data };
+        empresas[index] = updated;
+        localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
+        return updated;
+    }
 };
 
-export const saveNotas = (notas: SimplesNacionalNota[]) => {
-    const allNotas = getAllNotas();
-    if (notas.length === 0) return;
-    
-    const empresaId = notas[0].empresaId;
-    const existing = allNotas[empresaId] || [];
-    
-    // Evitar duplicatas exatas
-    allNotas[empresaId] = [...existing, ...notas];
-    
-    localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(allNotas));
+export const getAllNotas = async (): Promise<Record<string, SimplesNacionalNota[]>> => {
+    if (isFirebaseConfigured && db) {
+        // In Firestore, we might store notes in a subcollection or main collection with empresaId
+        // For simplicity, let's assume a 'simples_notas' collection
+        const snapshot = await getDocs(collection(db, 'simples_notas'));
+        const notas: Record<string, SimplesNacionalNota[]> = {};
+        snapshot.forEach(doc => {
+            const data = doc.data() as SimplesNacionalNota;
+            if (!notas[data.empresaId]) notas[data.empresaId] = [];
+            notas[data.empresaId].push({ id: doc.id, ...data });
+        });
+        return notas;
+    } else {
+        try {
+            const data = localStorage.getItem(STORAGE_KEY_NOTAS);
+            return data ? JSON.parse(data) : {};
+        } catch (e) {
+            return {};
+        }
+    }
 };
 
-export const updateFolha12 = (empresaId: string, folha12: number): SimplesNacionalEmpresa | null => {
+export const saveNotas = async (notas: SimplesNacionalNota[]) => {
+    if (isFirebaseConfigured && db) {
+        const batchPromises = notas.map(nota => {
+            // Remove ID if it was locally generated or let Firestore generate one
+            const { id, ...data } = nota;
+            return addDoc(collection(db, 'simples_notas'), data);
+        });
+        await Promise.all(batchPromises);
+    } else {
+        const allNotas = await getAllNotas();
+        if (notas.length === 0) return;
+        const empresaId = notas[0].empresaId;
+        const existing = allNotas[empresaId] || [];
+        allNotas[empresaId] = [...existing, ...notas];
+        localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(allNotas));
+    }
+};
+
+export const updateFolha12 = async (empresaId: string, folha12: number): Promise<SimplesNacionalEmpresa | null> => {
     return updateEmpresa(empresaId, { folha12 });
 };
 
-export const saveFaturamentoManual = (empresaId: string, faturamento: { [key: string]: number }): SimplesNacionalEmpresa | null => {
+export const saveFaturamentoManual = async (empresaId: string, faturamento: { [key: string]: number }): Promise<SimplesNacionalEmpresa | null> => {
     return updateEmpresa(empresaId, { faturamentoManual: faturamento });
 };
 
-export const saveHistoricoCalculo = (empresaId: string, resumo: SimplesNacionalResumo, mesApuracao: Date): SimplesNacionalEmpresa | null => {
-    const empresa = getEmpresaById(empresaId);
+export const saveHistoricoCalculo = async (empresaId: string, resumo: SimplesNacionalResumo, mesApuracao: Date): Promise<SimplesNacionalEmpresa | null> => {
+    // Fetch current state first to append
+    let empresa: SimplesNacionalEmpresa | undefined;
+    
+    if (isFirebaseConfigured && db) {
+        const snap = await getDoc(doc(db, 'simples_empresas', empresaId));
+        if (snap.exists()) empresa = { id: snap.id, ...snap.data() } as SimplesNacionalEmpresa;
+    } else {
+        empresa = (await getEmpresas()).find(e => e.id === empresaId);
+    }
+
     if (!empresa) return null;
 
     const mesReferencia = mesApuracao.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
@@ -202,28 +238,27 @@ export const saveHistoricoCalculo = (empresaId: string, resumo: SimplesNacionalR
         anexo_efetivo: `Anexo ${resumo.anexo_efetivo}`
     };
 
-    // Remove cálculos anteriores para o mesmo mês de referência para evitar duplicação
     const historicoAtual = empresa.historicoCalculos ? empresa.historicoCalculos.filter(h => h.mesReferencia !== mesReferencia) : [];
     
     return updateEmpresa(empresaId, { historicoCalculos: [novoCalculo, ...historicoAtual] });
 };
 
 
-// ----------------- UTILITÁRIOS E CÁLCULOS -----------------
+// ----------------- UTILITÁRIOS E CÁLCULOS (Síncronos) -----------------
 
 export const sugerirAnexoPorCnae = (cnae: string): SimplesNacionalAnexo => {
     const cleanCnae = cnae.replace(/\D/g, '');
     
-    if (cleanCnae.startsWith('47')) return 'I'; // Comércio Varejista
-    if (cleanCnae.startsWith('46')) return 'I'; // Comércio Atacadista
-    if (cleanCnae.startsWith('10') || cleanCnae.startsWith('25') || cleanCnae.startsWith('31')) return 'II'; // Indústrias comuns
-    if (cleanCnae.startsWith('620')) return 'III_V'; // TI (Fator R)
-    if (cleanCnae.startsWith('692')) return 'III'; // Contabilidade
-    if (cleanCnae.startsWith('691')) return 'IV'; // Advocacia
-    if (cleanCnae.startsWith('412')) return 'IV'; // Construção Civil
-    if (cleanCnae.startsWith('812')) return 'IV'; // Limpeza
+    if (cleanCnae.startsWith('47')) return 'I'; 
+    if (cleanCnae.startsWith('46')) return 'I'; 
+    if (cleanCnae.startsWith('10') || cleanCnae.startsWith('25') || cleanCnae.startsWith('31')) return 'II'; 
+    if (cleanCnae.startsWith('620')) return 'III_V'; 
+    if (cleanCnae.startsWith('692')) return 'III'; 
+    if (cleanCnae.startsWith('691')) return 'IV'; 
+    if (cleanCnae.startsWith('412')) return 'IV'; 
+    if (cleanCnae.startsWith('812')) return 'IV'; 
     
-    return 'III'; // Default mais comum para serviços
+    return 'III'; 
 };
 
 export const calcularAliquotaSimples = (receita12: number, anexo: keyof typeof ANEXOS_TABELAS): { nom: number; eff: number; faixaIndex: number } => {
@@ -302,25 +337,18 @@ export const calcularResumoEmpresa = (
     const { anexoEfetivo: anexoEfetivoPrincipal, fatorR: fatorRGlobal } = resolverAnexoEfetivo(empresa.anexo, rbt12Atual, folha12);
     const { nom, eff, faixaIndex } = calcularAliquotaSimples(rbt12Atual, anexoEfetivoPrincipal);
     
-    // --- CÁLCULO DO DAS COMPOSTO (Múltiplas Atividades & Retenções) ---
     let totalDasMensal = 0;
     const detalhamentoAnexos: DetalhamentoAnexo[] = [];
     const mesApuracaoChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
 
-    // Se houver discriminação manual detalhada (Itens com Retenção/ST)
     if (options.itensCalculo && options.itensCalculo.length > 0) {
         for (const item of options.itensCalculo) {
             if (item.valor > 0) {
-                // Resolve Anexo Efetivo para a atividade
                 const { anexoEfetivo: anexoEfAtiv } = resolverAnexoEfetivo(item.anexo, rbt12Atual, folha12);
-                
-                // Calcula alíquota nominal e efetiva padrão
                 const { eff: effAtiv, faixaIndex: faixaIdxAtiv } = calcularAliquotaSimples(rbt12Atual, anexoEfAtiv);
                 
                 let effFinal = effAtiv;
 
-                // --- LOGICA DE DEDUÇÃO DE IMPOSTOS (Retenção / ST) ---
-                // Se houver retenção, a alíquota efetiva é reduzida proporcionalmente à participação do imposto no DAS
                 if (item.issRetido || item.icmsSt) {
                      const reparticao = REPARTICAO_IMPOSTOS[anexoEfAtiv];
                      if (reparticao) {
@@ -328,16 +356,9 @@ export const calcularResumoEmpresa = (
                         const percentuais = reparticao[indexSeguro];
                         
                         let reducaoPercentual = 0;
-                        if (item.issRetido && percentuais['ISS']) {
-                            reducaoPercentual += percentuais['ISS'];
-                        }
-                        if (item.icmsSt && percentuais['ICMS']) {
-                            reducaoPercentual += percentuais['ICMS'];
-                        }
+                        if (item.issRetido && percentuais['ISS']) reducaoPercentual += percentuais['ISS'];
+                        if (item.icmsSt && percentuais['ICMS']) reducaoPercentual += percentuais['ICMS'];
                         
-                        // A nova alíquota efetiva é a original menos a parte percentual do imposto retido
-                        // Ex: AliqEf 10%. ISS representa 33.5% do DAS.
-                        // Nova Aliq = 10% * (1 - 0.335) = 6.65%
                         effFinal = effAtiv * (1 - (reducaoPercentual / 100));
                      }
                 }
@@ -356,7 +377,6 @@ export const calcularResumoEmpresa = (
             }
         }
     } else {
-        // Fallback: Assume tudo no anexo principal/efetivo padrão
         const faturamentoMesApuracao = faturamentoConsolidado[mesApuracaoChave] || 0;
         totalDasMensal = faturamentoMesApuracao * (eff / 100.0);
         
@@ -370,10 +390,8 @@ export const calcularResumoEmpresa = (
         }
     }
     
-    // DAS Estimado (projeção simples baseada na média 12m ou total)
     const dasEstimado = rbt12Atual * (eff / 100.0);
 
-    // Histórico Simulado (Mantém lógica simples por mês, assumindo anexo principal para histórico passado visual)
     const historicoSimulado: SimplesCalculoMensal[] = [];
     const dataInicioGrafico = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 11, 1);
 
@@ -403,7 +421,6 @@ export const calcularResumoEmpresa = (
     const sortedMensal = Object.fromEntries(Object.entries(faturamentoConsolidado).sort());
     const ultrapassou_sublimite = rbt12Atual > SUBLIMITE_ESTADUAL_MUNICIPAL;
 
-    // Se houver detalhamento composto, calcula a alíquota efetiva média ponderada para exibição
     const aliquotaEfetivaFinal = totalDasMensal > 0 && detalhamentoAnexos.length > 0
         ? (totalDasMensal / detalhamentoAnexos.reduce((acc, curr) => acc + curr.faturamento, 0)) * 100
         : eff;
@@ -416,7 +433,7 @@ export const calcularResumoEmpresa = (
         das_mensal: totalDasMensal,
         mensal: sortedMensal,
         historico_simulado: historicoSimulado,
-        anexo_efetivo: anexoEfetivoPrincipal, // Mantém o principal como referência, mas o cálculo real está no detalhamento
+        anexo_efetivo: anexoEfetivoPrincipal, 
         fator_r: fatorRGlobal,
         folha_12: empresa.folha12,
         ultrapassou_sublimite,
@@ -425,29 +442,18 @@ export const calcularResumoEmpresa = (
     };
 };
 
-// Helper for cleaning money strings from OCR
 const sanitizeMoneyValue = (value: any): number => {
     if (typeof value === 'number') return value;
     if (typeof value !== 'string') return 0;
-
-    // Remove typical noise "R$", spaces, etc.
     let clean = value.replace(/[R$\s]/g, '');
-    
-    // Handle common OCR errors
     clean = clean.replace(/O/g, '0').replace(/l/g, '1').replace(/S/g, '5');
-
-    // Try to determine if it uses comma or dot as decimal separator
     const lastCommaIndex = clean.lastIndexOf(',');
     const lastDotIndex = clean.lastIndexOf('.');
-
     if (lastCommaIndex > lastDotIndex) {
-        // Likely Brazilian format: 1.000,00
         clean = clean.replace(/\./g, '').replace(',', '.');
     } else {
-        // Likely US format: 1,000.00 or already clean number
         clean = clean.replace(/,/g, '');
     }
-
     const parsed = parseFloat(clean);
     return isNaN(parsed) ? 0 : parsed;
 }
@@ -458,7 +464,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
 
     try {
         if (file.type === 'application/pdf') {
-            // Convert File to Base64
             const buffer = await file.arrayBuffer();
             let binary = '';
             const bytes = new Uint8Array(buffer);
@@ -467,7 +472,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             }
             const base64 = btoa(binary);
 
-            // Check if it's a PGDAS Extract (Revenue History) or Invoices
             if (file.name.toUpperCase().includes('PGDAS') || file.name.toUpperCase().includes('EXTRATO')) {
                 try {
                     const pgdasData = await extractPgdasDataFromPdf(base64);
@@ -476,25 +480,20 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                          pgdasData.forEach(item => {
                              const parts = item.competencia.split('/');
                              if (parts.length === 2) {
-                                 // Format YYYY-MM
                                  const key = `${parts[1]}-${parts[0]}`; 
                                  faturamentoManualUpdate[key] = sanitizeMoneyValue(item.valor);
                              }
                          });
-                         saveFaturamentoManual(empresaId, faturamentoManualUpdate);
+                         await saveFaturamentoManual(empresaId, faturamentoManualUpdate);
                          result.successCount = pgdasData.length;
                          return result;
                     }
-                } catch (e) {
-                    // Fallback to invoice extraction
-                }
+                } catch (e) { }
             }
 
-            // Invoice Extraction
             const extractedData = await extractInvoiceDataFromPdf(base64);
             
             extractedData.forEach(item => {
-                 // Parse date DD/MM/YYYY
                  let timestamp = Date.now();
                  if (item.data) {
                     const dateParts = item.data.split('/');
@@ -502,9 +501,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                         timestamp = new Date(Number(dateParts[2]), Number(dateParts[1]) - 1, Number(dateParts[0])).getTime();
                     }
                  }
-                 
                  const safeValue = sanitizeMoneyValue(item.valor);
-                 
                  if (safeValue > 0) {
                      notasToSave.push({
                          id: crypto.randomUUID(),
@@ -520,21 +517,18 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         } else if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
              const text = await file.text();
              const lines = text.split('\n');
-             // Simple CSV parser: Date,Value,Description
              lines.forEach((line, idx) => {
-                 if (!line.trim() || idx === 0) return; // Skip empty or header
+                 if (!line.trim() || idx === 0) return; 
                  const cols = line.split(',');
                  if (cols.length >= 2) {
-                     const dateStr = cols[0].trim(); // Assume YYYY-MM-DD or DD/MM/YYYY
+                     const dateStr = cols[0].trim();
                      let timestamp = Date.parse(dateStr);
                      if (isNaN(timestamp)) {
-                         // Try DD/MM/YYYY
                          const parts = dateStr.split('/');
                          if (parts.length === 3) {
                              timestamp = new Date(Number(parts[2]), Number(parts[1])-1, Number(parts[0])).getTime();
                          }
                      }
-
                      const val = parseFloat(cols[1].trim());
                      if (!isNaN(timestamp) && !isNaN(val)) {
                          notasToSave.push({
@@ -554,7 +548,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         }
 
         if (notasToSave.length > 0) {
-            saveNotas(notasToSave);
+            await saveNotas(notasToSave);
             result.successCount += notasToSave.length;
         }
 
@@ -565,25 +559,15 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
     return result;
 };
 
-export const calcularDiscriminacaoImpostos = (
-    anexo: string,
-    faixaIndex: number,
-    valorDasTotal: number
-): Record<string, number> => {
+export const calcularDiscriminacaoImpostos = (anexo: string, faixaIndex: number, valorDasTotal: number): Record<string, number> => {
     const discriminacao: Record<string, number> = {};
-    
     if (valorDasTotal <= 0) return discriminacao;
-    
-    // Ensure faixaIndex is within bounds (0-5)
     const safeIndex = Math.max(0, Math.min(faixaIndex, 5));
     const reparticao = REPARTICAO_IMPOSTOS[anexo]?.[safeIndex];
-
     if (reparticao) {
         Object.entries(reparticao).forEach(([imposto, percentual]) => {
-            // Percentual is share of DAS (e.g. 34.00 for ICMS means 34% of the DAS value)
             discriminacao[imposto] = valorDasTotal * (percentual / 100);
         });
     }
-
     return discriminacao;
 };

@@ -99,6 +99,17 @@ const App: React.FC = () => {
   const [simplesNotas, setSimplesNotas] = useState<Record<string, SimplesNacionalNota[]>>({});
   const [selectedSimplesEmpresaId, setSelectedSimplesEmpresaId] = useState<string | null>(null);
   
+  const loadSimplesData = async () => {
+      try {
+          const empresas = await simplesService.getEmpresas();
+          const notas = await simplesService.getAllNotas();
+          setSimplesEmpresas(empresas);
+          setSimplesNotas(notas);
+      } catch (e) {
+          console.error("Erro ao carregar dados do Simples", e);
+      }
+  };
+
   useEffect(() => {
     // This effect runs once on component mount
     try {
@@ -111,8 +122,7 @@ const App: React.FC = () => {
         const storedHistory = localStorage.getItem('fiscal-consultant-history');
         if (storedHistory) setHistory(JSON.parse(storedHistory));
 
-        setSimplesEmpresas(simplesService.getEmpresas());
-        setSimplesNotas(simplesService.getAllNotas());
+        loadSimplesData();
     } catch (e) {
         console.error("Failed to parse data from localStorage", e);
     }
@@ -147,6 +157,7 @@ const App: React.FC = () => {
   // Auth Handlers
   const handleLoginSuccess = (user: User) => {
       setCurrentUser(user);
+      loadSimplesData(); // Reload data when user changes (if using multi-tenant logic later)
   };
 
   const handleLogout = () => {
@@ -297,6 +308,7 @@ const App: React.FC = () => {
         if(newType === SearchType.SIMPLES_NACIONAL) {
             setSimplesView('dashboard');
             setSelectedSimplesEmpresaId(null);
+            loadSimplesData(); // Refresh
         }
     }
   };
@@ -414,9 +426,9 @@ const App: React.FC = () => {
     }
   };
 
-    // --- Simples Nacional Handlers ---
-    const handleSaveSimplesEmpresa = (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => {
-        const newEmpresa = simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias);
+    // --- Simples Nacional Handlers (ASYNC) ---
+    const handleSaveSimplesEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => {
+        const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias);
         setSimplesEmpresas(prev => [...prev, newEmpresa]);
         setSimplesView('dashboard');
         
@@ -425,8 +437,8 @@ const App: React.FC = () => {
         }
     };
     
-    const handleUpdateSimplesEmpresa = (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
-        const updatedEmpresa = simplesService.updateEmpresa(empresaId, data);
+    const handleUpdateSimplesEmpresa = async (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
+        const updatedEmpresa = await simplesService.updateEmpresa(empresaId, data);
         if (updatedEmpresa) {
             setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
         }
@@ -446,26 +458,24 @@ const App: React.FC = () => {
     const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
         try {
             const result = await simplesService.parseAndSaveNotas(empresaId, file);
-            setSimplesNotas(simplesService.getAllNotas());
-            if (result.successCount > 0) {
-                setSimplesEmpresas(simplesService.getEmpresas());
-            }
+            // Reload data to get updated notes/companies
+            await loadSimplesData();
             return result;
         } catch (e: any) {
             return { successCount: 0, failCount: 0, errors: [e.message || 'Erro desconhecido ao processar o arquivo.'] };
         }
     };
 
-    const handleUpdateFolha12 = (empresaId: string, folha12: number) => {
-        const updatedEmpresa = simplesService.updateFolha12(empresaId, folha12);
+    const handleUpdateFolha12 = async (empresaId: string, folha12: number) => {
+        const updatedEmpresa = await simplesService.updateFolha12(empresaId, folha12);
         if (updatedEmpresa) {
             setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
         }
         return updatedEmpresa;
     };
     
-    const handleSaveFaturamentoManual = (empresaId: string, faturamento: { [key: string]: number }) => {
-        const updatedEmpresa = simplesService.saveFaturamentoManual(empresaId, faturamento);
+    const handleSaveFaturamentoManual = async (empresaId: string, faturamento: { [key: string]: number }) => {
+        const updatedEmpresa = await simplesService.saveFaturamentoManual(empresaId, faturamento);
         if (updatedEmpresa) {
             setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
         }
