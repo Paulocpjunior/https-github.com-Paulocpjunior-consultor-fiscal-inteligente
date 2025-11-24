@@ -146,7 +146,10 @@ export const login = async (email: string, password: string): Promise<{ user: Us
         const userIndex = users.findIndex(u => normalizeEmail(u.email) === cleanEmail);
         const user = users[userIndex];
 
-        if (!user) throw new Error('Usuário não encontrado (Local). Verifique o e-mail.');
+        if (!user) {
+            // Mensagem específica para erro de usuário não encontrado em modo LOCAL
+            throw new Error('Usuário não encontrado neste computador (Modo Local). Se você se cadastrou em outro PC, é necessário configurar o Banco de Dados na Nuvem.');
+        }
 
         const targetHashTrimmed = hashPassword(cleanPassword);
         const targetHashRaw = hashPassword(password);

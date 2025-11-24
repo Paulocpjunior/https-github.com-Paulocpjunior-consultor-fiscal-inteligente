@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import Logo from './Logo';
 import { User } from '../types';
 import * as authService from '../services/authService';
+import { isFirebaseConfigured } from '../services/firebaseConfig';
+import { GlobeIcon, ShieldIcon } from './Icons';
 
 interface LoginScreenProps {
     onLoginSuccess: (user: User) => void;
@@ -134,10 +136,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     </div>
                 </div>
                 
-                <div className="bg-slate-50 dark:bg-slate-900 p-4 text-center border-t border-slate-100 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Ambiente Seguro • SP Assessoria Contábil
-                    </p>
+                <div className="bg-slate-50 dark:bg-slate-900 p-4 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2">
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${isFirebaseConfigured ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                        {isFirebaseConfigured ? (
+                            <>
+                                <GlobeIcon className="w-3 h-3" />
+                                Banco de Dados: NUVEM (Multi-usuário)
+                            </>
+                        ) : (
+                            <>
+                                <ShieldIcon className="w-3 h-3" />
+                                Banco de Dados: LOCAL (Apenas este PC)
+                            </>
+                        )}
+                    </div>
+                    {!isFirebaseConfigured && (
+                        <p className="text-[10px] text-slate-400 text-center max-w-xs">
+                            Para ativar o acesso multi-usuário entre computadores diferentes, configure as chaves do Firebase no arquivo de sistema.
+                        </p>
+                    )}
                 </div>
             </div>
         </div>

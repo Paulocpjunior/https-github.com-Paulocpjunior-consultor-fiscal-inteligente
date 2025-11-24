@@ -1,26 +1,22 @@
-
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
-// Para tornar a aplicação multi-usuário REAL, você deve:
-// 1. Ir em console.firebase.google.com
-// 2. Criar um projeto novo
-// 3. Adicionar um app "Web"
-// 4. Copiar as chaves geradas e substituir abaixo:
+// Chaves configuradas para o projeto consultorfiscalapp
 
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "", // Cole sua apiKey aqui se não usar env
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
-  projectId: process.env.FIREBASE_PROJECT_ID || "",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: process.env.FIREBASE_APP_ID || ""
+  apiKey: "AIzaSyDIqWgUuLjkrrg1vQe5FuN1TY22WHoPQQs",
+  authDomain: "consultorfiscalapp.firebaseapp.com",
+  projectId: "consultorfiscalapp",
+  storageBucket: "consultorfiscalapp.firebasestorage.app",
+  messagingSenderId: "631239634290",
+  appId: "1:631239634290:web:1edfcab8ba8e21f27c41eb",
+  measurementId: "G-25WMQ139GN"
 };
 
-// Verifica se a configuração está presente
-const isFirebaseConfigured = !!firebaseConfig.apiKey;
+// Verifica se a chave de API foi preenchida (ignora string vazia ou placeholders)
+let isFirebaseConfigured = !!firebaseConfig.apiKey && firebaseConfig.apiKey !== "" && !firebaseConfig.apiKey.includes("COLE_AQUI");
 
 let app;
 let auth: any;
@@ -34,9 +30,11 @@ if (isFirebaseConfigured) {
         console.log("Firebase conectado com sucesso.");
     } catch (e) {
         console.error("Erro ao inicializar Firebase:", e);
+        // Fallback para evitar crash total se as chaves estiverem erradas
+        isFirebaseConfigured = false;
     }
 } else {
-    console.warn("Firebase não configurado. A aplicação está rodando em modo LOCAL (LocalStorage). Para ativar o modo multi-usuário, configure o services/firebaseConfig.ts");
+    console.warn("Firebase não configurado ou chaves inválidas. A aplicação rodará em modo LOCAL (LocalStorage).");
 }
 
 export { auth, db, isFirebaseConfigured };
