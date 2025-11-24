@@ -50,8 +50,12 @@ export const register = async (name: string, email: string, password: string): P
             
             // Check if it's the very first user in the system to make them admin
             if (!isMaster) {
-                const usersSnap = await getDocs(collection(db, 'users'));
-                if (usersSnap.empty) role = 'admin';
+                try {
+                    const usersSnap = await getDocs(collection(db, 'users'));
+                    if (usersSnap.empty) role = 'admin';
+                } catch (ignored) {
+                    // Ignore permission errors during first registration check, default to colaborador
+                }
             }
 
             await updateProfile(fbUser, { displayName: name });
@@ -65,7 +69,12 @@ export const register = async (name: string, email: string, password: string): P
             };
 
             // Save extra data to Firestore
-            await setDoc(doc(db, 'users', fbUser.uid), userData);
+            try {
+                await setDoc(doc(db, 'users', fbUser.uid), userData);
+            } catch (e: any) {
+                console.warn("Erro ao salvar perfil no Firestore. Verifique regras de segurança.", e);
+                // Continue login anyway, profile might be incomplete but Auth works
+            }
             
             createSession(userData);
             return { user: userData };
@@ -114,14 +123,29 @@ export const login = async (email: string, password: string): Promise<{ user: Us
             const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
             const fbUser = userCredential.user;
             
-            // Fetch role from Firestore
-            const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
             let userData: User;
 
-            if (userDoc.exists()) {
-                userData = userDoc.data() as User;
-            } else {
-                // Auto-heal if doc missing but auth exists
+            // Try to fetch extended profile from Firestore
+            try {
+                const userDoc = await getDoc(doc(db, 'users', fbUser.uid));
+                if (userDoc.exists()) {
+                    userData = userDoc.data() as User;
+                } else {
+                    // Auto-heal: If auth exists but doc doesn't (e.g. deleted manually or permission issue prevented creation)
+                    const role = cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL) ? 'admin' : 'colaborador';
+                    userData = {
+                        id: fbUser.uid,
+                        name: fbUser.displayName || 'Usuário',
+                        email: cleanEmail,
+                        role,
+                        isVerified: true
+                    };
+                    // Try to write it back for next time
+                    await setDoc(doc(db, 'users', fbUser.uid), userData);
+                }
+            } catch (firestoreError: any) {
+                console.warn("Firebase Login: Auth successful but Firestore access failed.", firestoreError.code);
+                // Fallback: Construct user from Auth object if Firestore is locked/unreachable
                 const role = cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL) ? 'admin' : 'colaborador';
                 userData = {
                     id: fbUser.uid,
@@ -130,15 +154,20 @@ export const login = async (email: string, password: string): Promise<{ user: Us
                     role,
                     isVerified: true
                 };
-                await setDoc(doc(db, 'users', fbUser.uid), userData);
             }
 
             createSession(userData);
             logAction(userData, 'login');
             return { user: userData };
         } catch (error: any) {
-            console.error("Firebase login error", error);
-            throw new Error('Falha no login. Verifique e-mail e senha.');
+            console.error("Firebase login error", error.code);
+            if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                throw new Error('Credenciais inválidas. Verifique e-mail e senha. Se você criou a conta em outro PC (modo Local), precisa criar novamente aqui (modo Nuvem).');
+            }
+            if (error.code === 'auth/too-many-requests') {
+                throw new Error('Muitas tentativas falhas. Aguarde alguns instantes.');
+            }
+            throw new Error(`Falha no login: ${error.message}`);
         }
     } else {
         // LOCAL STORAGE FALLBACK
@@ -243,7 +272,8 @@ export const logAction = async (user: User, action: string, details?: string) =>
         try {
             await addDoc(collection(db, 'logs'), newLog);
         } catch (e) {
-            console.error("Failed to log to cloud", e);
+            // Silent fail for logs
+            // console.error("Failed to log to cloud", e);
         }
     } else {
         const logs = getAccessLogsSync();
@@ -254,8 +284,13 @@ export const logAction = async (user: User, action: string, details?: string) =>
 
 export const getAllUsers = async (): Promise<User[]> => {
     if (isFirebaseConfigured && db) {
-        const snapshot = await getDocs(collection(db, 'users'));
-        return snapshot.docs.map(d => d.data() as User);
+        try {
+            const snapshot = await getDocs(collection(db, 'users'));
+            return snapshot.docs.map(d => d.data() as User);
+        } catch (e) {
+            console.warn("Could not fetch users list (likely permission issue).");
+            return [];
+        }
     } else {
         const users = getUsersInternalLocal();
         return users.map(({ passwordHash, ...user }) => user);

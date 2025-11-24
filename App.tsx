@@ -19,6 +19,8 @@ import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSugges
 import * as simplesService from './services/simplesNacionalService';
 import * as authService from './services/authService';
 import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon } from './components/Icons';
+import { auth, isFirebaseConfigured } from './services/firebaseConfig';
+import { onAuthStateChanged } from 'firebase/auth';
 
 // Lazy load heavy components
 const SimplesNacionalDetalhe = lazy(() => import('./components/SimplesNacionalDetalhe'));
@@ -122,7 +124,19 @@ const App: React.FC = () => {
         const storedHistory = localStorage.getItem('fiscal-consultant-history');
         if (storedHistory) setHistory(JSON.parse(storedHistory));
 
-        loadSimplesData();
+        // Optimized Data Loading for Firebase (Wait for Auth)
+        if (isFirebaseConfigured && auth) {
+            const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+                if (firebaseUser) {
+                    // Only load data once we have a confirmed user to satisfy security rules
+                    loadSimplesData();
+                }
+            });
+            return () => unsubscribe();
+        } else {
+            // Local mode, load immediately
+            loadSimplesData();
+        }
     } catch (e) {
         console.error("Failed to parse data from localStorage", e);
     }
@@ -157,12 +171,15 @@ const App: React.FC = () => {
   // Auth Handlers
   const handleLoginSuccess = (user: User) => {
       setCurrentUser(user);
-      loadSimplesData(); // Reload data when user changes (if using multi-tenant logic later)
+      // In local mode, or if already authed, reload. 
+      // In firebase mode, onAuthStateChanged will handle the initial load, but this helps on explicit login.
+      loadSimplesData(); 
   };
 
   const handleLogout = () => {
       authService.logout();
       setCurrentUser(null);
+      setSimplesEmpresas([]); // Clear data on logout
   };
 
   const saveFavorites = (newFavorites: FavoriteItem[]) => {

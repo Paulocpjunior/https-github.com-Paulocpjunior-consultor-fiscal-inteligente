@@ -1,7 +1,7 @@
 
 import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo } from '../types';
 import { extractInvoiceDataFromPdf, extractPgdasDataFromPdf } from './geminiService';
-import { db, isFirebaseConfigured } from './firebaseConfig';
+import { db, auth, isFirebaseConfigured } from './firebaseConfig';
 import { collection, getDocs, doc, setDoc, updateDoc, getDoc, addDoc } from 'firebase/firestore';
 
 // ----------------- CONSTANTES E LOCALSTORAGE -----------------
@@ -101,11 +101,21 @@ const SUBLIMITE_ESTADUAL_MUNICIPAL = 3600000;
 
 export const getEmpresas = async (): Promise<SimplesNacionalEmpresa[]> => {
     if (isFirebaseConfigured && db) {
+        // IMPORTANT: Auth Guard to prevent "Missing or insufficient permissions"
+        if (!auth.currentUser) {
+            return [];
+        }
+
         try {
             const snapshot = await getDocs(collection(db, 'simples_empresas'));
             return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
-        } catch (e) {
-            console.error("Erro ao buscar empresas no Firebase", e);
+        } catch (e: any) {
+            // Silent warn instead of error to avoid UI noise
+            if (e.code === 'permission-denied' || e.message.includes('permission')) {
+                console.warn("Aviso: Permissão negada ao buscar empresas (Firebase Rules).");
+            } else {
+                console.error("Erro ao buscar empresas no Firebase", e);
+            }
             return [];
         }
     } else {
@@ -166,16 +176,28 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
 
 export const getAllNotas = async (): Promise<Record<string, SimplesNacionalNota[]>> => {
     if (isFirebaseConfigured && db) {
-        // In Firestore, we might store notes in a subcollection or main collection with empresaId
-        // For simplicity, let's assume a 'simples_notas' collection
-        const snapshot = await getDocs(collection(db, 'simples_notas'));
-        const notas: Record<string, SimplesNacionalNota[]> = {};
-        snapshot.forEach(doc => {
-            const data = doc.data() as SimplesNacionalNota;
-            if (!notas[data.empresaId]) notas[data.empresaId] = [];
-            notas[data.empresaId].push({ id: doc.id, ...data });
-        });
-        return notas;
+        // Auth Guard
+        if (!auth.currentUser) return {};
+
+        try {
+            // In Firestore, we might store notes in a subcollection or main collection with empresaId
+            // For simplicity, let's assume a 'simples_notas' collection
+            const snapshot = await getDocs(collection(db, 'simples_notas'));
+            const notas: Record<string, SimplesNacionalNota[]> = {};
+            snapshot.forEach(doc => {
+                const data = doc.data() as SimplesNacionalNota;
+                if (!notas[data.empresaId]) notas[data.empresaId] = [];
+                notas[data.empresaId].push({ id: doc.id, ...data });
+            });
+            return notas;
+        } catch (e: any) {
+            if (e.code === 'permission-denied') {
+                console.warn("Aviso: Permissão negada ao buscar notas.");
+            } else {
+                console.error("Erro ao carregar notas", e);
+            }
+            return {};
+        }
     } else {
         try {
             const data = localStorage.getItem(STORAGE_KEY_NOTAS);
