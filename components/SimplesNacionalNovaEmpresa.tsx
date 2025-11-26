@@ -1,11 +1,11 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { SimplesNacionalAnexo, SimplesNacionalAtividade, CnaeSuggestion } from '../types';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { sugerirAnexoPorCnae } from '../services/simplesNacionalService';
-import { fetchCnaeSuggestions } from '../services/geminiService';
-import { PlusIcon, TrashIcon, SearchIcon, CalculatorIcon } from './Icons';
+import { fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
+import { PlusIcon, TrashIcon, SearchIcon, CalculatorIcon, ShieldIcon, CloseIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
+import { FormattedText } from './FormattedText';
 
 interface SimplesNacionalNovaEmpresaProps {
     onSave: (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => void;
@@ -44,6 +44,10 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     const [activeCnaeField, setActiveCnaeField] = useState<'principal' | 'secundario' | null>(null);
     const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suggestionsRef = useRef<HTMLDivElement>(null);
+
+    // Estado para Validação de CNAE (Modal) - Modificado para string | null
+    const [isValidatingCnae, setIsValidatingCnae] = useState<string | null>(null); 
+    const [cnaeAnalysis, setCnaeAnalysis] = useState<string | null>(null);
 
     useEffect(() => {
       if (anexo === 'auto' && cnae.trim().length >= 2) {
@@ -105,6 +109,22 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         setActiveCnaeField(null);
     };
 
+    const handleValidateCnae = async (cnaeToValidate?: string) => {
+        const targetCnae = cnaeToValidate || cnae;
+        if (!targetCnae.trim()) return;
+        
+        setIsValidatingCnae(targetCnae);
+        try {
+            const result = await fetchCnaeDescription(targetCnae);
+            setCnaeAnalysis(result.text);
+        } catch (e) {
+            console.error(e);
+            setCnaeAnalysis("Erro ao validar CNAE.");
+        } finally {
+            setIsValidatingCnae(null);
+        }
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!nome.trim() || !cnpj.trim() || !cnae.trim()) {
@@ -130,6 +150,9 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                 setNome(data.razaoSocial);
                 if (data.nomeFantasia && data.nomeFantasia.toLowerCase() !== data.razaoSocial.toLowerCase()) {
                     setNomeFantasia(data.nomeFantasia);
+                }
+                if (data.cnaePrincipal) {
+                    setCnae(data.cnaePrincipal.codigo);
                 }
             }
         } catch (e: any) {
@@ -184,7 +207,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     };
 
     return (
-        <div className="max-w-2xl mx-auto animate-fade-in pb-10">
+        <div className="max-w-2xl mx-auto animate-fade-in pb-10 relative">
              <div className="p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6">
                     Cadastrar Nova Empresa
@@ -233,31 +256,42 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="relative">
-                            <label htmlFor="cnae" className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                            <label htmlFor="cnae" className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 mb-1">
                                 CNAE Principal
                                 <SearchIcon className="w-3 h-3 text-slate-400" />
                             </label>
-                            <input
-                                type="text"
-                                id="cnae"
-                                value={cnae}
-                                onChange={(e) => handleSearchCnae(e.target.value, 'principal')}
-                                placeholder="Busque por código ou atividade..."
-                                className="mt-1 w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                required
-                                autoComplete="off"
-                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    id="cnae"
+                                    value={cnae}
+                                    onChange={(e) => handleSearchCnae(e.target.value, 'principal')}
+                                    placeholder="Código ou descrição..."
+                                    className="w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                    required
+                                    autoComplete="off"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => handleValidateCnae()}
+                                    disabled={!!isValidatingCnae || !cnae.trim()}
+                                    className="btn-press px-3 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 disabled:opacity-50"
+                                    title="Validar CNAE e ver detalhes"
+                                >
+                                    {isValidatingCnae === cnae ? <LoadingSpinner /> : <ShieldIcon className="w-5 h-5" />}
+                                </button>
+                            </div>
                             {activeCnaeField === 'principal' && renderSuggestions()}
                         </div>
                         <div>
-                            <label htmlFor="anexo" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            <label htmlFor="anexo" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
                             Anexo Principal
                             </label>
                             <select
                                 id="anexo"
                                 value={anexo}
                                 onChange={(e) => setAnexo(e.target.value as 'auto' | SimplesNacionalAnexo)}
-                                className="mt-1 w-full pl-4 pr-10 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                className="w-full pl-4 pr-10 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
                             >
                                 <option value="auto">Automático (sugerir)</option>
                                 <option value="I">Anexo I – Comércio</option>
@@ -319,20 +353,31 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                             <ul className="space-y-2">
                                 {atividadesSecundarias.map((item, index) => (
                                     <li key={index} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg text-sm">
-                                        <div>
+                                        <div className="flex items-center gap-3">
                                             <span className="font-semibold text-slate-700 dark:text-slate-200">{item.cnae}</span>
-                                            <span className="mx-2 text-slate-400">|</span>
+                                            <span className="text-slate-400">|</span>
                                             <span className="text-slate-500 dark:text-slate-400">
                                                 {anexoDescriptions[item.anexo].replace('Anexo ', '')}
                                             </span>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveAtividade(index)}
-                                            className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
-                                        >
-                                            <TrashIcon className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleValidateCnae(item.cnae)}
+                                                disabled={!!isValidatingCnae}
+                                                className="p-1 text-sky-600 hover:bg-sky-100 dark:hover:bg-sky-900/30 rounded"
+                                                title="Validar"
+                                            >
+                                                {isValidatingCnae === item.cnae ? <LoadingSpinner /> : <ShieldIcon className="w-4 h-4" />}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveAtividade(index)}
+                                                className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            >
+                                                <TrashIcon className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </li>
                                 ))}
                             </ul>
@@ -358,6 +403,34 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                     </div>
                 </form>
              </div>
+
+             {/* Modal de Validação CNAE */}
+             {cnaeAnalysis && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[100] animate-fade-in" onClick={() => setCnaeAnalysis(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="bg-sky-50 dark:bg-sky-900/30 p-4 rounded-t-xl flex justify-between items-center border-b border-sky-100 dark:border-sky-800">
+                            <h3 className="text-sky-800 dark:text-sky-200 font-bold text-lg flex items-center gap-2">
+                                <ShieldIcon className="w-6 h-6" />
+                                Análise Oficial do CNAE
+                            </h3>
+                            <button onClick={() => setCnaeAnalysis(null)} className="p-1 rounded-full text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                <CloseIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto prose prose-slate dark:prose-invert max-w-none text-sm">
+                            <FormattedText text={cnaeAnalysis} />
+                        </div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-b-xl border-t border-slate-200 dark:border-slate-700">
+                            <button 
+                                onClick={() => setCnaeAnalysis(null)} 
+                                className="w-full py-2 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 transition-colors"
+                            >
+                                Fechar e Continuar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+             )}
         </div>
     );
 };

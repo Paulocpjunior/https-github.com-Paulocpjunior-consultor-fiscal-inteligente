@@ -122,6 +122,7 @@ export interface SimplesNacionalEmpresa {
     folha12: number;
     faturamentoManual?: { [key: string]: number };
     historicoCalculos?: SimplesHistoricoCalculo[];
+    createdBy?: string;
 }
 
 export interface SimplesNacionalNota {
@@ -238,6 +239,7 @@ export interface LucroPresumidoEmpresa {
     cnaesSecundarios?: { codigo: string; descricao: string }[];
     fichaFinanceira?: FichaFinanceiraRegistro[];
     tiposAtividade?: { comercio: boolean; industria: boolean; servico: boolean };
+    createdBy?: string;
 }
 
 // --- Auth Types ---

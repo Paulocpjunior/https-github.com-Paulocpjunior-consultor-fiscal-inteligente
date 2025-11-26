@@ -183,9 +183,12 @@ export const GlobeIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// --- ÍCONES DE SUCESSO E FEEDBACK ---
+export const PencilIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+    </svg>
+);
 
-// Variação 1: Animated Check (O Clássico Elegante)
 export const AnimatedCheckIcon: React.FC<{ className?: string, size?: string }> = ({ className, size = "w-12 h-12" }) => (
     <div className={`${className} ${size} text-green-500`}>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -195,20 +198,17 @@ export const AnimatedCheckIcon: React.FC<{ className?: string, size?: string }> 
     </div>
 );
 
-// Variação 2: Sparkle Star (O Lúdico/Conquista)
 export const SparkleStarIcon: React.FC<{ className?: string, size?: string }> = ({ className, size = "w-12 h-12" }) => (
     <div className={`${className} ${size} animate-pop-in relative text-yellow-400`}>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="drop-shadow-md">
             <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clipRule="evenodd" />
         </svg>
-        {/* Faíscas decorativas */}
         <svg className="absolute top-0 right-0 w-4 h-4 -mt-1 -mr-1 text-yellow-300 animate-pulse" viewBox="0 0 24 24" fill="currentColor">
              <path d="M12 2l2 8 8 2-8 2-2 8-2-8-8-2 8-2 2-8z" />
         </svg>
     </div>
 );
 
-// Variação 3: Ripple Success (O Moderno/Notificação)
 export const RippleSuccessIcon: React.FC<{ className?: string, size?: string }> = ({ className, size = "w-10 h-10" }) => (
     <div className={`${className} relative flex items-center justify-center ${size}`}>
         <div className="absolute w-full h-full bg-sky-400 rounded-full opacity-75 animate-ping"></div>

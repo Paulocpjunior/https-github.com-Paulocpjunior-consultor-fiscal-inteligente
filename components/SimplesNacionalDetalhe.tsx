@@ -1,1459 +1,1050 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SearchResult, SimplesNacionalAnexo, CnaeTaxDetail, SimplesNacionalImportResult, SimplesNacionalAtividade, SimplesItemCalculo, SimplesHistoricoCalculo } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { fetchSimplesNacionalExplanation, fetchCnaeDescription, fetchCnaeTaxDetails } from '../services/geminiService';
+import { fetchCnaeTaxDetails } from '../services/geminiService';
+import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, CopyIcon, PencilIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
-import { FormattedText } from './FormattedText';
-import { ArrowLeftIcon, CloseIcon, EyeIcon, InfoIcon, ShieldIcon, TrashIcon, SaveIcon, DocumentTextIcon, DownloadIcon, GlobeIcon, PlusIcon, AnimatedCheckIcon, BriefcaseIcon, HistoryIcon } from './Icons';
 import SimpleChart from './SimpleChart';
-import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS } from '../services/simplesNacionalService';
 
 interface SimplesNacionalDetalheProps {
     empresa: SimplesNacionalEmpresa;
     notas: SimplesNacionalNota[];
     onBack: () => void;
     onImport: (empresaId: string, file: File) => Promise<SimplesNacionalImportResult>;
-    onUpdateFolha12: (empresaId: string, folha12: number) => SimplesNacionalEmpresa | null;
-    onSaveFaturamentoManual: (empresaId: string, faturamento: { [key: string]: number }) => SimplesNacionalEmpresa | null;
-    onUpdateEmpresa: (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => SimplesNacionalEmpresa | null;
+    onUpdateFolha12: (id: string, value: number) => void;
+    onSaveFaturamentoManual: (id: string, faturamento: any) => void;
+    onUpdateEmpresa: (id: string, data: Partial<SimplesNacionalEmpresa>) => void;
     onShowClienteView: () => void;
 }
 
-interface CnaeAnalysisResult {
-    cnae: string;
-    role: 'Principal' | 'Secundário';
-    details: CnaeTaxDetail[];
-    error?: string;
+interface CnaeInputState {
+    valor: string;
+    issRetido: boolean;
+    icmsSt: boolean;
 }
 
-const getMesesApuracaoOptions = (): Date[] => {
-    const options = [];
-    const today = new Date();
-    today.setDate(1); // Normaliza para o primeiro dia do mês
-    
-    // Gera opções para os próximos 12 meses e os últimos 24 meses
-    for (let i = -12; i < 24; i++) {
-        const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-        options.push(date);
-    }
-    return options;
-};
-
-const getPeriodoManual = (mesApuracao: Date): Date[] => {
-    const period: Date[] = [];
-    const dataInicioPeriodo = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
-     for (let i = 0; i < 12; i++) {
-        const date = new Date(dataInicioPeriodo.getFullYear(), dataInicioPeriodo.getMonth() + i, 1);
-        period.push(date);
-    }
-    return period;
-}
-
-const EditEmpresaModal: React.FC<{
-    empresa: SimplesNacionalEmpresa;
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (data: Partial<SimplesNacionalEmpresa>) => void;
-}> = ({ empresa, isOpen, onClose, onSave }) => {
-    const [formData, setFormData] = useState({
-        nome: empresa.nome,
-        cnpj: empresa.cnpj,
-        cnae: empresa.cnae,
-        anexo: empresa.anexo,
-    });
-    
-    const [atividadesSecundarias, setAtividadesSecundarias] = useState<SimplesNacionalAtividade[]>(empresa.atividadesSecundarias || []);
-    const [newCnae, setNewCnae] = useState('');
-    const [newAnexo, setNewAnexo] = useState<SimplesNacionalAnexo>('III');
-
-    useEffect(() => {
-        setFormData({
-            nome: empresa.nome,
-            cnpj: empresa.cnpj,
-            cnae: empresa.cnae,
-            anexo: empresa.anexo,
-        });
-        setAtividadesSecundarias(empresa.atividadesSecundarias || []);
-    }, [empresa]);
-
-    if (!isOpen) return null;
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+const CurrencyInput: React.FC<{ value: number; onChange: (val: number) => void; label?: string; className?: string }> = ({ value, onChange, label, className }) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value.replace(/\D/g, '');
+        const num = parseFloat(raw) / 100;
+        onChange(isNaN(num) ? 0 : num);
     };
 
-    const handleAddActivity = () => {
-        if (!newCnae.trim()) return;
-        setAtividadesSecundarias([...atividadesSecundarias, { cnae: newCnae, anexo: newAnexo }]);
-        setNewCnae('');
-        setNewAnexo('III');
-    };
-
-    const handleRemoveActivity = (index: number) => {
-        setAtividadesSecundarias(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onSave({
-            ...formData,
-            atividadesSecundarias
-        });
-        onClose();
-    };
+    const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(value);
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center p-4 border-b dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-10">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Editar Empresa</h3>
-                    <button onClick={onClose} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700">
-                        <CloseIcon className="w-5 h-5" />
-                    </button>
-                </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Nome</label>
-                        <input type="text" name="nome" value={formData.nome} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNPJ</label>
-                        <input type="text" name="cnpj" value={formData.cnpj} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNAE Principal</label>
-                            <input type="text" name="cnae" value={formData.cnae} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Anexo Principal</label>
-                            <select name="anexo" value={formData.anexo} onChange={handleChange} className="mt-1 w-full p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600">
-                                <option value="I">Anexo I</option>
-                                <option value="II">Anexo II</option>
-                                <option value="III">Anexo III</option>
-                                <option value="IV">Anexo IV</option>
-                                <option value="V">Anexo V</option>
-                                <option value="III_V">Anexo III/V (Fator R)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Secondary Activities Section */}
-                    <div className="border-t dark:border-slate-700 pt-4">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Outras Atividades (CNAEs)</label>
-                        <div className="flex gap-2 mb-2">
-                             <input 
-                                type="text" 
-                                value={newCnae} 
-                                onChange={(e) => setNewCnae(e.target.value)}
-                                placeholder="CNAE Secundário" 
-                                className="flex-grow p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 text-sm"
-                             />
-                             <select 
-                                value={newAnexo} 
-                                onChange={(e) => setNewAnexo(e.target.value as SimplesNacionalAnexo)}
-                                className="w-28 p-2 border rounded-md dark:bg-slate-700 dark:border-slate-600 text-sm"
-                             >
-                                <option value="I">Anexo I</option>
-                                <option value="II">Anexo II</option>
-                                <option value="III">Anexo III</option>
-                                <option value="IV">Anexo IV</option>
-                                <option value="V">Anexo V</option>
-                                <option value="III_V">III/V</option>
-                             </select>
-                             <button type="button" onClick={handleAddActivity} className="p-2 bg-sky-100 text-sky-600 rounded-md hover:bg-sky-200 flex items-center justify-center">
-                                <PlusIcon className="w-5 h-5" />
-                             </button>
-                        </div>
-                        <ul className="space-y-2 max-h-40 overflow-y-auto">
-                            {atividadesSecundarias.map((item, index) => (
-                                <li key={index} className="flex justify-between items-center p-2 bg-slate-50 dark:bg-slate-700/50 rounded text-sm">
-                                    <span>{item.cnae} <span className="text-slate-400 text-xs">({item.anexo})</span></span>
-                                    <button type="button" onClick={() => handleRemoveActivity(index)} className="text-red-500 hover:text-red-700 p-1">
-                                        <TrashIcon className="w-4 h-4" />
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    <div className="flex justify-end pt-4">
-                        <button type="button" onClick={onClose} className="mr-2 px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-md dark:text-slate-300 dark:hover:bg-slate-700">Cancelar</button>
-                        <button type="submit" className="px-4 py-2 bg-sky-600 text-white rounded-md hover:bg-sky-700">Salvar</button>
-                    </div>
-                </form>
+        <div className={className}>
+            {label && <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>}
+            <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                <input 
+                    type="text" 
+                    value={formatted} 
+                    onChange={handleChange} 
+                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal text-right"
+                />
             </div>
         </div>
     );
 };
 
-const HistoryDetailsModal: React.FC<{
-    data: SimplesHistoricoCalculo | null;
-    isOpen: boolean;
-    onClose: () => void;
-}> = ({ data, isOpen, onClose }) => {
-    if (!isOpen || !data) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60] animate-fade-in" onClick={onClose}>
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md animate-pop-in" onClick={e => e.stopPropagation()}>
-                <div className="bg-sky-600 p-4 rounded-t-xl flex justify-between items-center">
-                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                        <HistoryIcon className="w-5 h-5" />
-                        Detalhes da Apuração
-                    </h3>
-                    <button onClick={onClose} className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/20">
-                        <CloseIcon className="w-5 h-5" />
-                    </button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div className="text-center mb-6">
-                         <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Mês de Referência</p>
-                         <p className="text-2xl font-bold text-slate-800 dark:text-slate-100 capitalize">{data.mesReferencia}</p>
-                         <p className="text-xs text-slate-400 mt-1">Calculado em: {new Date(data.dataCalculo).toLocaleDateString('pt-BR')}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">RBT12</p>
-                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.rbt12)}
-                            </p>
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Alíquota Efetiva</p>
-                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
-                                {data.aliq_eff.toFixed(2)}%
-                            </p>
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Fator R</p>
-                            <p className={`font-mono font-semibold ${data.fator_r >= 0.28 ? 'text-green-600' : 'text-orange-500'}`}>
-                                {(data.fator_r * 100).toFixed(2)}%
-                            </p>
-                        </div>
-                         <div className="bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Enquadramento</p>
-                            <p className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
-                                {data.anexo_efetivo}
-                            </p>
-                        </div>
-                    </div>
-                    
-                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4 mt-2">
-                        <div className="flex justify-between items-center">
-                            <span className="text-slate-600 dark:text-slate-300 font-bold">Valor do DAS</span>
-                            <span className="text-xl font-bold text-sky-600 dark:text-sky-400">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.das_mensal)}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <button onClick={onClose} className="w-full mt-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 font-semibold transition-colors">
-                        Fechar
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView }) => {
-    const [isLoading, setIsLoading] = useState(false);
-    const [importError, setImportError] = useState<string[] | null>(null);
-    const [importSuccess, setImportSuccess] = useState<string | null>(null);
-    const [chatPergunta, setChatPergunta] = useState('');
-    const [chatResult, setChatResult] = useState<SearchResult | null>(null);
-    const [isChatLoading, setIsChatLoading] = useState(false);
-    const [folha12, setFolha12] = useState(empresa.folha12.toString());
-    const [folhaSuccess, setFolhaSuccess] = useState('');
-    
-    // State for File Import Flow
-    const [fileToImport, setFileToImport] = useState<File | null>(null);
-
-    // State for CNAE validation modal
-    const [isCnaeModalOpen, setIsCnaeModalOpen] = useState(false);
-    const [cnaeValidationResult, setCnaeValidationResult] = useState<SearchResult | null>(null);
-    const [isCnaeLoading, setIsCnaeLoading] = useState(false);
-    const [cnaeError, setCnaeError] = useState<string | null>(null);
-    const [cnaeToValidate, setCnaeToValidate] = useState('');
-
-    // State for Tax Analysis Table (Multi-CNAE)
-    const [taxAnalysisResults, setTaxAnalysisResults] = useState<CnaeAnalysisResult[] | null>(null);
-    const [isTaxAnalysisLoading, setIsTaxAnalysisLoading] = useState(false);
-
-    // State for Edit Empresa Modal
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-    
-    // State for History Details Modal
-    const [selectedHistorico, setSelectedHistorico] = useState<SimplesHistoricoCalculo | null>(null);
-
-    // State for Manual Invoicing
+const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ 
+    empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView 
+}) => {
     const [mesApuracao, setMesApuracao] = useState(new Date());
-    
-    // State for DAS Online Integration
-    const [dasOnlineStatus, setDasOnlineStatus] = useState<'idle' | 'connecting' | 'authenticating' | 'generating' | 'success'>('idle');
-    const [dasOnlineMsg, setDasOnlineMsg] = useState('');
-    
-    // --- NEW LOGIC: Breakdown Revenue by CNAE (not just Anexo) ---
-    const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, string>>({});
-    
-    // --- NEW LOGIC: Tax Settings (Retained ISS / ICMS ST) per CNAE ---
-    const [configuracaoPorCnae, setConfiguracaoPorCnae] = useState<Record<string, { issRetido: boolean, icmsSt: boolean }>>({});
-    
-    // --- NEW LOGIC: Quick Add Secondary CNAE ---
-    const [isAddingCnae, setIsAddingCnae] = useState(false);
-    const [quickCnae, setQuickCnae] = useState('');
-    const [quickAnexo, setQuickAnexo] = useState<SimplesNacionalAnexo>('III');
-
-    // Preenchimento recorrente
-    const [valorRecorrente, setValorRecorrente] = useState('');
-
-    // Formatar valores iniciais para exibição com máscara
-    const [manualFaturamento, setManualFaturamento] = useState<{ [key: string]: string }>(
-      Object.fromEntries(
-          Object.entries(empresa.faturamentoManual || {}).map(([key, value]) => [
-              key, 
-              new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value as number)
-          ])
-      )
-    );
+    const [folha12Input, setFolha12Input] = useState(empresa.folha12);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importResult, setImportResult] = useState<SimplesNacionalImportResult | null>(null);
     const [manualSuccess, setManualSuccess] = useState('');
+    const [historySuccess, setHistorySuccess] = useState('');
     
-    // Estado para histórico salvo
-    const [saveCalculoSuccess, setSaveCalculoSuccess] = useState('');
+    // Estado para inputs por CNAE (Mês Atual)
+    const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
+    
+    // Estado para Tabela de Histórico Manual
+    const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
 
+    // Estado para adicionar CNAE extra na hora
+    const [isAddingCnae, setIsAddingCnae] = useState(false);
+    const [newCnaeCode, setNewCnaeCode] = useState('');
+    const [newCnaeAnexo, setNewCnaeAnexo] = useState<any>('I');
+
+    // Estado para Análise Tributária
+    const [isAnalyzingTax, setIsAnalyzingTax] = useState(false);
+    const [taxDetails, setTaxDetails] = useState<Record<string, CnaeTaxDetail[]>>({});
+    const [manualTaxRates, setManualTaxRates] = useState({ icms: '', pisCofins: '', iss: '' });
+
+    // Estado para Detalhes do Histórico Salvo
+    const [selectedHistoryItem, setSelectedHistoryItem] = useState<SimplesHistoricoCalculo | null>(null);
+    const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+
+    // Modal de Histórico Manual em Lote
+    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+
+    // Filtros do Histórico
+    const [filterYear, setFilterYear] = useState<string>('all');
+    const [filterMonth, setFilterMonth] = useState<string>('all');
 
     useEffect(() => {
-        setFolha12(empresa.folha12.toString());
-        setManualFaturamento(
-            Object.fromEntries(
-                Object.entries(empresa.faturamentoManual || {}).map(([key, value]) => [
-                    key, 
-                    new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value as number)
-                ])
-            )
-        );
-        // Reset tax details when company changes
-        setTaxAnalysisResults(null);
-        setFileToImport(null);
-        setImportSuccess(null);
-        setImportError(null);
-        setSelectedHistorico(null);
-    }, [empresa]);
-    
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // Lista Completa de Atividades (CNAE + Anexo)
-    const allActivities = useMemo(() => {
-        const list = [
-            { cnae: empresa.cnae, anexo: empresa.anexo, role: 'Principal' }
-        ];
-        if (empresa.atividadesSecundarias) {
-            empresa.atividadesSecundarias.forEach(act => {
-                list.push({ cnae: act.cnae, anexo: act.anexo, role: 'Secundário' });
-            });
-        }
-        return list;
-    }, [empresa]);
-
-    // Inicializa o faturamento discriminado
-    useEffect(() => {
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-        const totalMes = manualFaturamento[mesChave] || '0,00';
+        const totalMes = empresa.faturamentoManual?.[mesChave] || 0;
         
-        const currentTotalBreakdown = Object.values(faturamentoPorCnae).reduce((acc: number, val: string) => {
-             return acc + parseFloat(val.replace(/\./g, '').replace(',', '.') || '0');
-        }, 0);
-
-        if (currentTotalBreakdown === 0 && totalMes !== '0,00') {
-             // Se tem total mas não tem breakdown, atribui ao principal (simplificação)
-             // ou mantém vazio para forçar usuário a discriminar se quiser
-             // Por UX, vamos atribuir ao CNAE Principal
-             setFaturamentoPorCnae({ [empresa.cnae]: totalMes });
-        } else if (totalMes === '0,00' && currentTotalBreakdown === 0) {
-             setFaturamentoPorCnae({});
-        }
+        const novoFaturamentoPorCnae: Record<string, CnaeInputState> = {};
         
-        if (Object.keys(configuracaoPorCnae).length === 0) {
-             const initConfig: Record<string, { issRetido: boolean, icmsSt: boolean }> = {};
-             allActivities.forEach(act => {
-                 initConfig[act.cnae] = { issRetido: false, icmsSt: false };
-             });
-             setConfiguracaoPorCnae(initConfig);
-        }
-    }, [mesApuracao, manualFaturamento, empresa.cnae, allActivities]);
+        const createInitialState = (val: number = 0): CnaeInputState => ({
+            valor: val > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) : '0,00',
+            issRetido: false,
+            icmsSt: false
+        });
 
-    const resumo = useMemo(() => {
-        // Constrói os itens de cálculo detalhados para o serviço
-        const itensCalculo: SimplesItemCalculo[] = [];
-
-        allActivities.forEach(act => {
-            const valStr = faturamentoPorCnae[act.cnae] || '0';
-            const val = parseFloat(String(valStr).replace(/\./g, '').replace(',', '.') || '0');
-            const config = configuracaoPorCnae[act.cnae] || { issRetido: false, icmsSt: false };
-
-            if (val > 0) {
-                itensCalculo.push({
-                    cnae: act.cnae,
-                    anexo: act.anexo,
-                    valor: val,
-                    issRetido: config.issRetido,
-                    icmsSt: config.icmsSt
-                });
+        const keyPrincipal = `${empresa.cnae}_${empresa.anexo}`;
+        novoFaturamentoPorCnae[keyPrincipal] = createInitialState(totalMes);
+        
+        empresa.atividadesSecundarias?.forEach(ativ => {
+            const key = `${ativ.cnae}_${ativ.anexo}`;
+            if (!novoFaturamentoPorCnae[key]) {
+                novoFaturamentoPorCnae[key] = createInitialState(0);
             }
         });
+        
+        setFaturamentoPorCnae(novoFaturamentoPorCnae);
+        setHistoricoManualEditavel(empresa.faturamentoManual || {});
 
-        return simplesService.calcularResumoEmpresa(empresa, notas, mesApuracao, { 
-            fullHistory: true,
-            itensCalculo: itensCalculo
+    }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.atividadesSecundarias]); 
+
+    // --- HANDLERS ---
+
+    const handleFaturamentoChange = (key: string, value: string) => {
+        setFaturamentoPorCnae(prev => ({
+            ...prev,
+            [key]: { ...prev[key], valor: value }
+        }));
+    };
+
+    const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt') => {
+        setFaturamentoPorCnae(prev => ({
+            ...prev,
+            [key]: { ...prev[key], [field]: !prev[key][field] }
+        }));
+    };
+
+    const handleSaveMesVigente = () => {
+        let totalCalculado = 0;
+        Object.values(faturamentoPorCnae).forEach((item) => {
+            const typedItem = item as CnaeInputState;
+            totalCalculado += parseFloat(typedItem.valor.replace(/\./g, '').replace(',', '.') || '0');
         });
-    }, [empresa, notas, mesApuracao, faturamentoPorCnae, configuracaoPorCnae, allActivities]);
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            setFileToImport(file);
-            setImportSuccess(null);
-            setImportError(null);
-        }
-    };
-
-    const handleConfirmImport = async () => {
-        if (!fileToImport) return;
-
-        setIsLoading(true);
-        setImportError(null);
-        setImportSuccess(null);
-
-        const result = await onImport(empresa.id, fileToImport);
-
-        if (result.failCount > 0) {
-            setImportError(result.errors);
-            if (result.successCount > 0) {
-                setImportSuccess(`Importação parcial: ${result.successCount} registros importados. ${result.failCount} falharam.`);
-            }
-        } else if (result.successCount > 0) {
-            setImportSuccess(`${result.successCount} registro(s) importado(s) e preenchidos com sucesso.`);
-        } else {
-             setImportError(["Nenhum dado válido encontrado."]);
-        }
-        
-        if(fileInputRef.current) {
-            fileInputRef.current.value = "";
-        }
-        setFileToImport(null);
-        setIsLoading(false);
-    };
-
-    const handleFolhaSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const valor = parseFloat(folha12.replace(',', '.'));
-        if (!isNaN(valor)) {
-            onUpdateFolha12(empresa.id, valor);
-            setFolhaSuccess('Folha 12 meses atualizada com sucesso.');
-            setTimeout(() => setFolhaSuccess(''), 3000);
-        }
-    };
-
-    const formatCurrencyInput = (value: string): string => {
-        const numericValue = value.replace(/\D/g, '');
-        if (!numericValue) return '';
-        const floatValue = parseFloat(numericValue) / 100;
-        return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(floatValue);
-    }
-
-    const handleManualFaturamentoChange = (mesChave: string, valor: string) => {
-        const formatted = formatCurrencyInput(valor);
-        setManualFaturamento(prev => ({ ...prev, [mesChave]: formatted }));
-    };
-    
-    const handleCnaeRevenueChange = (cnae: string, valor: string) => {
-        const formatted = formatCurrencyInput(valor);
-        setFaturamentoPorCnae(prev => ({ ...prev, [cnae]: formatted }));
-    };
-
-    const toggleTaxConfig = (cnae: string, type: 'issRetido' | 'icmsSt') => {
-        setConfiguracaoPorCnae(prev => {
-            const current = prev[cnae] || { issRetido: false, icmsSt: false };
-            return {
-                ...prev,
-                [cnae]: { ...current, [type]: !current[type] }
-            };
-        });
-    };
-    
-    const handleQuickAddCnae = () => {
-        if (!quickCnae.trim()) return;
-        
-        const currentSecundarias = empresa.atividadesSecundarias || [];
-        const updatedSecundarias = [...currentSecundarias, { cnae: quickCnae, anexo: quickAnexo }];
-        
-        onUpdateEmpresa(empresa.id, { atividadesSecundarias: updatedSecundarias });
-        
-        setIsAddingCnae(false);
-        setQuickCnae('');
-        setQuickAnexo('III');
-    };
-
-    const totalDiscriminadoString = useMemo(() => {
-        let total = 0;
-        Object.values(faturamentoPorCnae).forEach((valStr: string) => {
-            total += parseFloat(valStr.replace(/\./g, '').replace(',', '.') || '0');
-        });
-        return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(total);
-    }, [faturamentoPorCnae]);
-    
-    const handleAplicarRecorrente = () => {
-        if (!valorRecorrente) return;
-        
-        const periodoManual = getPeriodoManual(mesApuracao);
-        const formatted = formatCurrencyInput(valorRecorrente);
-        
-        const novosValores = { ...manualFaturamento };
-        periodoManual.forEach(mes => {
-             const mesChave = `${mes.getFullYear()}-${(mes.getMonth() + 1).toString().padStart(2, '0')}`;
-             novosValores[mesChave] = formatted;
-        });
-        
-        setManualFaturamento(novosValores);
-        setValorRecorrente(''); 
-    };
-    
-    const handleValorRecorrenteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-         const formatted = formatCurrencyInput(e.target.value);
-         setValorRecorrente(formatted);
-    }
-
-    const saveAllManualFaturamento = () => {
-        const faturamentoNumerico = Object.fromEntries(
-            Object.entries(manualFaturamento)
-                .map(([key, value]): [string, number] => {
-                    const valStr = String(value);
-                    const cleanValue = valStr.replace(/\./g, '').replace(',', '.');
-                    return [key, parseFloat(cleanValue)];
-                })
-                .filter(([, value]) => !isNaN(value))
-        );
-        onSaveFaturamentoManual(empresa.id, faturamentoNumerico);
-    }
-    
-    const handleManualFaturamentoSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (window.confirm("Tem certeza que deseja salvar o faturamento manual? Isso atualizará todos os valores para os meses preenchidos.")) {
-            saveAllManualFaturamento();
-            setManualSuccess('Faturamento manual salvo com sucesso.');
-            setTimeout(() => setManualSuccess(''), 3000);
-        }
-    };
-    
-    const handleSaveMesVigenteClick = () => {
-        // Atualiza o mês corrente no histórico geral com a soma dos CNAEs
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-        const updatedManualFaturamento = { ...manualFaturamento, [mesChave]: totalDiscriminadoString };
-        setManualFaturamento(updatedManualFaturamento);
+        const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
         
-        // Salva no banco
-        const faturamentoNumerico = Object.fromEntries(
-            Object.entries(updatedManualFaturamento)
-                .map(([key, value]): [string, number] => {
-                    const cleanValue = String(value).replace(/\./g, '').replace(',', '.');
-                    return [key, parseFloat(cleanValue)];
-                })
-                .filter(([, value]) => !isNaN(value))
-        );
+        onSaveFaturamentoManual(empresa.id, updatedManual);
+        setHistoricoManualEditavel(updatedManual);
         
-        onSaveFaturamentoManual(empresa.id, faturamentoNumerico);
-        setManualSuccess('Faturamento vigente atualizado!');
+        setManualSuccess('Apuração salva!');
         setTimeout(() => setManualSuccess(''), 3000);
+        
+        // Opcional: Salvar também no histórico de cálculos automaticamente
+        simplesService.saveHistoricoCalculo(empresa.id, resumo, mesApuracao);
     };
 
-    const handleSaveCalculo = async () => {
-        const updatedEmpresa = await simplesService.saveHistoricoCalculo(empresa.id, resumo, mesApuracao);
-        if (updatedEmpresa) {
-            onUpdateEmpresa(empresa.id, { historicoCalculos: updatedEmpresa.historicoCalculos });
-            setSaveCalculoSuccess('Apuração salva no histórico!');
-            setTimeout(() => setSaveCalculoSuccess(''), 3000);
+    const handleAddNewCnae = () => {
+        if (!newCnaeCode) return;
+        const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae: newCnaeCode, anexo: newCnaeAnexo }];
+        onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
+        setIsAddingCnae(false);
+        setNewCnaeCode('');
+        setNewCnaeAnexo('I');
+    };
+
+    const handleRemoveSecondary = (index: number) => {
+        if (!empresa.atividadesSecundarias) return;
+        const newAtividades = empresa.atividadesSecundarias.filter((_, i) => i !== index);
+        onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
+    };
+
+    const handleHistoricoChange = (mesIso: string, valor: number) => {
+        setHistoricoManualEditavel(prev => ({ ...prev, [mesIso]: valor }));
+    };
+
+    const handleSaveHistorico = () => {
+        if (window.confirm('Deseja salvar todo o faturamento manual dos meses informados? Isso substituirá os dados existentes.')) {
+            onSaveFaturamentoManual(empresa.id, historicoManualEditavel);
+            setHistorySuccess('Faturamento manual salvo com sucesso!');
+            setTimeout(() => setHistorySuccess(''), 3000);
+            setIsHistoryModalOpen(false);
         }
     };
-    
-    const handleDeleteCalculo = (calculoId: string) => {
-        if (!window.confirm("Tem certeza que deseja excluir este cálculo do histórico?")) return;
-        const novosCalculos = empresa.historicoCalculos?.filter(c => c.id !== calculoId);
-        if (novosCalculos) {
-            onUpdateEmpresa(empresa.id, { historicoCalculos: novosCalculos });
-            if (selectedHistorico?.id === calculoId) {
-                setSelectedHistorico(null);
+
+    const handleReplicarUltimoValor = () => {
+        const primeiroMesValido = mesesHistorico.find(m => (historicoManualEditavel[m.iso] || 0) > 0);
+        const valorBase = primeiroMesValido ? historicoManualEditavel[primeiroMesValido.iso] : 0;
+        
+        if (valorBase > 0) {
+            const novoHistorico = { ...historicoManualEditavel };
+            mesesHistorico.forEach(m => {
+                novoHistorico[m.iso] = valorBase;
+            });
+            setHistoricoManualEditavel(novoHistorico);
+            setHistorySuccess('Valor replicado para 12 meses!');
+            setTimeout(() => setHistorySuccess(''), 3000);
+        } else {
+            alert("Preencha pelo menos um mês com valor maior que zero para replicar.");
+        }
+    };
+
+    const handleAnalyzeTax = async () => {
+        setIsAnalyzingTax(true);
+        setTaxDetails({});
+        try {
+            const cnaesToAnalyze = [empresa.cnae, ...(empresa.atividadesSecundarias?.map(a => a.cnae) || [])];
+            const results: Record<string, CnaeTaxDetail[]> = {};
+            
+            for (const cnae of cnaesToAnalyze) {
+                results[cnae] = await fetchCnaeTaxDetails(cnae, manualTaxRates);
             }
+            setTaxDetails(results);
+        } catch (e) {
+            console.error("Tax analysis failed", e);
+        } finally {
+            setIsAnalyzingTax(false);
         }
-    };
-
-    const handleGerarDasOnline = async () => {
-        setDasOnlineStatus('connecting');
-        setDasOnlineMsg('Conectando ao Servidor PGDAS-D...');
-        await new Promise<void>(resolve => setTimeout(resolve, 2000));
-        setDasOnlineStatus('authenticating');
-        setDasOnlineMsg('Acessando Certificado Digital Modelo A1...');
-        await new Promise<void>(resolve => setTimeout(resolve, 2000));
-        setDasOnlineStatus('generating');
-        setDasOnlineMsg('Gerando Guia de DAS...');
-        await new Promise<void>(resolve => setTimeout(resolve, 1500));
-        setDasOnlineStatus('success');
-        setDasOnlineMsg('Redirecionando para ambiente seguro e-CAC...');
-        setTimeout(() => {
-            window.open('https://cav.receita.fazenda.gov.br/autenticacao/login', '_blank');
-            setDasOnlineStatus('idle');
-            setDasOnlineMsg('');
-        }, 2000);
     };
 
     const handleGerarDasPdf = async () => {
+        setIsPdfGenerating(true);
         try {
             const { default: jsPDF } = await import('jspdf');
+            const { default: html2canvas } = await import('html2canvas');
             const doc = new jsPDF();
+            
             const pageWidth = doc.internal.pageSize.getWidth();
-            const dataHoraGeracao = new Date().toLocaleString('pt-BR');
-            
+            const pageHeight = doc.internal.pageSize.getHeight();
+            let y = 20;
+            const now = new Date();
+
+            // 1. Header Text
             doc.setFontSize(18);
-            doc.setTextColor(14, 165, 233); 
-            doc.text('Memória de Cálculo - DAS', pageWidth / 2, 20, { align: 'center' });
+            doc.setTextColor(14, 165, 233); // Sky Blue
+            doc.text("Relatório de Apuração - Simples Nacional", pageWidth / 2, y, { align: 'center' });
             
+            y += 15;
             doc.setFontSize(12);
             doc.setTextColor(0);
-            doc.text(`Empresa: ${empresa.nome}`, 20, 40);
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text(`Gerado em: ${dataHoraGeracao}`, pageWidth - 20, 40, { align: 'right' });
-            doc.setFontSize(12);
-            doc.setTextColor(0);
-            doc.text(`CNPJ: ${empresa.cnpj}`, 20, 48);
-            doc.text(`Período de Apuração: ${mesApuracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}`, 20, 56);
+            doc.setFont("helvetica", "bold");
+            doc.text(`Empresa: ${empresa.nome}`, 20, y);
+            doc.text(`CNPJ: ${empresa.cnpj}`, pageWidth - 20, y, { align: 'right' });
+            
+            y += 8;
+            doc.setFont("helvetica", "normal");
+            doc.text(`Competência: ${(mesApuracao as any).toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}`, 20, y);
+            doc.text(`Emissão: ${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR')}`, pageWidth - 20, y, { align: 'right' });
+
+            y += 10;
             doc.setDrawColor(200);
-            doc.line(20, 65, pageWidth - 20, 65);
+            doc.line(20, y, pageWidth - 20, y);
+            y += 10;
 
-            const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-            const faturamentoMes = resumo.mensal[mesChave] || 0;
-
-            doc.setFontSize(14);
-            doc.text('Base de Cálculo', 20, 75);
-            doc.setFontSize(10);
-            doc.text('Receita Bruta 12 Meses (RBT12):', 20, 85);
-            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.rbt12)}`, pageWidth - 20, 85, { align: 'right' });
-            doc.text('Faturamento do Mês:', 20, 92);
-            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faturamentoMes)}`, pageWidth - 20, 92, { align: 'right' });
+            // 2. Resumo Textual
+            doc.setFont("helvetica", "bold");
+            doc.text("Resumo do Cálculo", 20, y);
+            y += 10;
             
-            if (resumo.ultrapassou_sublimite) {
-                doc.setTextColor(220, 38, 38); 
-                doc.text('ALERTA: RBT12 excedeu o Sub-limite de R$ 3.600.000,00.', 20, 102);
-                doc.text('ICMS/ISS recolhidos fora do DAS.', 20, 107);
-                doc.setTextColor(0);
-            }
-
-            doc.line(20, 115, pageWidth - 20, 115);
-            doc.setFontSize(14);
-            doc.text('Apuração da Alíquota', 20, 125);
-            
-            if (resumo.detalhamento_anexos && resumo.detalhamento_anexos.length > 0) {
-                let yPos = 135;
-                resumo.detalhamento_anexos.forEach(det => {
-                    doc.setFontSize(10);
-                    let label = `Atividade Anexo ${det.anexo}`;
-                    if(det.issRetido) label += " (Sem ISS)";
-                    if(det.icmsSt) label += " (Sem ICMS)";
-
-                    doc.text(`${label}: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(det.faturamento)}`, 20, yPos);
-                    doc.text(`Aliq. Efetiva: ${det.aliquotaEfetiva.toFixed(4)}%`, pageWidth - 60, yPos, { align: 'right'});
-                    doc.text(`DAS: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(det.valorDas)}`, pageWidth - 20, yPos, { align: 'right'});
-                    yPos += 6;
-                });
-                if (empresa.anexo === 'III_V') {
-                    doc.text(`Fator R Global: ${(resumo.fator_r * 100).toFixed(2)}%`, 20, yPos + 4);
-                }
-                doc.setFontSize(12);
-                doc.setFont("helvetica", "bold");
-                doc.text(`Alíquota Média Ponderada: ${resumo.aliq_eff.toFixed(4)}%`, pageWidth - 20, yPos + 4, { align: 'right' });
-                doc.setFont("helvetica", "normal");
-            } else {
-                doc.setFontSize(10);
-                doc.text('Anexo Aplicado:', 20, 135);
-                doc.text(`Anexo ${resumo.anexo_efetivo}`, pageWidth - 20, 135, { align: 'right' });
-                if (empresa.anexo === 'III_V') {
-                    doc.text('Fator R:', 20, 142);
-                    doc.text(`${(resumo.fator_r * 100).toFixed(2)}%`, pageWidth - 20, 142, { align: 'right' });
-                }
-                doc.text('Alíquota Efetiva Calculada:', 20, 149);
-                doc.setFontSize(12);
-                doc.setFont("helvetica", "bold");
-                doc.text(`${resumo.aliq_eff.toFixed(4)}%`, pageWidth - 20, 149, { align: 'right' });
-                doc.setFont("helvetica", "normal");
-            }
-
-            doc.setDrawColor(0);
-            doc.setLineWidth(0.5);
-            doc.rect(20, 170, pageWidth - 40, 30);
-            doc.setFontSize(16);
-            doc.text('Valor a Pagar (DAS)', pageWidth / 2, 182, { align: 'center' });
-            doc.setFontSize(22);
-            doc.setTextColor(14, 165, 233);
-            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.das_mensal)}`, pageWidth / 2, 195, { align: 'center' });
-            doc.setFontSize(8);
-            doc.setTextColor(100);
-            doc.text(`Página 1/4`, pageWidth - 20, 280, { align: 'right' });
-            doc.text('Documento gerado pelo Consultor Fiscal Inteligente - SP Assessoria', pageWidth / 2, 280, { align: 'center' });
-
-            doc.addPage();
-            doc.setFontSize(16);
-            doc.setTextColor(14, 165, 233);
-            doc.text('Detalhamento da Receita Bruta (RBT12)', pageWidth / 2, 20, { align: 'center' });
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text('Histórico dos últimos 12 meses anteriores à apuração', pageWidth / 2, 26, { align: 'center' });
-            doc.setFontSize(12);
-            doc.setTextColor(0);
-            let startY = 40;
-            const col1X = 30;
-            const col2X = pageWidth - 30;
-            const rowHeight = 10;
-            doc.setFillColor(240, 245, 250); 
-            doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-            doc.setFont("helvetica", "bold");
-            doc.text('Competência', col1X, startY);
-            doc.text('Receita Bruta', col2X, startY, { align: 'right' });
-            startY += rowHeight;
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(11);
-            const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
-            let totalCalculado = 0;
-            for (let i = 0; i < 12; i++) {
-                const mesIteracao = new Date(dataInicioPeriodoRBT12.getFullYear(), dataInicioPeriodoRBT12.getMonth() + i, 1);
-                const mesChave = `${mesIteracao.getFullYear()}-${(mesIteracao.getMonth() + 1).toString().padStart(2, '0')}`;
-                const valor = resumo.mensal[mesChave] || 0;
-                totalCalculado += valor;
-                const mesLabel = mesIteracao.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
-                const mesLabelCapitalized = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
-                if (i % 2 === 1) {
-                   doc.setFillColor(250, 250, 250);
-                   doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-                }
-                doc.text(mesLabelCapitalized, col1X, startY);
-                doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(valor)}`, col2X, startY, { align: 'right' });
-                startY += rowHeight;
-            }
-            startY += 2;
-            doc.setDrawColor(14, 165, 233);
-            doc.setLineWidth(0.5);
-            doc.line(20, startY - 8, pageWidth - 20, startY - 8);
-            doc.setFont("helvetica", "bold");
-            doc.setFontSize(12);
-            doc.text('TOTAL ACUMULADO (RBT12)', col1X, startY);
-            doc.text(`R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(totalCalculado)}`, col2X, startY, { align: 'right' });
-            doc.setFontSize(8);
-            doc.setFont("helvetica", "normal");
-            doc.setTextColor(100);
-            doc.text(`Página 2/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+            doc.text(`Receita Bruta 12 Meses (RBT12): R$ ${resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 20, y);
+            y += 7;
+            doc.text(`Alíquota Efetiva Total: ${resumo.aliq_eff.toFixed(2)}%`, 20, y);
+            y += 7;
+            doc.text(`Valor do DAS (Estimado): R$ ${resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 20, y);
+            y += 7;
+            doc.text(`Fator R: ${(resumo.fator_r * 100).toFixed(2)}%`, 20, y);
 
-            doc.addPage();
-            doc.setFontSize(16);
-            doc.setTextColor(14, 165, 233); 
-            doc.text('Memória de Cálculo - Discriminação dos Tributos', pageWidth / 2, 20, { align: 'center' });
-            doc.setFontSize(10);
-            doc.setTextColor(100);
-            doc.text('Repartição do valor do DAS entre os entes federativos e tributos', pageWidth / 2, 26, { align: 'center' });
-            doc.setFontSize(12);
-            doc.setTextColor(0);
-            doc.text(`Valor Total do DAS: R$ ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(resumo.das_mensal)}`, 20, 40);
-            startY = 55;
-            const colImp = 20;
-            const colPerc = pageWidth / 2;
-            const colVal = pageWidth - 20;
-            doc.setFillColor(240, 245, 250);
-            doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-            doc.setFont("helvetica", "bold");
-            doc.text("Tributo / Ente", colImp + 5, startY);
-            doc.text("% Partilha (no DAS)", colPerc, startY, { align: 'center' });
-            doc.text("Valor (R$)", colVal - 5, startY, { align: 'right' });
-            startY += 10;
-            doc.setFont("helvetica", "normal");
-            const percentuaisReparticao = REPARTICAO_IMPOSTOS[resumo.anexo_efetivo]?.[Math.min(resumo.faixa_index, 5)];
-            const discriminacao = simplesService.calcularDiscriminacaoImpostos(resumo.anexo_efetivo, resumo.faixa_index, resumo.das_mensal);
-            let index = 0;
-            Object.entries(discriminacao).forEach(([imposto, valor]) => {
-                if (index % 2 === 1) {
-                    doc.setFillColor(252, 252, 252);
-                    doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-                }
-                doc.setDrawColor(230);
-                doc.line(20, startY + 4, pageWidth - 20, startY + 4);
-                doc.text(imposto, colImp + 5, startY);
-                const percentual = percentuaisReparticao ? percentuaisReparticao[imposto] : 0;
-                doc.text(`${percentual.toFixed(2)}%`, colPerc, startY, { align: 'center' });
-                doc.text(new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format((valor as number)), colVal - 5, startY, { align: 'right' });
-                startY += 10;
-                index++;
-            });
-            if (resumo.ultrapassou_sublimite) {
-                startY += 10;
-                doc.setFontSize(10);
-                doc.setTextColor(220, 38, 38);
-                doc.text("* Nota: Devido ao sublimite de faturamento excedido, os percentuais de ICMS/ISS não estão incluídos neste cálculo.", 20, startY, { maxWidth: pageWidth - 40 });
-            }
-            doc.setFontSize(8);
-            doc.setTextColor(100);
-            doc.text(`Página 3/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+            y += 10;
 
-            if (empresa.historicoCalculos && empresa.historicoCalculos.length > 0) {
+            // 3. Chart Image Capture
+            const chartElement = document.getElementById('chart-container');
+            if (chartElement) {
+                const originalBg = chartElement.style.backgroundColor;
+                chartElement.style.backgroundColor = '#ffffff';
+                
+                const canvas = await html2canvas(chartElement, { scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
+                
+                chartElement.style.backgroundColor = originalBg;
+
+                const imgProps = doc.getImageProperties(imgData);
+                const pdfImgWidth = pageWidth - 40;
+                const pdfImgHeight = (imgProps.height * pdfImgWidth) / imgProps.width;
+                
+                if (y + pdfImgHeight > pageHeight - 20) {
+                    doc.addPage();
+                    y = 20;
+                }
+
+                doc.addImage(imgData, 'PNG', 20, y, pdfImgWidth, pdfImgHeight);
+                y += pdfImgHeight + 10;
+            }
+
+            // 4. Memória de Cálculo Table
+            if (y + 60 > pageHeight - 20) {
                 doc.addPage();
-                doc.setFontSize(16);
-                doc.setTextColor(14, 165, 233); 
-                doc.text('Histórico de Apurações Salvas', pageWidth / 2, 20, { align: 'center' });
-                doc.setFontSize(10);
-                doc.setTextColor(0);
-                startY = 40;
-                doc.setFillColor(240, 245, 250);
-                doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-                doc.setFont("helvetica", "bold");
-                doc.text('Mês Ref.', 25, startY);
-                doc.text('Anexo', 55, startY);
-                doc.text('RBT12', 90, startY, { align: 'right' });
-                doc.text('Aliq. Ef.', 120, startY, { align: 'right' });
-                doc.text('DAS (R$)', pageWidth - 25, startY, { align: 'right' });
-                startY += rowHeight;
-                doc.setFont("helvetica", "normal");
-                doc.setFontSize(10);
-                empresa.historicoCalculos.forEach((calc, i) => {
-                    if (startY > 270) { 
-                        doc.addPage();
-                        startY = 40; 
-                    }
-                    if (i % 2 === 1) {
-                       doc.setFillColor(250, 250, 250);
-                       doc.rect(20, startY - 6, pageWidth - 40, 10, 'F');
-                    }
-                    doc.text(calc.mesReferencia, 25, startY);
-                    doc.text(calc.anexo_efetivo, 55, startY);
-                    const rbt12Formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(calc.rbt12);
-                    doc.text(rbt12Formatted, 90, startY, { align: 'right' });
-                    doc.text(calc.aliq_eff.toFixed(2) + '%', 120, startY, { align: 'right' });
-                    const dasFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(calc.das_mensal);
-                    doc.text(dasFormatted, pageWidth - 25, startY, { align: 'right' });
-                    startY += rowHeight;
-                });
-                doc.setFontSize(8);
-                doc.setTextColor(100);
-                doc.text(`Página 4/4 • ${empresa.nome}`, pageWidth / 2, 280, { align: 'center' });
+                y = 20;
             }
+
+            doc.setFont("helvetica", "bold");
+            doc.text("Detalhamento dos Tributos (Repartição)", 20, y);
+            y += 10;
+
+            const impostos = simplesService.calcularDiscriminacaoImpostos(resumo.anexo_efetivo, resumo.faixa_index, resumo.das_mensal);
             
-            doc.save(`memoria-calculo-${empresa.nome}-${mesApuracao.toISOString().slice(0,7)}.pdf`);
-            handleSaveCalculo();
-        } catch (e) {
-            console.error('Erro ao gerar PDF', e);
-            alert('Não foi possível gerar o PDF.');
-        }
-    };
+            doc.setFillColor(240, 240, 240);
+            doc.rect(20, y, pageWidth - 40, 8, 'F');
+            doc.setFontSize(10);
+            doc.text("Tributo", 25, y + 5);
+            doc.text("Valor (R$)", pageWidth - 25, y + 5, { align: 'right' });
+            y += 10;
 
-    const handleChatSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!chatPergunta.trim()) return;
-        setIsChatLoading(true);
-        setChatResult(null);
-        try {
-            const result = await fetchSimplesNacionalExplanation(empresa, resumo, chatPergunta);
-            setChatResult(result);
-        } catch (error: any) {
-            setChatResult({ text: `Erro ao consultar o assistente: ${error.message}`, sources: [], query: chatPergunta });
-        } finally {
-            setIsChatLoading(false);
-        }
-    };
-
-    const handleValidateCnae = (cnae: string) => {
-        setIsCnaeLoading(true);
-        setCnaeError(null);
-        setCnaeValidationResult(null);
-        setIsCnaeModalOpen(true);
-        setCnaeToValidate(cnae);
-        fetchCnaeDescription(cnae).then(result => {
-            setCnaeValidationResult(result);
-        }).catch (e => {
-            setCnaeError(e.message || 'Ocorreu um erro desconhecido.');
-        }).finally(() => {
-            setIsCnaeLoading(false);
-        });
-    };
-    
-    const handleAnalyzeTax = async () => {
-        setIsTaxAnalysisLoading(true);
-        setTaxAnalysisResults(null);
-        try {
-            const activitiesToAnalyze = [
-                { cnae: empresa.cnae, role: 'Principal' as const },
-                ...(empresa.atividadesSecundarias || []).map(a => ({ cnae: a.cnae, role: 'Secundário' as const }))
-            ];
-            const promises = activitiesToAnalyze.map(async (activity) => {
-                try {
-                    const details = await fetchCnaeTaxDetails(activity.cnae);
-                    return {
-                        cnae: activity.cnae,
-                        role: activity.role,
-                        details: details
-                    };
-                } catch (e: any) {
-                    return {
-                        cnae: activity.cnae,
-                        role: activity.role,
-                        details: [],
-                        error: e.message || 'Falha na análise'
-                    };
-                }
+            doc.setFont("helvetica", "normal");
+            Object.entries(impostos).forEach(([key, val]) => {
+                doc.text(key, 25, y + 5);
+                doc.text((val as number).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), pageWidth - 25, y + 5, { align: 'right' });
+                y += 7;
             });
-            const finalResults = await Promise.all(promises);
-            setTaxAnalysisResults(finalResults);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setIsTaxAnalysisLoading(false);
-        }
-    }
-    
-    const chartData = useMemo(() => {
-        if (!resumo.historico_simulado || resumo.historico_simulado.length === 0) return null;
-        
-        return {
-            labels: resumo.historico_simulado.map(h => h.label),
-            datasets: [
-                {
-                    label: 'Faturamento (R$)',
-                    data: resumo.historico_simulado.map(h => h.faturamento),
-                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 1,
-                    order: 2,
-                    yAxisID: 'y',
-                },
-                {
-                    label: 'DAS Calculado (R$)',
-                    data: resumo.historico_simulado.map(h => h.dasCalculado),
-                    type: 'line' as const,
-                    borderColor: 'rgba(14, 165, 233, 0.8)', 
-                    borderWidth: 2,
-                    borderDash: [5, 5],
-                    pointRadius: 3,
-                    order: 1,
-                    yAxisID: 'y',
-                },
-                {
-                    label: 'Alíquota Efetiva (%)',
-                    data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
-                    type: 'line' as const,
-                    borderColor: 'rgba(239, 68, 68, 0.8)', 
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    borderWidth: 2,
-                    pointRadius: 3,
-                    order: 0,
-                    yAxisID: 'y1',
-                }
-            ],
-        };
-    }, [resumo.historico_simulado]);
 
-    const chartOptions = useMemo(() => ({
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                display: true,
-                position: 'bottom' as const,
-            },
-            title: {
-                display: true,
-                text: 'Evolução Real do Faturamento, DAS e Carga Tributária',
-            },
-            tooltip: {
-                 callbacks: {
-                    label: function(context: any) {
-                        let label = context.dataset.label || '';
-                        if (label) label += ': ';
-                        if (context.parsed.y !== null) {
-                            if (context.dataset.yAxisID === 'y1') {
-                                 label += context.parsed.y.toFixed(2) + '%';
-                            } else {
-                                label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
-                            }
-                        }
-                        return label;
-                    }
-                }
+            // Add new page for RBT12 History
+            doc.addPage();
+            y = 20;
+            
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text("Histórico de Receita Bruta (RBT12) - Últimos 12 Meses", 20, y);
+            y += 15;
+
+            doc.setFontSize(10);
+            doc.setFillColor(240, 240, 240);
+            doc.rect(20, y, pageWidth - 40, 8, 'F');
+            doc.text("Mês de Referência", 25, y + 5);
+            doc.text("Valor Faturado (R$)", pageWidth - 25, y + 5, { align: 'right' });
+            y += 10;
+
+            doc.setFont("helvetica", "normal");
+            mesesHistorico.forEach(m => {
+                const valor = historicoManualEditavel[m.iso] || 0;
+                doc.text(m.label, 25, y + 5);
+                doc.text(valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 }), pageWidth - 25, y + 5, { align: 'right' });
+                y += 7;
+            });
+
+            // Footer with CNAE context
+            y += 10;
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text(`CNAE Principal: ${empresa.cnae} (Anexo ${empresa.anexo})`, 20, y);
+            if (empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0) {
+                 y += 5;
+                 doc.text(`Atividades Secundárias: ${empresa.atividadesSecundarias.map(a => a.cnae).join(', ')}`, 20, y);
             }
-        },
-        scales: {
-            y: {
-                beginAtZero: true,
-                type: 'linear' as const,
-                display: true,
-                position: 'left' as const,
-                title: { display: true, text: 'Valores (R$)' }
+
+            doc.save(`memoria-calculo-das-${empresa.nome.replace(/\s+/g, '-')}-${mesApuracao.toISOString().slice(0, 7)}.pdf`);
+
+        } catch (e) {
+            console.error("Erro ao gerar PDF", e);
+            alert("Erro ao gerar PDF.");
+        } finally {
+            setIsPdfGenerating(false);
+        }
+    };
+
+    // --- CÁLCULO (LIVE) ---
+    
+    const resumo: SimplesNacionalResumo = useMemo(() => {
+        const itensCalculo: any[] = [];
+        
+        Object.entries(faturamentoPorCnae).forEach(([key, state]) => {
+            const typedState = state as CnaeInputState;
+            const [cnaeCode, anexoCode] = key.split('_');
+            const val = parseFloat(typedState.valor.replace(/\./g, '').replace(',', '.') || '0');
+            
+            if (val > 0) {
+                itensCalculo.push({ 
+                    cnae: cnaeCode, 
+                    anexo: anexoCode, 
+                    valor: val, 
+                    issRetido: typedState.issRetido, 
+                    icmsSt: typedState.icmsSt 
+                });
+            }
+        });
+
+        const empresaTemp = { ...empresa, faturamentoManual: historicoManualEditavel };
+
+        return simplesService.calcularResumoEmpresa(
+            empresaTemp, 
+            notas, 
+            mesApuracao, 
+            { itensCalculo: itensCalculo.length > 0 ? itensCalculo : undefined }
+        );
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel]);
+
+    const totalMesVigente = useMemo(() => {
+        let total = 0;
+        Object.values(faturamentoPorCnae).forEach((item) => {
+            const typedItem = item as CnaeInputState;
+            total += parseFloat(typedItem.valor.replace(/\./g, '').replace(',', '.') || '0');
+        });
+        return total;
+    }, [faturamentoPorCnae]);
+
+    const mesesHistorico = useMemo<{ date: Date; iso: string; label: string }[]>(() => {
+        const lista: { date: Date; iso: string; label: string }[] = [];
+        const dataBase = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 1, 1);
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(dataBase.getFullYear(), dataBase.getMonth() - i, 1);
+            const iso = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+            lista.push({
+                date: d,
+                iso: iso,
+                label: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })
+            });
+        }
+        return lista;
+    }, [mesApuracao]);
+
+    const totalRbt12Manual = useMemo(() => {
+        return mesesHistorico.reduce((acc, m) => acc + (historicoManualEditavel[m.iso] || 0), 0);
+    }, [mesesHistorico, historicoManualEditavel]);
+
+    // Filter Logic for History
+    const availableYears = useMemo<number[]>(() => {
+        if (!empresa.historicoCalculos) return [];
+        const years = new Set<number>();
+        empresa.historicoCalculos.forEach(h => {
+            const date = new Date(h.dataCalculo);
+            years.add(date.getFullYear());
+        });
+        return Array.from(years).sort((a, b) => b - a);
+    }, [empresa.historicoCalculos]);
+
+    const filteredHistory = useMemo<SimplesHistoricoCalculo[]>(() => {
+        if (!empresa.historicoCalculos) return [];
+        return empresa.historicoCalculos.filter(h => {
+            const date = new Date(h.dataCalculo);
+            const matchYear = filterYear === 'all' || date.getFullYear().toString() === filterYear;
+            const matchMonth = filterMonth === 'all' || date.getMonth() === parseInt(filterMonth);
+            return matchYear && matchMonth;
+        }).sort((a, b) => b.dataCalculo - a.dataCalculo); // Sort by newest
+    }, [empresa.historicoCalculos, filterYear, filterMonth]);
+
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsImporting(true);
+        try {
+            const result = await onImport(empresa.id, file);
+            setImportResult(result);
+            if (result.successCount > 0 && result.errors.length === 0 && file.name.endsWith('.pdf')) {
+                 const updatedEmpresa = (await simplesService.getEmpresas(null)).find(e => e.id === empresa.id);
+                 if(updatedEmpresa?.faturamentoManual) setHistoricoManualEditavel(updatedEmpresa.faturamentoManual);
+            }
+        } catch (error) {
+            setImportResult({ successCount: 0, failCount: 0, errors: ["Erro na importação"] });
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const chartData = {
+        labels: resumo.historico_simulado.map(h => h.label),
+        datasets: [
+            {
+                label: 'Faturamento (R$)',
+                data: resumo.historico_simulado.map(h => h.faturamento),
+                backgroundColor: 'rgba(14, 165, 233, 0.6)',
+                yAxisID: 'y',
             },
-            y1: {
-                beginAtZero: true,
-                type: 'linear' as const,
-                display: true,
-                position: 'right' as const,
-                title: { display: true, text: 'Alíquota (%)' },
-                grid: { drawOnChartArea: false },
-            },
-        },
-    }), []);
+            {
+                label: 'Alíquota (%)',
+                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
+                type: 'line' as const,
+                borderColor: 'rgb(245, 158, 11)',
+                borderWidth: 2,
+                yAxisID: 'y1',
+            }
+        ],
+    };
+
+    const renderCardCnae = (cnae: string, anexo: string, label: string, isSecondary: boolean = false, index?: number) => {
+        const key = `${cnae}_${anexo}`;
+        const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false };
+        const showIcmsSt = ['I', 'II'].includes(anexo);
+        const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexo);
+
+        return (
+            <div key={key} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 relative group hover:border-sky-300 transition-colors shadow-sm">
+                {isSecondary && index !== undefined && (
+                    <button 
+                        onClick={() => handleRemoveSecondary(index)}
+                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1"
+                        title="Excluir atividade"
+                    >
+                        <TrashIcon className="w-4 h-4" />
+                    </button>
+                )}
+                
+                <div className="mb-3">
+                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <span className="font-bold text-sky-700 dark:text-sky-400 text-sm font-mono bg-sky-100 dark:bg-sky-900/50 px-2 py-0.5 rounded">{cnae}</span>
+                        <span className="text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-bold border border-slate-300 dark:border-slate-500">Anexo {anexo}</span>
+                    </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                    <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                        <input 
+                            type="text" 
+                            value={state.valor} 
+                            onChange={(e) => handleFaturamentoChange(key, e.target.value)}
+                            className="w-full pl-9 pr-3 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-500 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-right font-mono font-bold text-slate-900 dark:text-white text-xl shadow-inner"
+                        />
+                    </div>
+
+                    <div className="flex gap-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+                        {showIcmsSt && (
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox" checked={state.icmsSt} onChange={() => handleOptionToggle(key, 'icmsSt')} className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4" />
+                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">ICMS ST</span>
+                            </label>
+                        )}
+                        {showIss && (
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                                <input type="checkbox" checked={state.issRetido} onChange={() => handleOptionToggle(key, 'issRetido')} className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4" />
+                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Retenção ISS</span>
+                            </label>
+                        )}
+                        {!showIcmsSt && !showIss && <span className="text-[10px] text-slate-400 italic">Sem deduções aplicáveis</span>}
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     return (
-        <div className="space-y-6 animate-fade-in pb-10">
-            {/* Header e Ações Principais */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                <div className="flex items-center gap-3">
-                    <button onClick={() => onBack()} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                        <ArrowLeftIcon className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+        <div className="animate-fade-in pb-12">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+                <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors font-bold">
+                    <ArrowLeftIcon className="w-5 h-5" /> Voltar
+                </button>
+
+                <div className="flex gap-3">
+                    <button 
+                        onClick={handleGerarDasPdf} 
+                        disabled={isPdfGenerating} 
+                        className="btn-press flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 shadow-sm"
+                    >
+                        <DocumentTextIcon className="w-5 h-5 text-sky-600" />
+                        {isPdfGenerating ? 'Gerando...' : 'Exportar Memória de Cálculo'}
                     </button>
+                    <button onClick={onShowClienteView} className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors">
+                        <UserIcon className="w-5 h-5" /> Visão do Cliente
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 border-l-4 border-sky-500">
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{empresa.nome}</h1>
+                <p className="text-slate-500 dark:text-slate-400 font-mono text-sm font-bold mt-1">CNPJ: {empresa.cnpj}</p>
+            </div>
+
+            {/* SEÇÃO DE ANÁLISE TRIBUTÁRIA */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                     <div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                            {empresa.nome}
-                        </h2>
-                        <div className="flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400 items-center">
-                           <span>CNPJ: {empresa.cnpj}</span>
-                           <span>•</span>
-                           <div className="flex items-center gap-1">
-                               <BriefcaseIcon className="w-4 h-4" />
-                               <span className="font-semibold text-slate-600 dark:text-slate-300">Principal:</span> {empresa.cnae}
-                               <button 
-                                   onClick={() => handleValidateCnae(empresa.cnae)}
-                                   className="text-xs bg-sky-50 hover:bg-sky-100 dark:bg-sky-900/30 dark:hover:bg-sky-800 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded border border-sky-100 dark:border-sky-800 transition-colors"
-                               >
-                                   Validar
-                               </button>
-                           </div>
-                        </div>
-                        
-                        {/* Secondary CNAEs */}
-                        {empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-2">
-                                {empresa.atividadesSecundarias.map((sec, idx) => (
-                                    <div key={idx} className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                                        <span className="font-semibold">Sec:</span> {sec.cnae}
-                                         <button 
-                                           onClick={() => handleValidateCnae(sec.cnae)}
-                                           className="text-sky-600 hover:underline ml-1"
-                                           title="Validar atividade"
-                                       >
-                                           <InfoIcon className="w-3 h-3" />
-                                       </button>
-                                    </div>
-                                ))}
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+                            <ShieldIcon className="w-5 h-5 text-sky-600" />
+                            Análise Tributária (IA)
+                        </h3>
+                        <p className="text-sm text-slate-500">Consulte a incidência de impostos para suas atividades.</p>
+                    </div>
+                    
+                    <div className="flex gap-2 items-end">
+                        <div className="flex gap-2">
+                            <div className="w-20">
+                                <label className="text-[10px] uppercase font-bold text-slate-500">ICMS (%)</label>
+                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 18" value={manualTaxRates.icms} onChange={e => setManualTaxRates(p => ({...p, icms: e.target.value}))} />
                             </div>
-                        )}
+                            <div className="w-20">
+                                <label className="text-[10px] uppercase font-bold text-slate-500">PIS/COF</label>
+                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 3.65" value={manualTaxRates.pisCofins} onChange={e => setManualTaxRates(p => ({...p, pisCofins: e.target.value}))} />
+                            </div>
+                            <div className="w-20">
+                                <label className="text-[10px] uppercase font-bold text-slate-500">ISS (%)</label>
+                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 5" value={manualTaxRates.iss} onChange={e => setManualTaxRates(p => ({...p, iss: e.target.value}))} />
+                            </div>
+                        </div>
+                        <button onClick={handleAnalyzeTax} disabled={isAnalyzingTax} className="btn-press px-4 py-1.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 text-sm h-[34px]">
+                            {isAnalyzingTax ? <LoadingSpinner /> : 'Refinar Cálculo'}
+                        </button>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setIsEditModalOpen(true)} className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm">
-                        Editar Empresa
-                    </button>
-                    <button onClick={onShowClienteView} className="px-3 py-2 bg-sky-100 text-sky-700 rounded-lg hover:bg-sky-200 text-sm flex items-center gap-2">
-                        <EyeIcon className="w-4 h-4" />
-                        Modo Cliente
-                    </button>
-                </div>
-            </div>
 
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">RBT12 (Receita Bruta 12m)</p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-1">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Alíquota Efetiva</p>
-                    <p className="text-xl font-bold text-sky-600 dark:text-sky-400 mt-1">{resumo.aliq_eff.toFixed(2)}%</p>
-                    <p className="text-xs text-slate-400">Nominal: {resumo.aliq_nom}%</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">DAS Estimado (Mês)</p>
-                    <p className="text-xl font-bold text-green-600 dark:text-green-400 mt-1">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Fator R</p>
-                    <p className={`text-xl font-bold mt-1 ${resumo.fator_r >= 0.28 ? 'text-green-600' : 'text-orange-500'}`}>
-                        {(resumo.fator_r * 100).toFixed(1)}%
-                    </p>
-                    <p className="text-xs text-slate-400">Folha: R$ {resumo.folha_12.toLocaleString('pt-BR', { compactDisplay: 'short', notation: 'compact' })}</p>
-                </div>
-            </div>
-
-            {/* Tax Analysis Section */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                        <ShieldIcon className="w-5 h-5 text-sky-600" />
-                        Análise Tributária (IA)
-                    </h3>
-                     <button 
-                        onClick={() => handleAnalyzeTax()} 
-                        disabled={isTaxAnalysisLoading}
-                        className="text-sm text-sky-600 hover:underline disabled:opacity-50"
-                    >
-                        {isTaxAnalysisLoading ? 'Analisando...' : 'Atualizar Análise'}
-                    </button>
-                </div>
-                
-                {isTaxAnalysisLoading ? (
-                    <LoadingSpinner />
-                ) : taxAnalysisResults ? (
-                    <div className="space-y-6">
-                        {taxAnalysisResults.map((result, idx) => (
-                            <div key={idx} className="border-t border-slate-100 dark:border-slate-700 pt-4 first:border-0 first:pt-0">
-                                <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
-                                    <span className={`text-xs px-2 py-0.5 rounded-full ${result.role === 'Principal' ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-600'}`}>
-                                        {result.role}
-                                    </span>
-                                    CNAE {result.cnae}
-                                </h4>
-                                
-                                {result.error ? (
-                                    <p className="text-sm text-red-500">{result.error}</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                                            <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                                                <tr>
-                                                    <th className="px-4 py-2">Tributo</th>
-                                                    <th className="px-4 py-2">Incidência</th>
-                                                    <th className="px-4 py-2">Alíquota Média</th>
-                                                    <th className="px-4 py-2">Base Legal</th>
+                {Object.keys(taxDetails).length > 0 && (
+                    <div className="space-y-4">
+                        {Object.entries(taxDetails).map(([cnae, details]) => (
+                            <div key={cnae} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                                <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+                                    <span className="font-bold text-sky-700 dark:text-sky-300 text-xs">CNAE: {cnae}</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
+                                        <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
+                                            <tr>
+                                                <th className="px-4 py-2">Tributo</th>
+                                                <th className="px-4 py-2">Incidência</th>
+                                                <th className="px-4 py-2">Alíquota Média</th>
+                                                <th className="px-4 py-2">Base Legal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                            {details.map((row, idx) => (
+                                                <tr key={idx}>
+                                                    <td className="px-4 py-2 font-bold">{row.tributo}</td>
+                                                    <td className="px-4 py-2">{row.incidencia}</td>
+                                                    <td className="px-4 py-2">{row.aliquotaMedia}</td>
+                                                    <td className="px-4 py-2">
+                                                        <a href={`https://www.google.com/search?q=${encodeURIComponent(row.baseLegal)}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                                                            {row.baseLegal}
+                                                        </a>
+                                                    </td>
                                                 </tr>
-                                            </thead>
-                                            <tbody>
-                                                {result.details.map((tax, tIdx) => (
-                                                    <tr key={tIdx} className="border-b dark:border-slate-700">
-                                                        <td className="px-4 py-2 font-medium">{tax.tributo}</td>
-                                                        <td className="px-4 py-2">{tax.incidencia}</td>
-                                                        <td className="px-4 py-2">{tax.aliquotaMedia}</td>
-                                                        <td className="px-4 py-2 text-xs">{tax.baseLegal}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Clique em "Atualizar Análise" para ver a tabela de impostos incidentes.</p>
-                )}
-            </div>
-
-            {/* Reference Table - Annex Ranges */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mt-6">
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-                    <DocumentTextIcon className="w-5 h-5 text-sky-600" />
-                    Tabela de Referência: Anexo {resumo.anexo_efetivo}
-                </h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                            <tr>
-                                <th className="px-4 py-2">Faixa</th>
-                                <th className="px-4 py-2">Receita Bruta em 12 Meses (Até R$)</th>
-                                <th className="px-4 py-2 text-center">Alíquota Nominal</th>
-                                <th className="px-4 py-2 text-right">Valor a Deduzir (R$)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {ANEXOS_TABELAS[resumo.anexo_efetivo]?.map((faixa, index) => {
-                                const isCurrentFaixa = index === resumo.faixa_index;
-                                return (
-                                    <tr key={index} className={`border-b dark:border-slate-700 ${isCurrentFaixa ? 'bg-sky-50 dark:bg-sky-900/20 border-l-4 border-sky-500' : ''}`}>
-                                        <td className="px-4 py-2 font-medium">
-                                            {index + 1}ª Faixa
-                                            {isCurrentFaixa && <span className="ml-2 text-xs font-bold text-sky-600">(Atual)</span>}
-                                        </td>
-                                        <td className="px-4 py-2">
-                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faixa.limite)}
-                                        </td>
-                                        <td className="px-4 py-2 text-center">
-                                            {faixa.aliquota}%
-                                        </td>
-                                        <td className="px-4 py-2 text-right">
-                                            {new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(faixa.parcela)}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {/* Charts */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 h-96 mt-6">
-                {chartData ? (
-                     <SimpleChart type="bar" options={chartOptions} data={chartData} />
-                ) : (
-                    <div className="h-full flex items-center justify-center text-slate-400">
-                        Sem dados para exibir o gráfico.
-                    </div>
-                )}
-            </div>
-            
-            {/* Actions Bar */}
-            <div className="flex flex-wrap gap-3 items-center justify-between bg-slate-50 dark:bg-slate-900 p-4 rounded-lg">
-                 <div className="flex items-center gap-3">
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept=".pdf,.csv,.xml"
-                        onChange={handleFileChange}
-                        className="hidden"
-                    />
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="btn-press px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium flex items-center gap-2"
-                    >
-                        <DocumentTextIcon className="w-4 h-4" />
-                        Importar Notas/Extrato
-                    </button>
-                    
-                    {fileToImport && (
-                        <div className="flex items-center gap-2 animate-fade-in">
-                            <span className="text-sm text-slate-600 dark:text-slate-400 italic max-w-[150px] truncate">
-                                {fileToImport.name}
-                            </span>
-                            <button 
-                                onClick={() => handleConfirmImport()}
-                                disabled={isLoading}
-                                className="px-3 py-1 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700 disabled:opacity-50"
-                            >
-                                {isLoading ? 'Processando...' : 'SALVAR'}
-                            </button>
-                            <button 
-                                onClick={() => { setFileToImport(null); if(fileInputRef.current) fileInputRef.current.value = ''; }}
-                                className="p-1 text-slate-400 hover:text-red-500"
-                            >
-                                <CloseIcon className="w-4 h-4" />
-                            </button>
-                        </div>
-                    )}
-                 </div>
-
-                 <div className="flex gap-2">
-                     <button 
-                         onClick={() => handleSaveCalculo()}
-                         className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm font-semibold flex items-center gap-2 btn-press"
-                     >
-                         <SaveIcon className="w-4 h-4" />
-                         Salvar Apuração
-                     </button>
-                     <button 
-                         onClick={() => handleGerarDasPdf()}
-                         className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm font-semibold flex items-center gap-2 btn-press"
-                     >
-                         <DownloadIcon className="w-4 h-4" />
-                         Gerar Extrato DAS
-                     </button>
-                     <button 
-                         onClick={() => handleGerarDasOnline()}
-                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-semibold flex items-center gap-2 btn-press"
-                     >
-                         <GlobeIcon className="w-4 h-4" />
-                         Cálculo DAS On Line
-                     </button>
-                 </div>
-            </div>
-
-            {/* Feedback Messages */}
-            {importSuccess && (
-                <div className="p-4 bg-green-50 border-l-4 border-green-500 text-green-700 dark:bg-green-900/20 dark:text-green-300 animate-fade-in">
-                    <p className="font-bold">Sucesso!</p>
-                    <p className="text-sm">{importSuccess}</p>
-                </div>
-            )}
-            {importError && (
-                <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 dark:bg-red-900/20 dark:text-red-300 animate-fade-in">
-                    <p className="font-bold">Erros na Importação:</p>
-                    <ul className="list-disc ml-5 text-sm">
-                        {importError.map((err, idx) => <li key={idx}>{err}</li>)}
-                    </ul>
-                </div>
-            )}
-            {saveCalculoSuccess && (
-                <div className="fixed bottom-10 right-10 bg-white dark:bg-slate-800 p-4 rounded-lg shadow-xl border border-green-200 dark:border-green-900 z-50 animate-fade-in flex items-center gap-3">
-                    <div className="bg-green-100 dark:bg-green-900 rounded-full p-2">
-                        <AnimatedCheckIcon className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <p className="font-bold text-green-700 dark:text-green-400">Sucesso</p>
-                        <p className="text-sm text-slate-600 dark:text-slate-300">{saveCalculoSuccess}</p>
-                    </div>
-                </div>
-            )}
-            
-            {/* DAS Online Integration Overlay */}
-            {dasOnlineStatus !== 'idle' && (
-                 <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-[100] animate-fade-in">
-                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-2xl max-w-md w-full text-center">
-                        <LoadingSpinner />
-                        <h3 className="mt-6 text-xl font-bold text-slate-800 dark:text-slate-100">Integração PGDAS-D</h3>
-                        <p className="mt-2 text-sky-600 dark:text-sky-400 font-semibold animate-pulse">{dasOnlineMsg}</p>
-                        <div className="mt-6 w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                            <div 
-                                className="h-full bg-sky-500 transition-all duration-500 ease-out"
-                                style={{ 
-                                    width: dasOnlineStatus === 'connecting' ? '25%' : 
-                                           dasOnlineStatus === 'authenticating' ? '50%' : 
-                                           dasOnlineStatus === 'generating' ? '75%' : '100%' 
-                                }}
-                            />
-                        </div>
-                    </div>
-                 </div>
-            )}
-
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 {/* Manual Revenue Input */}
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm">
-                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Faturamento do Mês Vigente</h3>
-                        <select 
-                            value={mesApuracao.toISOString().substring(0, 7)}
-                            onChange={e => setMesApuracao(new Date(e.target.value + '-02'))}
-                            className="bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-sm rounded-md px-2 py-1"
-                        >
-                            {getMesesApuracaoOptions().map(date => (
-                                <option key={date.toISOString()} value={date.toISOString().substring(0, 7)}>
-                                    {date.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    
-                    <div className="space-y-4 bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
-                        {allActivities.map((act, index) => (
-                            <div key={index} className="border-b border-slate-200 dark:border-slate-600 last:border-0 pb-4 last:pb-0">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                        {act.role === 'Principal' ? 'Principal' : 'Secundária'} - CNAE {act.cnae}
-                                    </span>
-                                    <span className="text-xs px-2 py-0.5 bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300 rounded-full">
-                                        Anexo {act.anexo}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-grow">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">R$</span>
-                                        <input 
-                                            type="text"
-                                            value={faturamentoPorCnae[act.cnae] || ''}
-                                            onChange={(e) => handleCnaeRevenueChange(act.cnae, e.target.value)}
-                                            className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md text-right font-mono"
-                                            placeholder="0,00"
-                                        />
-                                    </div>
-                                    {/* Tax Configuration Checkboxes */}
-                                    <div className="flex flex-col gap-1">
-                                        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={configuracaoPorCnae[act.cnae]?.issRetido || false}
-                                                onChange={() => toggleTaxConfig(act.cnae, 'issRetido')}
-                                                className="rounded text-sky-600 focus:ring-sky-500"
-                                            />
-                                            Retenção ISS
-                                        </label>
-                                        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={configuracaoPorCnae[act.cnae]?.icmsSt || false}
-                                                onChange={() => toggleTaxConfig(act.cnae, 'icmsSt')}
-                                                className="rounded text-sky-600 focus:ring-sky-500"
-                                            />
-                                            ICMS ST
-                                        </label>
-                                    </div>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         ))}
-                        
-                        {/* Quick Add Secondary CNAE Section */}
-                        {isAddingCnae ? (
-                            <div className="bg-white dark:bg-slate-800 p-3 rounded border border-slate-300 dark:border-slate-500 animate-fade-in">
-                                <div className="flex gap-2 mb-2">
+                    </div>
+                )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Coluna Esquerda: Inputs */}
+                <div className="lg:col-span-1 space-y-6">
+                    
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Competência</label>
+                        <input 
+                            type="date" 
+                            value={mesApuracao.toISOString().substring(0, 10)}
+                            onChange={(e) => {
+                                if(e.target.value) setMesApuracao(new Date(e.target.value));
+                            }}
+                            className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white"
+                        />
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-2 border-sky-100 dark:border-sky-900">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                <CalculatorIcon className="w-5 h-5 text-sky-600" />
+                                Apuração do Mês
+                            </h3>
+                            <div className="text-right">
+                                <p className="text-[10px] text-slate-500 font-bold uppercase">Total</p>
+                                <p className="text-lg font-bold text-sky-700 dark:text-sky-400 font-mono">
+                                    R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            {/* ATIVIDADE PRINCIPAL */}
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividade Principal</h4>
+                                {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
+                            </div>
+
+                            {/* ATIVIDADES SECUNDÁRIAS */}
+                            {(empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0) && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividades Secundárias</h4>
+                                    <div className="space-y-3">
+                                        {empresa.atividadesSecundarias.map((ativ, i) => 
+                                            renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i)
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {!isAddingCnae ? (
+                            <button onClick={() => setIsAddingCnae(true)} className="w-full mt-6 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 hover:border-sky-300 dark:hover:border-sky-700 transition-colors text-xs font-bold flex justify-center items-center gap-2">
+                                <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
+                            </button>
+                        ) : (
+                            <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in">
+                                <p className="text-xs font-bold text-sky-700 dark:text-sky-300 mb-3 uppercase tracking-wide">Nova Atividade</p>
+                                <div className="flex gap-2 mb-3">
                                     <input 
                                         type="text" 
-                                        value={quickCnae} 
-                                        onChange={(e) => setQuickCnae(e.target.value)}
-                                        placeholder="CNAE Secundário" 
-                                        className="flex-grow p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-sm"
+                                        placeholder="CNAE" 
+                                        value={newCnaeCode}
+                                        onChange={e => setNewCnaeCode(e.target.value)}
+                                        className="flex-1 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
                                     />
                                     <select 
-                                        value={quickAnexo} 
-                                        onChange={(e) => setQuickAnexo(e.target.value as SimplesNacionalAnexo)}
-                                        className="w-24 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-sm"
+                                        value={newCnaeAnexo} 
+                                        onChange={e => setNewCnaeAnexo(e.target.value)}
+                                        className="w-28 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
                                     >
-                                        <option value="I">An. I</option>
-                                        <option value="II">An. II</option>
-                                        <option value="III">An. III</option>
-                                        <option value="IV">An. IV</option>
-                                        <option value="V">An. V</option>
-                                        <option value="III_V">III/V</option>
+                                        <option value="I">Anexo I</option>
+                                        <option value="II">Anexo II</option>
+                                        <option value="III">Anexo III</option>
+                                        <option value="IV">Anexo IV</option>
+                                        <option value="V">Anexo V</option>
                                     </select>
                                 </div>
                                 <div className="flex justify-end gap-2">
-                                    <button onClick={() => setIsAddingCnae(false)} className="text-xs text-slate-500 hover:underline">Cancelar</button>
-                                    <button 
-                                        onClick={() => handleQuickAddCnae()} 
-                                        className="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
-                                        disabled={!quickCnae.trim()}
-                                    >
-                                        Adicionar
-                                    </button>
+                                    <button onClick={() => setIsAddingCnae(false)} className="px-3 py-1.5 text-xs text-red-500 font-bold hover:bg-red-50 rounded">Cancelar</button>
+                                    <button onClick={handleAddNewCnae} className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded hover:bg-sky-700 shadow-sm">Confirmar</button>
                                 </div>
                             </div>
-                        ) : (
-                            <button 
-                                onClick={() => setIsAddingCnae(true)}
-                                className="w-full text-xs text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/20 py-1 rounded border border-dashed border-sky-300 flex items-center justify-center gap-1"
-                            >
-                                <PlusIcon className="w-3 h-3" />
-                                Adicionar CNAE Secundário
-                            </button>
+                        )}
+
+                        {manualSuccess && (
+                            <div className="mt-4 p-3 bg-green-50 text-green-700 text-xs font-bold rounded-lg flex items-center gap-2">
+                                <AnimatedCheckIcon size="w-5 h-5" /> {manualSuccess}
+                            </div>
                         )}
                         
-                        <div className="flex justify-between items-center pt-2 border-t border-slate-300 dark:border-slate-600">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">Total do Mês:</span>
-                            <span className="font-mono font-bold text-lg text-slate-900 dark:text-white">R$ {totalDiscriminadoString}</span>
-                        </div>
-                        
-                         <button 
-                             onClick={() => handleSaveMesVigenteClick()}
-                             className="w-full mt-2 py-2 bg-green-600 text-white font-bold rounded hover:bg-green-700 transition-colors flex justify-center items-center gap-2"
-                         >
-                             <SaveIcon className="w-4 h-4" />
-                             Salvar Vigente
-                         </button>
-                         {manualSuccess && <p className="text-xs text-green-600 dark:text-green-400 text-center">{manualSuccess}</p>}
+                        <button 
+                            onClick={handleSaveMesVigente}
+                            className="btn-press w-full mt-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 shadow-md"
+                        >
+                            <SaveIcon className="w-4 h-4" />
+                            Salvar Apuração do Mês
+                        </button>
                     </div>
 
-                    <div className="mt-6">
-                        <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-3">Histórico Manual</h4>
-                        <div className="mb-4 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600">
-                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Preenchimento em Lote (Últimos 12 meses)</label>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text"
-                                    value={valorRecorrente}
-                                    onChange={handleValorRecorrenteChange}
-                                    placeholder="Valor Recorrente (R$)"
-                                    className="flex-grow p-2 text-sm border rounded-md dark:bg-slate-800 dark:border-slate-600"
-                                />
-                                <button 
-                                    onClick={handleAplicarRecorrente}
-                                    className="px-3 py-1 bg-slate-200 dark:bg-slate-600
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                        <div className="flex justify-between items-center mb-2">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                                    Faturamento Manual (Lançar/Editar)
+                                </h3>
+                                <p className="text-[10px] text-slate-500 font-bold">RBT12 Acumulado: <span className="text-sky-700 dark:text-sky-400 font-mono text-xs">R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
+                            </div>
+                             {/* BOTÃO DESTACADO PARA ABRIR MODAL DE LANÇAMENTO EM LOTE */}
+                            <button 
+                                onClick={() => setIsHistoryModalOpen(true)}
+                                className="btn-press text-xs flex items-center gap-1 text-white bg-sky-600 hover:bg-sky-700 font-bold px-3 py-2 rounded-lg shadow-sm transition-colors"
+                                title="Lançar valores de vários meses de uma vez para compor o RBT12"
+                            >
+                                <PencilIcon className="w-4 h-4" /> Editar em Lote (12 Meses)
+                            </button>
+                        </div>
+                        
+                        {/* Tabela Compacta de Visualização Rápida */}
+                        <div className="max-h-60 overflow-y-auto custom-scrollbar pr-1 border border-slate-100 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/20">
+                            <table className="w-full text-sm">
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                    {mesesHistorico.map(m => (
+                                        <tr key={m.iso}>
+                                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-bold text-xs capitalize">{m.label}</td>
+                                            <td className="px-3 py-2 text-right">
+                                                <span className="font-mono text-slate-700 dark:text-slate-200">
+                                                    {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {historySuccess && (
+                            <div className="mt-2 p-2 bg-green-50 text-green-700 text-xs font-bold rounded flex items-center gap-2 justify-center">
+                                <AnimatedCheckIcon size="w-4 h-4" /> {historySuccess}
+                            </div>
+                        )}
+                        <div className="flex gap-2 mt-4">
+                             <button onClick={handleReplicarUltimoValor} className="flex-1 btn-press py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors text-xs" title="Replicar o valor mais recente para todos os 12 meses">
+                                Replicar Último
+                            </button>
+                            <button onClick={() => handleSaveHistorico()} className="flex-1 btn-press py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors text-xs">
+                                Salvar Faturamento Manual
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
+                            <UserIcon className="w-4 h-4 text-sky-600" /> Folha de Salários (12m)
+                        </h3>
+                        <CurrencyInput value={folha12Input} onChange={setFolha12Input} />
+                        <button onClick={() => onUpdateFolha12(empresa.id, folha12Input)} className="btn-press w-full mt-2 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors">
+                            Atualizar Folha
+                        </button>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
+                            <DownloadIcon className="w-4 h-4 text-sky-600" /> Importar Arquivo
+                        </h3>
+                        <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-4 text-center relative hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer">
+                            <input 
+                                type="file" 
+                                accept=".pdf, .xml, .xlsx, .xls"
+                                onChange={handleFileUpload}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                disabled={isImporting}
+                            />
+                            {isImporting ? <LoadingSpinner /> : <p className="text-xs text-slate-500 font-bold">Clique para enviar (XML/PDF/XLS)</p>}
+                        </div>
+                        {importResult && (
+                            <div className="mt-2 text-xs">
+                                <p className="text-green-600 font-bold">Sucesso: {importResult.successCount}</p>
+                                <p className="text-red-500 font-bold">Falhas: {importResult.failCount}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Direita: Resultados */}
+                <div className="lg:col-span-2 space-y-6">
+                    <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
+                             <CalculatorIcon className="w-6 h-6 text-sky-600" /> Resumo
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
+                                <p className="text-xs font-bold text-slate-500 uppercase">RBT12</p>
+                                <p className="text-2xl font-mono font-bold text-slate-800 dark:text-white">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                            </div>
+                            <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
+                                <p className="text-xs font-bold text-slate-500 uppercase">Alíquota Efetiva</p>
+                                <p className="text-2xl font-mono font-bold text-sky-600 dark:text-sky-400">{resumo.aliq_eff.toFixed(2)}%</p>
+                                <p className="text-xs text-slate-400">Nominal: {resumo.aliq_nom}%</p>
+                            </div>
+                            <div className="md:col-span-2 p-6 bg-sky-600 text-white rounded-xl shadow-lg relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <p className="text-sky-100 font-bold uppercase text-xs tracking-wider mb-1">Valor Estimado do DAS (A Pagar)</p>
+                                    <p className="text-4xl font-extrabold">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                    <p className="text-sky-200 text-sm mt-2 font-medium">Competência: {mesApuracao.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {resumo.detalhamento_anexos && resumo.detalhamento_anexos.length > 0 && (
+                        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-700 dark:text-slate-200">Detalhamento por Anexo</h3>
+                                </div>
+                            </div>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
+                                    <tr>
+                                        <th className="px-6 py-3">Anexo</th>
+                                        <th className="px-6 py-3 text-right">Base Cálculo</th>
+                                        <th className="px-6 py-3 text-center">Aliq. Efetiva</th>
+                                        <th className="px-6 py-3 text-right">Valor DAS</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                    {(resumo.detalhamento_anexos as DetalhamentoAnexo[] || []).map((detalhe: DetalhamentoAnexo, idx: number) => (
+                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                            <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-200">
+                                                Anexo {detalhe.anexo}
+                                                {(detalhe.issRetido || detalhe.icmsSt) && (
+                                                    <div className="flex flex-col gap-0.5 mt-1">
+                                                        {detalhe.issRetido && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ISS Retido</span>}
+                                                        {detalhe.icmsSt && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ICMS ST</span>}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-mono text-slate-600 dark:text-slate-300">{detalhe.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                            <td className="px-6 py-4 text-center font-mono text-slate-600 dark:text-slate-300">{detalhe.aliquotaEfetiva.toFixed(2)}%</td>
+                                            <td className="px-6 py-4 text-right font-mono font-bold text-sky-600 dark:text-sky-400">{detalhe.valorDas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Histórico de Apurações Salvas */}
+                    {empresa.historicoCalculos && empresa.historicoCalculos.length > 0 && (
+                        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                    <HistoryIcon className="w-4 h-4" /> Histórico de Apurações
+                                </h3>
+                                
+                                <div className="flex gap-2">
+                                    <select 
+                                        value={filterMonth} 
+                                        onChange={(e) => setFilterMonth(e.target.value)}
+                                        className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs rounded px-2 py-1 focus:ring-2 focus:ring-sky-500 outline-none"
+                                    >
+                                        <option value="all">Todos os Meses</option>
+                                        {Array.from({ length: 12 }, (_, i) => (
+                                            <option key={i} value={i}>{new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}</option>
+                                        ))}
+                                    </select>
+
+                                    <select 
+                                        value={filterYear} 
+                                        onChange={(e) => setFilterYear(e.target.value)}
+                                        className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs rounded px-2 py-1 focus:ring-2 focus:ring-sky-500 outline-none"
+                                    >
+                                        <option value="all">Todos os Anos</option>
+                                        {availableYears.map(year => (
+                                            <option key={year} value={year}>{year}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
+                                        <tr>
+                                            <th className="px-6 py-3">Competência</th>
+                                            <th className="px-6 py-3 text-right">RBT12</th>
+                                            <th className="px-6 py-3 text-right">DAS</th>
+                                            <th className="px-6 py-3 text-center">Ação</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {filteredHistory.map((hist) => (
+                                            <tr key={hist.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => setSelectedHistoryItem(hist)}>
+                                                <td className="px-6 py-3 font-medium text-slate-700 dark:text-slate-200 capitalize">
+                                                    {hist.mesReferencia}
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-mono text-slate-600 dark:text-slate-300">
+                                                    {hist.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-mono font-bold text-sky-600 dark:text-sky-400">
+                                                    {hist.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className="px-6 py-3 text-center">
+                                                    <button className="text-slate-400 hover:text-sky-600">
+                                                        <InfoIcon className="w-4 h-4" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {filteredHistory.length === 0 && (
+                                            <tr>
+                                                <td colSpan={4} className="px-6 py-8 text-center text-slate-400 dark:text-slate-500">
+                                                    Nenhum histórico encontrado para este filtro.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-4">Gráfico de Evolução</h3>
+                        <div id="chart-container" className="h-80 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm">
+                            {resumo.historico_simulado.length > 0 ? <SimpleChart type="bar" data={chartData} /> : <div className="h-full flex flex-col items-center justify-center text-slate-400"><p>Sem dados.</p></div>}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Modal de Detalhes do Histórico */}
+            {selectedHistoryItem && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70] animate-fade-in" onClick={() => setSelectedHistoryItem(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Detalhes da Apuração</h3>
+                            <button onClick={() => setSelectedHistoryItem(null)} className="text-slate-400 hover:text-slate-600"><CloseIcon className="w-5 h-5" /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 dark:text-slate-400">Competência:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200 capitalize">{selectedHistoryItem.mesReferencia}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 dark:text-slate-400">RBT12:</span>
+                                <span className="font-mono text-slate-800 dark:text-slate-200">{selectedHistoryItem.rbt12.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 dark:text-slate-400">Aliq. Efetiva:</span>
+                                <span className="font-mono text-slate-800 dark:text-slate-200">{selectedHistoryItem.aliq_eff.toFixed(2)}%</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 dark:text-slate-400">Fator R:</span>
+                                <span className="font-mono text-slate-800 dark:text-slate-200">{(selectedHistoryItem.fator_r * 100).toFixed(2)}%</span>
+                            </div>
+                            <div className="mt-4 p-3 bg-sky-50 dark:bg-sky-900/30 rounded-lg flex justify-between items-center">
+                                <span className="text-sky-800 dark:text-sky-300 font-bold">Valor DAS:</span>
+                                <span className="text-xl font-extrabold text-sky-600 dark:text-sky-400">{selectedHistoryItem.das_mensal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Lançamento de Histórico Manual em Lote */}
+            {isHistoryModalOpen && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70] animate-fade-in" onClick={() => setIsHistoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                <PencilIcon className="w-6 h-6 text-sky-600" />
+                                Lançamento de Faturamento Manual (12 Meses)
+                            </h3>
+                            <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <CloseIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto bg-slate-50 dark:bg-slate-900/50">
+                            <div className="mb-4 flex justify-end">
+                                 <button 
+                                    onClick={handleReplicarUltimoValor} 
+                                    className="text-xs flex items-center gap-1 text-sky-600 hover:text-sky-800 font-bold bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-800 px-3 py-1.5 rounded shadow-sm"
+                                >
+                                    <CopyIcon className="w-4 h-4" /> Replicar 1º Valor para Todos
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {mesesHistorico.map(m => (
+                                    <div key={m.iso} className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 capitalize">{m.label}</label>
+                                        <CurrencyInput 
+                                            value={historicoManualEditavel[m.iso] || 0} 
+                                            onChange={(val) => handleHistoricoChange(m.iso, val)} 
+                                            className="w-full"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-b-xl flex justify-end gap-3">
+                             <button onClick={() => setIsHistoryModalOpen(false)} className="px-4 py-2 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                                Cancelar
+                            </button>
+                            <button onClick={handleSaveHistorico} className="px-6 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 shadow-md">
+                                Salvar Faturamento Manual
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default SimplesNacionalDetalhe;

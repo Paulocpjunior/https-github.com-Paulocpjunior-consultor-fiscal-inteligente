@@ -22,7 +22,6 @@ import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, Locati
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// Lazy load heavy components
 const SimplesNacionalDetalhe = lazy(() => import('./components/SimplesNacionalDetalhe'));
 const SimplesNacionalClienteView = lazy(() => import('./components/SimplesNacionalClienteView'));
 const ResultsDisplay = lazy(() => import('./components/ResultsDisplay'));
@@ -36,11 +35,10 @@ const searchDescriptions: Record<SearchType, string> = {
     [SearchType.SERVICO]: "Análise de retenção de ISS, local de incidência e alíquotas.",
     [SearchType.REFORMA_TRIBUTARIA]: "Simule o impacto da Reforma Tributária (IBS/CBS) para sua atividade.",
     [SearchType.SIMPLES_NACIONAL]: "Gestão de empresas do Simples, cálculo de DAS e Fator R.",
-    [SearchType.LUCRO_PRESUMIDO_REAL]: "Simulador comparativo de carga tributária entre regimes.",
+    [SearchType.LUCRO_PRESUMIDO_REAL]: "Ficha Financeira e Cadastro para Lucro Presumido/Real.",
 };
 
 const App: React.FC = () => {
-  
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -62,12 +60,10 @@ const App: React.FC = () => {
   const [query1, setQuery1] = useState('');
   const [query2, setQuery2] = useState('');
   
-  // Reforma fields
   const [cnae, setCnae] = useState('');
   const [cnae2, setCnae2] = useState('');
   const [reformaQuery, setReformaQuery] = useState('');
 
-  // Serviço fields
   const [municipio, setMunicipio] = useState('');
   const [alias, setAlias] = useState('');
   const [responsavel, setResponsavel] = useState('');
@@ -101,9 +97,9 @@ const App: React.FC = () => {
   const [simplesNotas, setSimplesNotas] = useState<Record<string, SimplesNacionalNota[]>>({});
   const [selectedSimplesEmpresaId, setSelectedSimplesEmpresaId] = useState<string | null>(null);
   
-  const loadSimplesData = async () => {
+  const loadSimplesData = async (user?: User | null) => {
       try {
-          const empresas = await simplesService.getEmpresas();
+          const empresas = await simplesService.getEmpresas(user || currentUser);
           const notas = await simplesService.getAllNotas();
           setSimplesEmpresas(empresas);
           setSimplesNotas(notas);
@@ -113,7 +109,6 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    // This effect runs once on component mount
     try {
         const user = authService.getCurrentUser();
         setCurrentUser(user);
@@ -124,21 +119,21 @@ const App: React.FC = () => {
         const storedHistory = localStorage.getItem('fiscal-consultant-history');
         if (storedHistory) setHistory(JSON.parse(storedHistory));
 
-        // Optimized Data Loading for Firebase (Wait for Auth)
         if (isFirebaseConfigured && auth) {
-            const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+            const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
                 if (firebaseUser) {
-                    // Only load data once we have a confirmed user to satisfy security rules
-                    loadSimplesData();
+                    // Recover user profile from DB or Auth data securely
+                    const syncedUser = await authService.syncUserFromAuth(firebaseUser);
+                    setCurrentUser(syncedUser);
+                    loadSimplesData(syncedUser);
                 }
             });
             return () => unsubscribe();
         } else {
-            // Local mode, load immediately
-            loadSimplesData();
+            if(user) loadSimplesData(user);
         }
     } catch (e) {
-        console.error("Failed to parse data from localStorage", e);
+        console.error("Initialization error", e);
     }
   }, []);
 
@@ -152,710 +147,273 @@ const App: React.FC = () => {
       }
   }, [theme]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-        if (suggestionsContainerRef.current && !suggestionsContainerRef.current.contains(event.target as Node)) {
-            setCnaeSuggestions([]);
-        }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-  
-  const toggleTheme = () => {
-    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  };
-
-  // Auth Handlers
   const handleLoginSuccess = (user: User) => {
       setCurrentUser(user);
-      // In local mode, or if already authed, reload. 
-      // In firebase mode, onAuthStateChanged will handle the initial load, but this helps on explicit login.
-      loadSimplesData(); 
+      loadSimplesData(user); 
   };
 
   const handleLogout = () => {
       authService.logout();
       setCurrentUser(null);
-      setSimplesEmpresas([]); // Clear data on logout
+      setSimplesEmpresas([]);
+  };
+
+  const handleSelectHistoryItem = (item: HistoryItem) => {
+      setSearchType(item.type);
+      setMode(item.mode);
+      setMunicipio(item.municipio || '');
+      setAlias(item.alias || '');
+      setResponsavel(item.responsavel || '');
+      setRegimeTributario(item.regimeTributario || '');
+      setReformaQuery(item.reformaQuery || '');
+      
+      if (item.type === SearchType.REFORMA_TRIBUTARIA) {
+          if (item.mode === 'single') {
+              setReformaQuery(item.queries[0]);
+          } else {
+              setCnae(item.queries[0]);
+              setCnae2(item.queries[1]);
+          }
+      } else {
+          setQuery1(item.queries[0]);
+          if (item.mode === 'compare' && item.queries[1]) {
+              setQuery2(item.queries[1]);
+          }
+      }
+      handleSearch(item.queries[0], item.queries[1]);
+      if(window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
+  const handleHistoryRemove = (id: string) => {
+      const newHistory = history.filter(item => item.id !== id);
+      setHistory(newHistory);
+      localStorage.setItem('fiscal-consultant-history', JSON.stringify(newHistory));
+  };
+
+  const handleHistoryClear = () => {
+      setHistory([]);
+      localStorage.removeItem('fiscal-consultant-history');
+  };
+
+  const addHistory = (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
+      const newHistoryItem: HistoryItem = {
+          ...item,
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+      };
+      const updatedHistory = [newHistoryItem, ...history].slice(0, 50);
+      setHistory(updatedHistory);
+      localStorage.setItem('fiscal-consultant-history', JSON.stringify(updatedHistory));
+  };
+
+  const handleSelectFavorite = (item: FavoriteItem) => {
+      setSearchType(item.type);
+      setMode('single');
+      if (item.type === SearchType.REFORMA_TRIBUTARIA) {
+          setReformaQuery(item.code);
+      } else {
+          setQuery1(item.code);
+      }
+      handleSearch(item.code);
+      if(window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
   const saveFavorites = (newFavorites: FavoriteItem[]) => {
       setFavorites(newFavorites);
       localStorage.setItem('fiscal-consultant-favorites', JSON.stringify(newFavorites));
   };
-  
-  const addHistory = (item: Omit<HistoryItem, 'id' | 'timestamp'>) => {
-      setHistory(prev => {
-          const newHistory = [
-              { ...item, id: crypto.randomUUID(), timestamp: Date.now() },
-              ...prev.filter(h => h.queries.join() !== item.queries.join() || h.type !== item.type)
-          ].slice(0, 50); // Keep last 50
-          localStorage.setItem('fiscal-consultant-history', JSON.stringify(newHistory));
-          return newHistory;
-      });
+
+  const handleToggleFavorite = () => {
+      if (!result) return;
+      const code = searchType === SearchType.REFORMA_TRIBUTARIA ? result.query : query1; 
+      const description = result.text.split('\n')[0].substring(0, 50) + '...';
+      
+      const existingIndex = favorites.findIndex(f => f.code === code && f.type === searchType);
+      
+      let newFavorites;
+      if (existingIndex >= 0) {
+          newFavorites = favorites.filter((_, i) => i !== existingIndex);
+      } else {
+          newFavorites = [...favorites, { code, description, type: searchType }];
+      }
+      saveFavorites(newFavorites);
   };
 
-    const handleHistoryRemove = (id: string) => {
-        setHistory(prev => {
-            const updatedHistory = prev.filter(h => h.id !== id);
-            localStorage.setItem('fiscal-consultant-history', JSON.stringify(updatedHistory));
-            return updatedHistory;
-        });
-    };
+  // Auxiliar para formatar erros amigáveis
+  const getFriendlyErrorMessage = (error: any): string => {
+      const message = error?.message || '';
+      
+      if (message.includes('429') || message.includes('Quota exceeded')) {
+          return "Limite de consultas excedido (Erro 429). A IA está sobrecarregada ou sua cota acabou. Por favor, aguarde alguns instantes antes de tentar novamente.";
+      }
+      
+      if (message.includes('503') || message.includes('Service Unavailable')) {
+          return "O serviço de IA está temporariamente indisponível (Erro 503). Isso geralmente é passageiro. Tente novamente em alguns minutos.";
+      }
+      
+      if (message.includes('400') || message.includes('Invalid argument')) {
+          return "A consulta parece inválida ou incompleta (Erro 400). Verifique os dados digitados e tente novamente.";
+      }
+      
+      if (message.includes('500')) {
+          return "Erro interno no servidor da IA (Erro 500). Por favor, tente novamente.";
+      }
+      
+      if (message.includes('Failed to fetch')) {
+          return "Erro de conexão. Verifique sua internet.";
+      }
 
-    const handleHistoryClear = () => {
-        setHistory([]);
-        localStorage.removeItem('fiscal-consultant-history');
-    };
+      return message || "Ocorreu um erro inesperado ao comunicar com a API.";
+  };
 
-  const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string, options?: { reformaQuery?: string }) => {
-    const isCompare = mode === 'compare' && !!currentQuery1 && !!currentQuery2;
-    const isSingle = mode === 'single' && !!currentQuery1;
-
-    if (!isSingle && !isCompare) return;
-
+  const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string) => {
+    if (!currentQuery1.trim()) return;
     setIsLoading(true);
     setError(null);
     setResult(null);
     setComparisonResult(null);
-    setSimilarServices(null);
+    
+    if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search', `${searchType}: ${currentQuery1}`);
 
     try {
-        if (isCompare) {
-            const data = await fetchComparison(searchType, currentQuery1, currentQuery2 || '', municipio, responsavel, regimeTributario, aliquotaIcms, aliquotaPisCofins, aliquotaIss);
-            setComparisonResult(data);
-            addHistory({ 
-                queries: [currentQuery1, currentQuery2 || ''], 
-                type: searchType, 
-                mode: 'compare', 
-                municipio, 
-                cnae: searchType === SearchType.REFORMA_TRIBUTARIA ? `${currentQuery1} vs ${currentQuery2}` : undefined,
-                aliquotaIcms,
-                aliquotaPisCofins,
-                aliquotaIss,
-            });
-        } else {
-            const finalReformaQuery = options?.reformaQuery;
-            const cnaeForCall = searchType === SearchType.REFORMA_TRIBUTARIA ? currentQuery1 : '';
-            const data = await fetchFiscalData(searchType, currentQuery1, municipio, alias, responsavel, cnaeForCall, regimeTributario, finalReformaQuery, aliquotaIcms, aliquotaPisCofins, aliquotaIss);
-            setResult(data);
-            addHistory({ queries: [currentQuery1], type: searchType, mode: 'single', municipio, alias, responsavel, cnae: cnaeForCall, regimeTributario, reformaQuery: finalReformaQuery, aliquotaIcms, aliquotaPisCofins, aliquotaIss });
-        }
-    } catch (e: any) {
-        setError(e.message || 'Ocorreu um erro desconhecido.');
+      if (mode === 'compare' && currentQuery2) {
+          const data = await fetchComparison(searchType, currentQuery1, currentQuery2);
+          setComparisonResult(data);
+          addHistory({
+              queries: [currentQuery1, currentQuery2],
+              type: searchType,
+              mode: 'compare'
+          });
+      } else {
+          const data = await fetchFiscalData(
+              searchType, 
+              currentQuery1, 
+              municipio, 
+              alias, 
+              responsavel, 
+              undefined, 
+              regimeTributario, 
+              undefined,
+              aliquotaIcms,
+              aliquotaPisCofins,
+              aliquotaIss
+          );
+          setResult(data);
+          addHistory({
+              queries: [currentQuery1],
+              type: searchType,
+              mode: 'single',
+              municipio,
+              alias,
+              responsavel,
+              regimeTributario,
+              aliquotaIcms,
+              aliquotaPisCofins,
+              aliquotaIss
+          });
+      }
+    } catch (err) {
+      const msg = getFriendlyErrorMessage(err);
+      setError(msg);
     } finally {
-        setIsLoading(false);
+      setIsLoading(false);
     }
-  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, aliquotaIcms, aliquotaPisCofins, aliquotaIss]);
-  
-  const handleQuery1Change = (value: string) => {
-      setQuery1(value);
-  };
-  
-  const handleFormSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      const q1 = searchType === SearchType.REFORMA_TRIBUTARIA ? cnae : query1;
-      const q2 = searchType === SearchType.REFORMA_TRIBUTARIA ? cnae2 : query2;
-      handleSearch(q1, q2, { reformaQuery });
-  };
+  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, currentUser, aliquotaIcms, aliquotaPisCofins, aliquotaIss]);
 
-  const handleCnaeChange = (value: string) => {
-    setCnae(value);
-    
-    if (cnaeDebounceTimeout.current) clearTimeout(cnaeDebounceTimeout.current);
-    
-    if (value.trim().length < 3) {
-        setCnaeSuggestions([]);
-        return;
-    }
+  const handleReformaSearch = useCallback(async (query: string) => {
+      if (!query.trim()) return;
+      setIsLoading(true);
+      setError(null);
+      setResult(null);
+      
+      if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search_reforma', query);
 
-    setIsLoadingCnaeSuggestions(true);
-    setErrorCnaeSuggestions(null);
+      try {
+          const data = await fetchFiscalData(SearchType.REFORMA_TRIBUTARIA, query, undefined, undefined, undefined, query);
+          setResult(data);
+          addHistory({
+              queries: [query],
+              type: SearchType.REFORMA_TRIBUTARIA,
+              mode: 'single',
+              reformaQuery: query
+          });
+      } catch (err) {
+          const msg = getFriendlyErrorMessage(err);
+          setError(msg);
+      } finally {
+          setIsLoading(false);
+      }
+  }, [currentUser]);
 
-    cnaeDebounceTimeout.current = setTimeout(async () => {
-        try {
-            const suggestions = await fetchCnaeSuggestions(value);
-            setCnaeSuggestions(suggestions);
-        } catch (e: any) {
-            setErrorCnaeSuggestions(e.message || 'Erro ao buscar sugestões.');
-        } finally {
-            setIsLoadingCnaeSuggestions(false);
-        }
-    }, 500);
-  };
-
-  const handleCnaeSuggestionClick = (suggestion: CnaeSuggestion) => {
-      setCnae(suggestion.code);
-      setCnaeSuggestions([]);
+  const handleFindSimilar = async () => {
+      if (!result || searchType !== SearchType.SERVICO) return;
+      setIsLoadingSimilar(true);
+      setErrorSimilar(null);
+      try {
+          const similar = await fetchSimilarServices(result.query);
+          setSimilarServices(similar);
+      } catch (e) {
+          setErrorSimilar("Não foi possível buscar serviços similares.");
+      } finally {
+          setIsLoadingSimilar(false);
+      }
   };
 
-  const clearSearch = () => {
-    setQuery1('');
-    setQuery2('');
-    setCnae('');
-    setCnae2('');
-    setReformaQuery('');
-    setMunicipio('');
-    setAlias('');
-    setResponsavel('');
-    setRegimeTributario('');
-    setAliquotaIcms('');
-    setAliquotaPisCofins('');
-    setAliquotaIss('');
-    setResult(null);
-    setComparisonResult(null);
-    setError(null);
-    setIsLoading(false);
-    setSimilarServices(null);
-    setIsLoadingSimilar(false);
-    setErrorSimilar(null);
-    setCnaeSuggestions([]);
-    setIsLoadingCnaeSuggestions(false);
-    setErrorCnaeSuggestions(null);
+  // Simples Nacional Handlers
+  const handleSaveSimplesEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: any, atividadesSecundarias?: any[]) => {
+      if (!currentUser) return;
+      const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias || [], currentUser.id);
+      setSimplesEmpresas(prev => [...prev, newEmpresa]);
+      if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
+      setSimplesView('dashboard');
   };
-  
-  const handleTypeChange = (newType: SearchType) => {
-    setSearchType(newType);
-    if (newType !== SearchType.SIMPLES_NACIONAL && newType !== SearchType.LUCRO_PRESUMIDO_REAL) {
-        clearSearch();
-    } else {
-        if(newType === SearchType.SIMPLES_NACIONAL) {
-            setSimplesView('dashboard');
-            setSelectedSimplesEmpresaId(null);
-            loadSimplesData(); // Refresh
-        }
-    }
+
+  const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
+      try {
+          const result = await simplesService.parseAndSaveNotas(empresaId, file);
+          const notas = await simplesService.getAllNotas();
+          const empresas = await simplesService.getEmpresas(currentUser);
+          setSimplesNotas(notas);
+          setSimplesEmpresas(empresas); 
+          if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'import_notas', empresaId);
+          return result;
+      } catch (e: any) {
+          return { successCount: 0, failCount: 0, errors: [e.message] };
+      }
+  };
+
+  const handleUpdateFolha12 = (empresaId: string, val: number) => {
+      simplesService.updateFolha12(empresaId, val);
+      const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, folha12: val } : e);
+      setSimplesEmpresas(updated);
+      return updated.find(e => e.id === empresaId) || null;
+  };
+
+  const handleSaveFaturamentoManual = (empresaId: string, faturamento: any) => {
+      simplesService.saveFaturamentoManual(empresaId, faturamento);
+      const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, faturamentoManual: faturamento } : e);
+      setSimplesEmpresas(updated);
+      return updated.find(e => e.id === empresaId) || null;
   };
   
-  const handleModeChange = (newMode: 'single' | 'compare') => {
-      setMode(newMode);
-      clearSearch();
-  };
-  
-  const handleStartCompare = () => {
-    if (result) {
-        setQuery1(result.query);
-        setMode('compare');
-        setResult(null);
-        setSimilarServices(null);
-    }
-  };
-
-    const handleFetchSimilarServices = useCallback(async () => {
-        if (!result || searchType !== SearchType.SERVICO) return;
-        
-        setIsLoadingSimilar(true);
-        setErrorSimilar(null);
-        setSimilarServices(null);
-        
-        try {
-            const similar = await fetchSimilarServices(result.query);
-            setSimilarServices(similar);
-        } catch (e: any) {
-            setErrorSimilar(e.message || 'Falha ao buscar serviços similares.');
-        } finally {
-            setIsLoadingSimilar(false);
-        }
-    }, [result, searchType]);
-
-    const handleSimilarServiceSelect = (code: string) => {
-        setMode('single');
-        setQuery1(code);
-        setAlias('');
-        setResult(null);
-        setComparisonResult(null);
-        handleSearch(code);
-    };
-
-  const currentResultIsFavorite = useMemo(() => {
-      if (mode !== 'single' || !result) return false;
-      const code = searchType === SearchType.REFORMA_TRIBUTARIA ? cnae : result.query;
-      return favorites.some(fav => fav.code === code && fav.type === searchType);
-  }, [result, favorites, searchType, mode, cnae]);
-
-  const handleToggleFavorite = () => {
-    if (mode !== 'single' || !result) return;
-    const code = searchType === SearchType.REFORMA_TRIBUTARIA ? (result.query.replace('Análise para CNAE ', '')) : result.query;
-    const description = result.description || result.text.split('\n')[0].replace('**', '').trim();
-    
-    if (currentResultIsFavorite) {
-        saveFavorites(favorites.filter(fav => !(fav.code === code && fav.type === searchType)));
-    } else {
-        saveFavorites([...favorites, { code, description, type: searchType }]);
-    }
-  };
-  
-  const handleFavoriteSelect = (item: FavoriteItem) => {
-    setIsSidebarOpen(false);
-    setMode('single');
-    setSearchType(item.type);
-    setComparisonResult(null);
-    setSimilarServices(null);
-    if (item.type === SearchType.REFORMA_TRIBUTARIA) {
-        setCnae(item.code);
-        handleSearch(item.code, undefined, { reformaQuery: '' });
-    } else {
-        setQuery1(item.code);
-        handleSearch(item.code);
-    }
-  };
-  
-  const handleHistorySelect = (item: HistoryItem) => {
-    setIsSidebarOpen(false);
-    setMode(item.mode);
-    setSearchType(item.type);
-    setResult(null);
-    setComparisonResult(null);
-    setSimilarServices(null);
-    
-    if(item.type === SearchType.REFORMA_TRIBUTARIA){
-        setReformaQuery(item.reformaQuery || '');
-        if (item.mode === 'single') {
-            setCnae(item.cnae || '');
-            handleSearch(item.cnae || '', undefined, { reformaQuery: item.reformaQuery || '' });
-        } else {
-            const [c1, c2] = (item.cnae || ' vs ').split(' vs ');
-            setCnae(c1);
-            setCnae2(c2);
-            handleSearch(c1, c2);
-        }
-    } else {
-        setMunicipio(item.municipio || '');
-        setAlias(item.alias || '');
-        setResponsavel(item.responsavel || '');
-        setRegimeTributario(item.regimeTributario || '');
-        setAliquotaIcms(item.aliquotaIcms || '');
-        setAliquotaPisCofins(item.aliquotaPisCofins || '');
-        setAliquotaIss(item.aliquotaIss || '');
-        setReformaQuery('');
-
-        if (item.mode === 'single') {
-            setQuery1(item.queries[0]);
-            handleSearch(item.queries[0]);
-        } else {
-            setQuery1(item.queries[0]);
-            setQuery2(item.queries[1]);
-            handleSearch(item.queries[0], item.queries[1]);
-        }
-    }
-  };
-
-    // --- Simples Nacional Handlers (ASYNC) ---
-    const handleSaveSimplesEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => {
-        const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias);
-        setSimplesEmpresas(prev => [...prev, newEmpresa]);
-        setSimplesView('dashboard');
-        
-        if (currentUser && currentUser.role === 'admin') {
-            authService.logAction(currentUser, `Criou empresa: ${nome}`);
-        }
-    };
-    
-    const handleUpdateSimplesEmpresa = async (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
-        const updatedEmpresa = await simplesService.updateEmpresa(empresaId, data);
-        if (updatedEmpresa) {
-            setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
-        }
-        return updatedEmpresa;
-    };
-
-    const handleSelectSimplesEmpresa = (id: string, view: 'detalhe' | 'cliente' = 'detalhe') => {
-        setSelectedSimplesEmpresaId(id);
-        setSimplesView(view);
-        
-        const empresa = simplesEmpresas.find(e => e.id === id);
-        if (currentUser && empresa) {
-            authService.logAction(currentUser, `Acessou empresa: ${empresa.nome} (${view})`);
-        }
-    };
-
-    const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
-        try {
-            const result = await simplesService.parseAndSaveNotas(empresaId, file);
-            // Reload data to get updated notes/companies
-            await loadSimplesData();
-            return result;
-        } catch (e: any) {
-            return { successCount: 0, failCount: 0, errors: [e.message || 'Erro desconhecido ao processar o arquivo.'] };
-        }
-    };
-
-    const handleUpdateFolha12 = async (empresaId: string, folha12: number) => {
-        const updatedEmpresa = await simplesService.updateFolha12(empresaId, folha12);
-        if (updatedEmpresa) {
-            setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
-        }
-        return updatedEmpresa;
-    };
-    
-    const handleSaveFaturamentoManual = async (empresaId: string, faturamento: { [key: string]: number }) => {
-        const updatedEmpresa = await simplesService.saveFaturamentoManual(empresaId, faturamento);
-        if (updatedEmpresa) {
-            setSimplesEmpresas(prev => prev.map(e => e.id === empresaId ? updatedEmpresa : e));
-        }
-        return updatedEmpresa;
-    };
-
-    const selectedSimplesEmpresa = useMemo(() => {
-        return simplesEmpresas.find(e => e.id === selectedSimplesEmpresaId) || null;
-    }, [selectedSimplesEmpresaId, simplesEmpresas]);
-
-  const searchResultsForAlerts = useMemo(() => {
-    if (comparisonResult) return [comparisonResult.result1, comparisonResult.result2];
-    if (result) return [result];
-    return [];
-  }, [result, comparisonResult]);
-
-  const searchTypes = [SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL];
-
-  const getButtonText = () => {
-    if (isLoading) return 'Analisando...';
-    if (mode === 'compare') return 'Comparar';
-    if (searchType === SearchType.REFORMA_TRIBUTARIA) return 'Analisar CNAE';
-    return 'Analisar';
-  };
-
-  const handleSuggestionSelect = (code: string) => {
-    if (searchType === SearchType.REFORMA_TRIBUTARIA) {
-        setCnae(code);
-        handleSearch(code, undefined, { reformaQuery: '' });
-    } else {
-        setQuery1(code);
-        handleSearch(code);
-    }
-  };
-
-  const renderMainContent = () => {
-    if (searchType === SearchType.SIMPLES_NACIONAL) {
-        if (simplesView === 'nova') {
-            return <SimplesNacionalNovaEmpresa onSave={handleSaveSimplesEmpresa} onCancel={() => setSimplesView('dashboard')} />;
-        }
-        if (simplesView === 'detalhe' && selectedSimplesEmpresa) {
-            return (
-                <Suspense fallback={<LoadingSpinner />}>
-                    <SimplesNacionalDetalhe 
-                        empresa={selectedSimplesEmpresa} 
-                        notas={simplesNotas[selectedSimplesEmpresa.id] || []}
-                        onBack={() => setSimplesView('dashboard')} 
-                        onImport={handleImportNotas}
-                        onUpdateFolha12={handleUpdateFolha12}
-                        onSaveFaturamentoManual={handleSaveFaturamentoManual}
-                        onUpdateEmpresa={handleUpdateSimplesEmpresa}
-                        onShowClienteView={() => handleSelectSimplesEmpresa(selectedSimplesEmpresa.id, 'cliente')}
-                    />
-                </Suspense>
-            );
-        }
-        if (simplesView === 'cliente' && selectedSimplesEmpresa) {
-            return (
-                <Suspense fallback={<LoadingSpinner />}>
-                    <SimplesNacionalClienteView
-                        empresa={selectedSimplesEmpresa}
-                        notas={simplesNotas[selectedSimplesEmpresa.id] || []}
-                        onBack={() => setSimplesView('dashboard')}
-                    />
-                </Suspense>
-            );
-        }
-        return <SimplesNacionalDashboard 
-                    empresas={simplesEmpresas} 
-                    notas={simplesNotas}
-                    onSelectEmpresa={handleSelectSimplesEmpresa} 
-                    onAddNew={() => setSimplesView('nova')}
-                    currentUser={currentUser} 
-                />;
-    }
-
-    if (searchType === SearchType.LUCRO_PRESUMIDO_REAL) {
-        return (
-            <Suspense fallback={<LoadingSpinner />}>
-                <LucroPresumidoRealDashboard currentUser={currentUser} />
-            </Suspense>
-        );
-    }
-
-    return (
-        <>
-        <div className="flex flex-col sm:flex-row justify-end items-center gap-4 mb-6">
-            <div className="flex-shrink-0 bg-slate-200 dark:bg-slate-800 p-1 rounded-lg flex">
-                <button onClick={() => handleModeChange('single')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${mode === 'single' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-                    Análise
-                </button>
-                    <button onClick={() => handleModeChange('compare')} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${mode === 'compare' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-                    Comparar
-                </button>
-            </div>
-        </div>
-        
-        <form onSubmit={handleFormSubmit} className="space-y-4">
-            {/* Form Content */}
-            {searchType === SearchType.REFORMA_TRIBUTARIA ? (
-                <>
-                    <div className={`grid grid-cols-1 ${mode === 'compare' ? 'md:grid-cols-2' : ''} gap-4`}>
-                        <div ref={suggestionsContainerRef}>
-                            <div className="relative">
-                                <BuildingIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    value={cnae}
-                                    onChange={(e) => handleCnaeChange(e.target.value)}
-                                    placeholder="Digite o código ou atividade do CNAE"
-                                    className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    aria-label="CNAE 1"
-                                    autoComplete="off"
-                                />
-                            </div>
-                            {(isLoadingCnaeSuggestions || errorCnaeSuggestions || cnaeSuggestions.length > 0) && (
-                                <div className="relative">
-                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                                        {isLoadingCnaeSuggestions && (
-                                            <div className="p-3 text-sm text-slate-500 dark:text-slate-400">Buscando sugestões...</div>
-                                        )}
-                                        {errorCnaeSuggestions && (
-                                            <div className="p-3 text-sm text-red-600 dark:text-red-400">{errorCnaeSuggestions}</div>
-                                        )}
-                                        <ul>
-                                            {cnaeSuggestions.map((suggestion) => (
-                                                <li key={suggestion.code}>
-                                                    <button
-                                                        type="button"
-                                                        className="w-full text-left px-4 py-2 hover:bg-sky-100 dark:hover:bg-sky-900/50"
-                                                        onClick={() => handleCnaeSuggestionClick(suggestion)}
-                                                    >
-                                                        <span className="font-bold text-slate-800 dark:text-slate-200">{suggestion.code}</span>
-                                                        <span className="ml-2 text-slate-600 dark:text-slate-400">{suggestion.description}</span>
-                                                    </button>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {mode === 'compare' && (
-                            <div className="relative">
-                                <BuildingIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    value={cnae2}
-                                    onChange={(e) => setCnae2(e.target.value)}
-                                    placeholder="Digite o segundo CNAE"
-                                    className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    aria-label="CNAE 2"
-                                />
-                            </div>
-                        )}
-                    </div>
-                    {mode === 'single' && (
-                        <div className="relative">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                value={reformaQuery}
-                                onChange={(e) => setReformaQuery(e.target.value)}
-                                placeholder="Pesquisa livre (opcional). Ex: qual o impacto para Simples Nacional?"
-                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                aria-label="Pesquisa livre para Reforma Tributária"
-                            />
-                        </div>
-                    )}
-                </>
-            ) : (
-                <div className={`grid grid-cols-1 ${mode === 'compare' ? 'md:grid-cols-2' : ''} gap-4`}>
-                    <div className="relative">
-                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                        <input
-                            type="text"
-                            value={query1}
-                            onChange={(e) => handleQuery1Change(e.target.value)}
-                            placeholder={`Digite o ${searchType === SearchType.SERVICO ? 'código ou descrição do serviço' : searchType}`}
-                            className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                            aria-label="Query 1"
-                        />
-                    </div>
-                    {mode === 'compare' && (
-                        <div className="relative">
-                            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                            <input
-                                type="text"
-                                value={query2}
-                                onChange={(e) => setQuery2(e.target.value)}
-                                placeholder={`Digite o segundo ${searchType === SearchType.SERVICO ? 'código' : searchType}`}
-                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                aria-label="Query 2"
-                            />
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Similar Filter Sections */}
-            {searchType === SearchType.SERVICO && (
-                <details className="p-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
-                    <summary className="font-semibold text-slate-700 dark:text-slate-300 cursor-pointer flex justify-between items-center">
-                        Filtros Adicionais (Opcional)
-                        <ChevronDownIcon className="w-5 h-5" />
-                    </summary>
-                    <div className="mt-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="relative">
-                                <LocationIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                                <input type="text" value={municipio} onChange={(e) => setMunicipio(e.target.value)} placeholder="Município" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                            </div>
-                            <div className="relative">
-                                <TagIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                                <input type="text" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Alias/Termo de Busca" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                            </div>
-                            <div className="relative">
-                                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                                <select value={responsavel} onChange={(e) => setResponsavel(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none">
-                                    <option value="">Responsável (ambos)</option>
-                                    <option value="Tomador">Tomador</option>
-                                    <option value="Prestador">Prestador</option>
-                                </select>
-                                <ChevronDownIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                            </div>
-                        </div>
-                        
-                        <div className="relative">
-                            <DocumentTextIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                            <select value={regimeTributario} onChange={(e) => setRegimeTributario(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none">
-                                <option value="">Regime Tributário (todos)</option>
-                                <option value="Simples Nacional">Simples Nacional</option>
-                                <option value="Lucro Presumido">Lucro Presumido</option>
-                                <option value="Lucro Real">Lucro Real</option>
-                            </select>
-                            <ChevronDownIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                        </div>
-
-                        <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600">
-                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-3 uppercase tracking-wide flex items-center gap-2">
-                                <CalculatorIcon className="w-4 h-4" />
-                                Contexto Tributário (Alíquotas)
-                            </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                {/* ISS Input */}
-                                <div className="relative group">
-                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block ml-1">Municipal (ISS)</label>
-                                    <div className="relative">
-                                        <BuildingIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-purple-500 dark:text-purple-400 pointer-events-none" />
-                                        <input
-                                            type="number"
-                                            value={aliquotaIss}
-                                            onChange={(e) => setAliquotaIss(e.target.value)}
-                                            placeholder="0.00"
-                                            className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
-                                            step="0.01"
-                                            min="0"
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
-                                    </div>
-                                </div>
-
-                                {/* ICMS Input */}
-                                <div className="relative group">
-                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block ml-1">Estadual (ICMS)</label>
-                                    <div className="relative">
-                                        <LocationIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-500 dark:text-blue-400 pointer-events-none" />
-                                        <input
-                                            type="number"
-                                            value={aliquotaIcms}
-                                            onChange={(e) => setAliquotaIcms(e.target.value)}
-                                            placeholder="0.00"
-                                            className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                                            step="0.01"
-                                            min="0"
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
-                                    </div>
-                                </div>
-
-                                {/* PIS/COFINS Input */}
-                                <div className="relative group">
-                                    <label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block ml-1">Federal (PIS/COFINS)</label>
-                                    <div className="relative">
-                                        <CalculatorIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500 dark:text-green-400 pointer-events-none" />
-                                        <input
-                                            type="number"
-                                            value={aliquotaPisCofins}
-                                            onChange={(e) => setAliquotaPisCofins(e.target.value)}
-                                            placeholder="0.00"
-                                            className="w-full pl-10 pr-8 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                                            step="0.01"
-                                            min="0"
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </details>
-            )}
-            
-            <div className="flex justify-center pt-2">
-                <button type="submit" className="btn-press px-8 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900 transition-colors disabled:opacity-50" disabled={isLoading}>
-                    {getButtonText()}
-                </button>
-            </div>
-
-            {mode === 'single' && !result && !isLoading && (
-                <PopularSuggestions searchType={searchType} onSelect={handleSuggestionSelect} />
-            )}
-        </form>
-
-        <div className="mt-6">
-            {isLoading && <LoadingSpinner />}
-            {!isLoading && !result && !comparisonResult && <InitialStateDisplay searchType={searchType} mode={mode} />}
-            <Suspense fallback={<LoadingSpinner />}>
-                {mode === 'single' && !isLoading && result && searchType !== SearchType.REFORMA_TRIBUTARIA && (
-                    <>
-                        <ResultsDisplay 
-                            result={result} 
-                            error={error} 
-                            onStartCompare={handleStartCompare} 
-                            isFavorite={currentResultIsFavorite} 
-                            onToggleFavorite={handleToggleFavorite} 
-                            onError={setError}
-                            searchType={searchType}
-                            onFindSimilar={handleFetchSimilarServices}
-                        />
-                        <SimilarServicesDisplay 
-                            services={similarServices}
-                            isLoading={isLoadingSimilar}
-                            error={errorSimilar}
-                            onSelectService={handleSimilarServiceSelect}
-                        />
-                    </>
-                )}
-                {mode === 'single' && !isLoading && result && searchType === SearchType.REFORMA_TRIBUTARIA && <ReformaResultDisplay result={result} isFavorite={currentResultIsFavorite} onToggleFavorite={handleToggleFavorite} />}
-                {mode === 'compare' && !isLoading && comparisonResult && <ComparisonDisplay result={comparisonResult} />}
-            </Suspense>
-            {error && !isLoading && (
-                    <div className="mt-6 p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg text-red-700 dark:text-red-300">
-                    <p className="font-semibold">Ocorreu um erro</p>
-                    <p>{error}</p>
-                </div>
-            )}
-        </div>
-        
-        <TaxAlerts results={searchResultsForAlerts} searchType={searchType} />
-        <NewsAlerts />
-        </>
-    );
+  const handleUpdateEmpresa = (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
+      simplesService.updateEmpresa(empresaId, data);
+      const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, ...data } : e);
+      setSimplesEmpresas(updated);
+      return updated.find(e => e.id === empresaId) || null;
   }
 
-  // If not authenticated, show login screen
+  const isFavorite = useMemo(() => {
+      const code = searchType === SearchType.REFORMA_TRIBUTARIA ? reformaQuery : query1;
+      return favorites.some(f => f.code === code && f.type === searchType);
+  }, [favorites, searchType, query1, reformaQuery]);
+
   if (!currentUser) {
       return (
         <>
           <LoginScreen onLoginSuccess={handleLoginSuccess} />
           <div className="fixed bottom-4 right-4 flex gap-2">
-             <button onClick={toggleTheme} className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg">
+             <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg">
                 {theme === 'light' ? '🌙' : '☀️'}
              </button>
           </div>
@@ -863,12 +421,14 @@ const App: React.FC = () => {
       );
   }
 
+  const selectedEmpresa = simplesEmpresas.find(e => e.id === selectedSimplesEmpresaId);
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors font-sans">
         <div className="container mx-auto px-4 max-w-7xl">
             <Header 
                 theme={theme} 
-                toggleTheme={toggleTheme} 
+                toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
                 onMenuClick={() => setIsSidebarOpen(true)} 
                 description={searchDescriptions[searchType]}
                 user={currentUser}
@@ -879,37 +439,304 @@ const App: React.FC = () => {
             
             <div className="flex flex-col md:flex-row gap-6">
                 <main className="flex-grow min-w-0">
-                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-                        <div className="flex-wrap bg-slate-200 dark:bg-slate-800 p-1 rounded-lg flex">
-                            {searchTypes.map(type => (
-                                <button key={type} onClick={() => handleTypeChange(type)} className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${searchType === type ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}>
-                                    {type}
-                                </button>
-                            ))}
-                        </div>
+                    {/* Search Type Selection Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8">
+                        {Object.values(SearchType).map((type) => (
+                            <button
+                                key={type}
+                                onClick={() => { 
+                                    setSearchType(type); 
+                                    setResult(null); 
+                                    setQuery1(''); 
+                                    setQuery2(''); 
+                                    setError(null);
+                                    if (type === SearchType.SIMPLES_NACIONAL) {
+                                        setSimplesView('dashboard');
+                                        loadSimplesData(currentUser);
+                                    }
+                                }}
+                                className={`
+                                    flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200
+                                    ${searchType === type 
+                                        ? 'bg-sky-600 text-white border-sky-600 shadow-md scale-105' 
+                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:hover:bg-slate-700'
+                                    }
+                                `}
+                            >
+                                <div className="mb-2">
+                                    {type === SearchType.CFOP && <TagIcon className="w-5 h-5" />}
+                                    {type === SearchType.NCM && <DocumentTextIcon className="w-5 h-5" />}
+                                    {type === SearchType.SERVICO && <BuildingIcon className="w-5 h-5" />}
+                                    {type === SearchType.REFORMA_TRIBUTARIA && <CalculatorIcon className="w-5 h-5" />}
+                                    {type === SearchType.SIMPLES_NACIONAL && <CalculatorIcon className="w-5 h-5" />}
+                                    {type === SearchType.LUCRO_PRESUMIDO_REAL && <BuildingIcon className="w-5 h-5" />}
+                                </div>
+                                <span className="text-xs font-bold text-center leading-tight">{type}</span>
+                            </button>
+                        ))}
                     </div>
-                    {renderMainContent()}
+
+                    {/* Standard Search Views (CFOP, NCM, Serviço) */}
+                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO].includes(searchType) && (
+                        <>
+                            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <button 
+                                        onClick={() => setMode('single')}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${mode === 'single' ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                                    >
+                                        Consulta Individual
+                                    </button>
+                                    <button 
+                                        onClick={() => setMode('compare')}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${mode === 'compare' ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                                    >
+                                        Comparar Códigos
+                                    </button>
+                                </div>
+
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    <div className="flex-grow relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <SearchIcon className="h-5 w-5 text-slate-400" />
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={query1}
+                                            onChange={(e) => setQuery1(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
+                                            placeholder={mode === 'single' ? `Digite o código ou descrição do ${searchType}` : `Primeiro código ${searchType}`}
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal"
+                                        />
+                                    </div>
+                                    
+                                    {mode === 'compare' && (
+                                        <div className="flex-grow relative animate-fade-in">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <SearchIcon className="h-5 w-5 text-slate-400" />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={query2}
+                                                onChange={(e) => setQuery2(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
+                                                placeholder={`Segundo código ${searchType}`}
+                                                className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal"
+                                            />
+                                        </div>
+                                    )}
+                                    
+                                    <button
+                                        onClick={() => handleSearch(query1, query2)}
+                                        disabled={isLoading || !query1.trim() || (mode === 'compare' && !query2.trim())}
+                                        className="btn-press px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 min-w-[120px]"
+                                    >
+                                        {isLoading ? (
+                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <span>Consultar</span>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Optional Context Inputs for Service Analysis */}
+                                {searchType === SearchType.SERVICO && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Município Prestador</label>
+                                            <input type="text" value={municipio} onChange={e => setMunicipio(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: São Paulo" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Tomador (Opcional)</label>
+                                            <input type="text" value={alias} onChange={e => setAlias(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: Empresa X" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Regime (Opcional)</label>
+                                            <select value={regimeTributario} onChange={e => setRegimeTributario(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal">
+                                                <option value="">Selecione</option>
+                                                <option value="simples">Simples Nacional</option>
+                                                <option value="lucro_presumido">Lucro Presumido</option>
+                                                <option value="lucro_real">Lucro Real</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Optional Tax Rates */}
+                                {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO].includes(searchType) && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                                        <p className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-2 uppercase">Refinar Análise com Alíquotas (Opcional)</p>
+                                        <div className="grid grid-cols-3 gap-4">
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 uppercase">ICMS (%)</label>
+                                                <input type="number" min="0" value={aliquotaIcms} onChange={e => setAliquotaIcms(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 uppercase">PIS/COFINS (%)</label>
+                                                <input type="number" min="0" value={aliquotaPisCofins} onChange={e => setAliquotaPisCofins(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-slate-500 uppercase">ISS (%)</label>
+                                                <input type="number" min="0" value={aliquotaIss} onChange={e => setAliquotaIss(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {/* Reforma Tributária View */}
+                    {searchType === SearchType.REFORMA_TRIBUTARIA && (
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in">
+                            <div className="flex flex-col md:flex-row gap-4">
+                                <div className="flex-grow">
+                                    <input
+                                        type="text"
+                                        value={reformaQuery}
+                                        onChange={(e) => setReformaQuery(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleReformaSearch(reformaQuery)}
+                                        placeholder="Digite o CNAE ou descrição da atividade..."
+                                        className="w-full pl-4 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => handleReformaSearch(reformaQuery)}
+                                    disabled={isLoading || !reformaQuery.trim()}
+                                    className="btn-press px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
+                                >
+                                    {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>Analisar Impacto</span>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Simples Nacional Views */}
+                    {searchType === SearchType.SIMPLES_NACIONAL && (
+                        <Suspense fallback={<LoadingSpinner />}>
+                            {simplesView === 'dashboard' && (
+                                <SimplesNacionalDashboard 
+                                    empresas={simplesEmpresas} 
+                                    notas={simplesNotas}
+                                    onSelectEmpresa={(id, view) => { setSelectedSimplesEmpresaId(id); setSimplesView(view); }} 
+                                    onAddNew={() => setSimplesView('nova')}
+                                />
+                            )}
+                            {simplesView === 'nova' && (
+                                <SimplesNacionalNovaEmpresa 
+                                    onSave={handleSaveSimplesEmpresa} 
+                                    onCancel={() => setSimplesView('dashboard')} 
+                                />
+                            )}
+                            {simplesView === 'detalhe' && selectedEmpresa && (
+                                <SimplesNacionalDetalhe 
+                                    empresa={selectedEmpresa}
+                                    notas={simplesNotas[selectedEmpresa.id] || []}
+                                    onBack={() => setSimplesView('dashboard')}
+                                    onImport={handleImportNotas}
+                                    onUpdateFolha12={handleUpdateFolha12}
+                                    onSaveFaturamentoManual={handleSaveFaturamentoManual}
+                                    onUpdateEmpresa={handleUpdateEmpresa}
+                                    onShowClienteView={() => setSimplesView('cliente')}
+                                />
+                            )}
+                            {simplesView === 'cliente' && selectedEmpresa && (
+                                <SimplesNacionalClienteView
+                                    empresa={selectedEmpresa}
+                                    notas={simplesNotas[selectedEmpresa.id] || []}
+                                    onBack={() => setSimplesView('dashboard')}
+                                />
+                            )}
+                        </Suspense>
+                    )}
+
+                    {/* Lucro Presumido View */}
+                    {searchType === SearchType.LUCRO_PRESUMIDO_REAL && (
+                        <Suspense fallback={<LoadingSpinner />}>
+                            <LucroPresumidoRealDashboard currentUser={currentUser} />
+                        </Suspense>
+                    )}
+
+                    {/* Results Display */}
+                    <Suspense fallback={<LoadingSpinner />}>
+                        {!result && !comparisonResult && ![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
+                            <InitialStateDisplay searchType={searchType} mode={mode} />
+                        )}
+
+                        {comparisonResult && (
+                            <ComparisonDisplay result={comparisonResult} />
+                        )}
+
+                        {result && searchType === SearchType.REFORMA_TRIBUTARIA && (
+                            <ReformaResultDisplay 
+                                result={result} 
+                                isFavorite={isFavorite}
+                                onToggleFavorite={handleToggleFavorite}
+                            />
+                        )}
+
+                        {result && searchType !== SearchType.REFORMA_TRIBUTARIA && (
+                            <ResultsDisplay 
+                                result={result} 
+                                error={error} 
+                                onStartCompare={() => { setMode('compare'); setQuery2(''); }}
+                                isFavorite={isFavorite}
+                                onToggleFavorite={handleToggleFavorite}
+                                onError={(msg) => setError(msg)}
+                                searchType={searchType}
+                                onFindSimilar={handleFindSimilar}
+                            />
+                        )}
+                    </Suspense>
+
+                    <SimilarServicesDisplay 
+                        services={similarServices} 
+                        isLoading={isLoadingSimilar} 
+                        error={errorSimilar}
+                        onSelectService={(code) => { setQuery1(code); handleSearch(code); }}
+                    />
+
+                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA].includes(searchType) && !result && (
+                        <PopularSuggestions searchType={searchType} onSelect={(code) => { 
+                            if (searchType === SearchType.REFORMA_TRIBUTARIA) setReformaQuery(code);
+                            else setQuery1(code); 
+                        }} />
+                    )}
+
+                    {![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
+                        <NewsAlerts />
+                    )}
+                    
+                    {searchType !== SearchType.SIMPLES_NACIONAL && searchType !== SearchType.LUCRO_PRESUMIDO_REAL && (
+                        <TaxAlerts results={result ? [result] : []} searchType={searchType} />
+                    )}
                 </main>
 
-                <FavoritesSidebar
-                    isOpen={isSidebarOpen}
-                    onClose={() => setIsSidebarOpen(false)}
-                    favorites={favorites}
-                    onFavoriteRemove={(f) => saveFavorites(f)}
-                    onFavoriteSelect={handleFavoriteSelect}
+                {/* Sidebar */}
+                <FavoritesSidebar 
+                    favorites={favorites} 
+                    onFavoriteRemove={saveFavorites} 
+                    onFavoriteSelect={handleSelectFavorite}
                     history={history}
-                    onHistorySelect={handleHistorySelect}
+                    onHistorySelect={handleSelectHistoryItem}
                     onHistoryRemove={handleHistoryRemove}
                     onHistoryClear={handleHistoryClear}
+                    isOpen={isSidebarOpen}
+                    onClose={() => setIsSidebarOpen(false)}
                 />
             </div>
             <Footer />
         </div>
-        
-        {/* Admin Modals */}
+
+        {/* Modals */}
         <AccessLogsModal isOpen={isLogsModalOpen} onClose={() => setIsLogsModalOpen(false)} />
-        <UserManagementModal isOpen={isUsersModalOpen} onClose={() => setIsUsersModalOpen(false)} currentUserEmail={currentUser.email} />
+        <UserManagementModal 
+            isOpen={isUsersModalOpen} 
+            onClose={() => setIsUsersModalOpen(false)} 
+            currentUserEmail={currentUser.email}
+        />
     </div>
   );
 };
+
 export default App;

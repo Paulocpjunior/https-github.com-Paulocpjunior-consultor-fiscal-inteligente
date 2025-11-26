@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro } from '../types';
 import * as lucroService from '../services/lucroPresumidoService';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
-import { CalculatorIcon, BuildingIcon, SearchIcon, DownloadIcon, DocumentTextIcon, PlusIcon, TrashIcon, EyeIcon, ArrowLeftIcon, SaveIcon } from './Icons';
+import { CalculatorIcon, BuildingIcon, SearchIcon, DownloadIcon, DocumentTextIcon, PlusIcon, TrashIcon, EyeIcon, ArrowLeftIcon, SaveIcon, ShieldIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 const MASTER_ADMIN_EMAIL = 'junior@spassessoriacontabil.com.br';
@@ -19,15 +18,15 @@ const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: nu
 
     return (
         <div className="flex flex-col">
-            <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">{label}</label>
+            <label className="text-xs font-bold text-slate-800 dark:text-slate-400 uppercase mb-1">{label}</label>
             <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">R$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
                 <input 
                     type="text" 
                     value={formatted} 
                     onChange={handleChange} 
                     disabled={disabled}
-                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none dark:text-white font-mono disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-500"
+                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-mono dark:font-normal disabled:bg-slate-100 dark:disabled:bg-slate-800 disabled:text-slate-500"
                 />
             </div>
         </div>
@@ -72,11 +71,13 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
         cmv: 0
     });
 
-    const isMasterAdmin = currentUser?.email === MASTER_ADMIN_EMAIL;
+    const isMasterAdmin = currentUser?.email === MASTER_ADMIN_EMAIL || currentUser?.role === 'admin';
 
     useEffect(() => {
-        lucroService.getEmpresas().then(setCompanies);
-    }, []);
+        if (currentUser) {
+            lucroService.getEmpresas(currentUser).then(setCompanies);
+        }
+    }, [currentUser]);
 
     // Load financial data when month or company changes
     useEffect(() => {
@@ -172,25 +173,35 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
             alert('Nome e CNPJ são obrigatórios.');
             return;
         }
+        
+        if (!currentUser) {
+            alert("Sessão expirada. Faça login novamente.");
+            return;
+        }
 
         const empresaData = {
             ...empresa,
             tiposAtividade
         } as Omit<LucroPresumidoEmpresa, 'id' | 'fichaFinanceira'>;
 
-        let saved: LucroPresumidoEmpresa | null;
-        if (selectedEmpresaId) {
-            saved = await lucroService.updateEmpresa(selectedEmpresaId, empresaData);
-        } else {
-            saved = await lucroService.saveEmpresa(empresaData);
-            setSelectedEmpresaId(saved.id);
-        }
+        try {
+            let saved: LucroPresumidoEmpresa | null;
+            if (selectedEmpresaId) {
+                saved = await lucroService.updateEmpresa(selectedEmpresaId, empresaData);
+            } else {
+                saved = await lucroService.saveEmpresa(empresaData, currentUser.id);
+                setSelectedEmpresaId(saved.id);
+            }
 
-        if (saved) {
-            setEmpresa(saved); // Update local state with full saved object
-            lucroService.getEmpresas().then(setCompanies);
-            setSaveSuccess('Empresa salva com sucesso!');
-            setTimeout(() => setSaveSuccess(''), 3000);
+            if (saved) {
+                setEmpresa(saved); // Update local state with full saved object
+                // Refresh list
+                lucroService.getEmpresas(currentUser).then(setCompanies);
+                setSaveSuccess('Empresa salva com sucesso!');
+                setTimeout(() => setSaveSuccess(''), 3000);
+            }
+        } catch (e: any) {
+            alert(e.message || "Erro ao salvar empresa.");
         }
     };
 
@@ -348,18 +359,25 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
             <div className="space-y-6 animate-fade-in">
                 <div className="flex justify-between items-center">
                     <div>
-                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Lucro Presumido / Real</h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Gestão de cadastros e fichas financeiras.</p>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Lucro Presumido / Real</h2>
+                            {isMasterAdmin && (
+                                <span className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 text-xs font-bold rounded-full flex items-center gap-1">
+                                    <ShieldIcon className="w-3 h-3" /> Admin View
+                                </span>
+                            )}
+                        </div>
+                        <p className="text-sm font-bold text-slate-800 dark:text-slate-400 dark:font-normal">Gestão de cadastros e fichas financeiras.</p>
                     </div>
-                    <button onClick={handleNewEmpresa} className="btn-press bg-sky-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-sky-700">
+                    <button onClick={handleNewEmpresa} className="btn-press bg-sky-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-sky-700 font-bold">
                         <PlusIcon className="w-5 h-5" />
                         Nova Empresa
                     </button>
                 </div>
 
                 <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
-                    <table className="w-full text-sm text-left text-slate-500 dark:text-slate-400">
-                        <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
+                    <table className="w-full text-sm text-left text-slate-800 font-bold dark:text-slate-400 dark:font-normal">
+                        <thead className="text-xs text-slate-900 font-bold dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
                             <tr>
                                 <th className="px-6 py-3">Empresa</th>
                                 <th className="px-6 py-3">CNPJ</th>
@@ -369,13 +387,13 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
                         <tbody>
                             {companies.length === 0 ? (
                                 <tr>
-                                    <td colSpan={3} className="px-6 py-8 text-center text-slate-400">Nenhuma empresa cadastrada.</td>
+                                    <td colSpan={3} className="px-6 py-8 text-center text-slate-500 font-bold dark:text-slate-400 dark:font-normal">Nenhuma empresa cadastrada.</td>
                                 </tr>
                             ) : (
                                 companies.map(c => (
                                     <tr key={c.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                        <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{c.nome}</td>
-                                        <td className="px-6 py-4 font-mono">{c.cnpj}</td>
+                                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white dark:font-normal">{c.nome}</td>
+                                        <td className="px-6 py-4 font-mono text-slate-900 dark:text-slate-300 font-bold dark:font-normal">{c.cnpj}</td>
                                         <td className="px-6 py-4 text-center flex justify-center gap-3">
                                             <button onClick={() => handleSelectEmpresa(c.id)} className="text-sky-600 hover:text-sky-800" title="Visualizar/Editar">
                                                 <EyeIcon className="w-5 h-5" />
@@ -403,7 +421,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
                 <button onClick={() => setView('list')} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500">
                     <ArrowLeftIcon className="w-5 h-5" />
                 </button>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {selectedEmpresaId ? 'Editar Empresa' : 'Nova Empresa'}
                 </h2>
             </div>
@@ -412,62 +430,62 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
                 {/* Left: Cadastro */}
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
                     <div className="flex justify-between items-center mb-4 border-b pb-2 border-slate-100 dark:border-slate-700">
-                        <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
                             <BuildingIcon className="w-5 h-5 text-sky-600" />
                             Dados Cadastrais
                         </h3>
-                        <button onClick={handleSaveEmpresa} className="text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 flex items-center gap-1">
+                        <button onClick={handleSaveEmpresa} className="text-sm bg-green-600 text-white font-bold px-3 py-1 rounded hover:bg-green-700 flex items-center gap-1">
                             <SaveIcon className="w-4 h-4" /> Salvar
                         </button>
                     </div>
                     
-                    {saveSuccess && <p className="text-green-600 text-sm mb-2">{saveSuccess}</p>}
+                    {saveSuccess && <p className="text-green-600 font-bold text-sm mb-2">{saveSuccess}</p>}
 
                     <div className="space-y-4">
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase mb-1">CNPJ</label>
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-1">CNPJ</label>
                             <div className="flex gap-2">
                                 <input 
                                     type="text" 
                                     value={empresa.cnpj} 
                                     onChange={e => setEmpresa(prev => ({...prev, cnpj: e.target.value}))}
-                                    className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono"
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-mono text-slate-900 font-bold dark:text-white dark:font-normal"
                                     placeholder="00.000.000/0000-00"
                                 />
                                 <button onClick={handleCnpjVerification} disabled={isCnpjLoading} className="bg-slate-100 dark:bg-slate-700 px-3 rounded-lg hover:bg-slate-200">
                                     {isCnpjLoading ? <LoadingSpinner /> : <SearchIcon className="w-4 h-4" />}
                                 </button>
                             </div>
-                            {cnpjError && <p className="text-xs text-red-500 mt-1">{cnpjError}</p>}
+                            {cnpjError && <p className="text-xs text-red-600 font-bold mt-1">{cnpjError}</p>}
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase mb-1">Razão Social</label>
-                            <input type="text" value={empresa.nome} onChange={e => setEmpresa(prev => ({...prev, nome: e.target.value}))} className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm" />
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-1">Razão Social</label>
+                            <input type="text" value={empresa.nome} onChange={e => setEmpresa(prev => ({...prev, nome: e.target.value}))} className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 font-bold dark:text-white dark:font-normal" />
                         </div>
 
                         <div>
-                            <label className="text-xs font-bold text-slate-500 uppercase mb-1">Nome Fantasia</label>
-                            <input type="text" value={empresa.nomeFantasia} onChange={e => setEmpresa(prev => ({...prev, nomeFantasia: e.target.value}))} className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm" />
+                            <label className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-1">Nome Fantasia</label>
+                            <input type="text" value={empresa.nomeFantasia} onChange={e => setEmpresa(prev => ({...prev, nomeFantasia: e.target.value}))} className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 font-bold dark:text-white dark:font-normal" />
                         </div>
 
                         {empresa.cnaePrincipal && (
                             <div className="p-3 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-100 dark:border-sky-800">
                                 <p className="text-xs font-bold text-sky-700 uppercase">Atividade Principal</p>
-                                <p className="text-sm font-mono font-bold">{empresa.cnaePrincipal.codigo}</p>
-                                <p className="text-xs text-slate-600 dark:text-slate-300">{empresa.cnaePrincipal.descricao}</p>
+                                <p className="text-sm font-mono font-bold text-slate-900 dark:text-white">{empresa.cnaePrincipal.codigo}</p>
+                                <p className="text-xs text-slate-800 font-bold dark:text-slate-300 dark:font-normal">{empresa.cnaePrincipal.descricao}</p>
                             </div>
                         )}
 
                         {/* NEW: Secondary CNAEs List */}
                         {empresa.cnaesSecundarios && empresa.cnaesSecundarios.length > 0 && (
                             <div className="mt-3">
-                                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">CNAEs Secundários</label>
+                                <label className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-1 block">CNAEs Secundários</label>
                                 <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700 rounded-lg p-2 max-h-32 overflow-y-auto custom-scrollbar">
                                     {empresa.cnaesSecundarios.map((sec, idx) => (
                                         <div key={idx} className="mb-2 last:mb-0 border-b border-slate-100 dark:border-slate-700 last:border-0 pb-1 last:pb-0">
-                                            <p className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">{sec.codigo}</p>
-                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">{sec.descricao}</p>
+                                            <p className="text-xs font-mono font-bold text-slate-900 dark:text-slate-300">{sec.codigo}</p>
+                                            <p className="text-[10px] text-slate-800 font-bold dark:text-slate-400 dark:font-normal leading-tight">{sec.descricao}</p>
                                         </div>
                                     ))}
                                 </div>
@@ -475,12 +493,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
                         )}
 
                         <div className="pt-4 border-t dark:border-slate-700">
-                            <p className="text-xs font-bold text-slate-500 uppercase mb-2">Tipos de Atividade (Tributação)</p>
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-2">Tipos de Atividade (Tributação)</p>
                             <div className="flex flex-wrap gap-3">
                                 {['comercio', 'industria', 'servico'].map(type => (
                                     <label key={type} className="flex items-center gap-2 text-sm cursor-pointer bg-slate-50 dark:bg-slate-700/50 px-3 py-1 rounded border border-slate-200 dark:border-slate-600">
                                         <input type="checkbox" checked={(tiposAtividade as any)[type]} onChange={() => toggleTipoAtividade(type as any)} className="text-sky-600 rounded" />
-                                        <span className="capitalize">{type}</span>
+                                        <span className="capitalize font-bold text-slate-900 dark:text-white dark:font-normal">{type}</span>
                                     </label>
                                 ))}
                             </div>
@@ -490,18 +508,18 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
 
                 {/* Right: Ficha Financeira */}
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
-                    <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-4 border-b pb-2 border-slate-100 dark:border-slate-700 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 mb-4 border-b pb-2 border-slate-100 dark:border-slate-700 flex items-center gap-2">
                         <CalculatorIcon className="w-5 h-5 text-sky-600" />
                         Ficha Financeira (Preenchimento)
                     </h3>
 
                     <div className="mb-6">
-                        <label className="text-xs font-bold text-slate-500 uppercase mb-1">Mês de Referência</label>
+                        <label className="text-xs font-bold text-slate-800 dark:text-slate-500 uppercase mb-1">Mês de Referência</label>
                         <input 
                             type="month" 
                             value={mesReferencia} 
                             onChange={e => setMesReferencia(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm"
+                            className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm text-slate-900 font-bold dark:text-white dark:font-normal"
                         />
                     </div>
 
@@ -565,14 +583,14 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser }) => {
                     <div className="flex gap-3 mt-6">
                         <button 
                             onClick={handleSaveCalculo} 
-                            className="flex-1 bg-teal-600 text-white py-2 rounded-lg font-semibold hover:bg-teal-700 transition-colors flex justify-center items-center gap-2"
+                            className="flex-1 bg-teal-600 text-white py-2 rounded-lg font-bold hover:bg-teal-700 transition-colors flex justify-center items-center gap-2"
                         >
                             <SaveIcon className="w-4 h-4" /> Salvar Cálculo
                         </button>
                         <button 
                             onClick={handleExportPDF} 
                             disabled={isExporting}
-                            className="flex-1 bg-sky-600 text-white py-2 rounded-lg font-semibold hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
+                            className="flex-1 bg-sky-600 text-white py-2 rounded-lg font-bold hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
                         >
                             <DownloadIcon className="w-4 h-4" /> Exportar Ficha
                         </button>

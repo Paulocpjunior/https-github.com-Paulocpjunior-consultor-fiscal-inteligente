@@ -1,16 +1,17 @@
 import React, { useMemo } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, User } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { PlusIcon, InfoIcon } from './Icons';
+import { PlusIcon, InfoIcon, ShieldIcon } from './Icons';
 
 interface SimplesNacionalDashboardProps {
     empresas: SimplesNacionalEmpresa[];
     notas: Record<string, SimplesNacionalNota[]>;
     onSelectEmpresa: (id: string, view: 'detalhe' | 'cliente') => void;
     onAddNew: () => void;
+    currentUser?: User | null;
 }
 
-const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew }) => {
+const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew, currentUser }) => {
     
     const empresasComResumo = useMemo(() => {
         return empresas.map(empresa => {
@@ -20,13 +21,22 @@ const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ emp
         });
     }, [empresas, notas]);
 
+    const isAdminView = currentUser?.role === 'admin' || currentUser?.email === 'junior@spassessoriacontabil.com.br';
+
     return (
         <div className="space-y-6 animate-fade-in">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
-                        Painel Simples Nacional
-                    </h2>
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                            Painel Simples Nacional
+                        </h2>
+                        {isAdminView && (
+                             <span className="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 text-xs font-bold rounded-full flex items-center gap-1">
+                                <ShieldIcon className="w-3 h-3" /> Admin View
+                             </span>
+                        )}
+                    </div>
                     <p className="mt-1 text-slate-500 dark:text-slate-400">
                         Gerencie as empresas e acompanhe os cálculos do Simples.
                     </p>

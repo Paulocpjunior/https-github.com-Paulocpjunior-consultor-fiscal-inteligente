@@ -105,8 +105,8 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
 
     if (error) {
         return (
-            <div className="mt-6 p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg text-red-700 dark:text-red-300">
-                <p className="font-semibold">Ocorreu um erro</p>
+            <div className="mt-6 p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg text-red-700 font-bold dark:text-red-300">
+                <p className="font-bold">Ocorreu um erro</p>
                 <p>{error}</p>
             </div>
         );
@@ -121,11 +121,11 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
             <div id={`result-content-${result.query}`} className="mt-6 p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
                 {/* Header visible in PDF */}
                 <div className="mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
-                     <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">
+                     <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
                         Resultado da Análise
                     </h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
-                        Consulta: <span className="font-semibold text-sky-600 dark:text-sky-400">{result.query}</span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-400 dark:font-normal">
+                        Consulta: <span className="font-bold text-sky-700 dark:text-sky-400">{result.query}</span>
                     </p>
                 </div>
 
@@ -134,8 +134,8 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                     <div className="mb-6 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex items-start gap-3">
                          <CalculatorIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" />
                          <div>
-                             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Contexto Tributário Considerado:</p>
-                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-slate-600 dark:text-slate-300">
+                             <p className="text-sm font-bold text-slate-900 dark:text-slate-200">Contexto Tributário Considerado:</p>
+                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm font-bold text-slate-800 dark:text-slate-300 dark:font-normal">
                                  {result.context.aliquotaIss && <span>• ISS: <strong>{result.context.aliquotaIss}%</strong></span>}
                                  {result.context.aliquotaIcms && <span>• ICMS: <strong>{result.context.aliquotaIcms}%</strong></span>}
                                  {result.context.aliquotaPisCofins && <span>• PIS/COFINS: <strong>{result.context.aliquotaPisCofins}%</strong></span>}
@@ -144,7 +144,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                     </div>
                 )}
 
-                <div className="prose prose-slate dark:prose-invert max-w-none text-slate-600 dark:text-slate-300">
+                <div className="prose prose-slate dark:prose-invert max-w-none text-slate-900 font-bold dark:text-slate-300 dark:font-normal">
                     <FormattedText text={result.text} />
                 </div>
 
@@ -153,14 +153,14 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                         <div className="flex items-start">
                             <ExternalLinkIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mr-3 mt-0.5 flex-shrink-0" />
                             <div>
-                                <p className="text-sm text-slate-600 dark:text-slate-300 mb-1">
+                                <p className="text-sm font-bold text-slate-800 dark:text-slate-300 dark:font-normal mb-1">
                                     Para mais detalhes e a lista completa, consulte a fonte oficial:
                                 </p>
                                 <a 
                                     href="https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
-                                    className="font-semibold text-sky-600 dark:text-sky-400 hover:underline text-sm break-words"
+                                    className="font-bold text-sky-700 dark:text-sky-400 hover:underline text-sm break-words"
                                 >
                                     Lei Complementar Nº 116, de 31 de Julho de 2003 (Lista de Serviços)
                                 </a>
@@ -173,17 +173,17 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
             <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap justify-end">
                 <button
                     onClick={onStartCompare}
-                    className="btn-press w-full sm:w-auto px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
+                    className="btn-press w-full sm:w-auto px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 dark:font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
                 >
                     Comparar este código
                 </button>
                  <button
                     onClick={handleToggleFavoriteClick}
                     title={isFavorite ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}
-                    className={`btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors ${
+                    className={`btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 font-bold rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors ${
                         isFavorite 
-                        ? 'bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800' 
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
+                        ? 'bg-amber-100 dark:bg-amber-800/50 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800' 
+                        : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
                     }`}
                 >
                     <StarIcon className={`w-5 h-5 ${animateFavorite ? 'animate-pop-in' : ''}`} solid={isFavorite} />
@@ -192,7 +192,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                  {searchType === SearchType.SERVICO && (
                      <button
                         onClick={onFindSimilar}
-                        className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
+                        className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 dark:font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
                     >
                         <LightBulbIcon className="w-5 h-5" />
                         Serviços Similares

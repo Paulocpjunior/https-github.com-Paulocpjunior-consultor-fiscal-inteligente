@@ -1,108 +1,121 @@
-
-import { LucroPresumidoEmpresa, FichaFinanceiraRegistro } from '../types';
-import { db, isFirebaseConfigured } from './firebaseConfig';
-import { collection, getDocs, doc, setDoc, updateDoc, addDoc, getDoc } from 'firebase/firestore';
+import { LucroPresumidoEmpresa, FichaFinanceiraRegistro, User } from '../types';
+import { db, isFirebaseConfigured, auth } from './firebaseConfig';
+import { collection, getDocs, doc, updateDoc, setDoc, addDoc, getDoc, query, where, deleteDoc } from 'firebase/firestore';
 
 const STORAGE_KEY_LUCRO_EMPRESAS = 'lucro_presumido_empresas';
+const MASTER_ADMIN_EMAIL = 'junior@spassessoriacontabil.com.br';
 
 const generateUUID = () => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-    }
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-export const getEmpresas = async (): Promise<LucroPresumidoEmpresa[]> => {
-    if (isFirebaseConfigured && db) {
-        try {
-            const snapshot = await getDocs(collection(db, 'lucro_empresas'));
-            return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
-        } catch (e) {
-            console.error("Erro ao buscar empresas Lucro Presumido na nuvem", e);
-            return [];
-        }
-    } else {
-        try {
-            const data = localStorage.getItem(STORAGE_KEY_LUCRO_EMPRESAS);
-            return data ? JSON.parse(data) : [];
-        } catch (e) {
-            return [];
-        }
-    }
+const getLocalEmpresas = (): LucroPresumidoEmpresa[] => {
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY_LUCRO_EMPRESAS);
+        return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
 };
 
-export const saveEmpresa = async (empresa: Omit<LucroPresumidoEmpresa, 'id' | 'fichaFinanceira'>): Promise<LucroPresumidoEmpresa> => {
-    const newEmpresaData = {
-        ...empresa,
-        fichaFinanceira: []
+const saveLocalEmpresas = (empresas: LucroPresumidoEmpresa[]) => {
+    localStorage.setItem(STORAGE_KEY_LUCRO_EMPRESAS, JSON.stringify(empresas));
+};
+
+export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresumidoEmpresa[]> => {
+    if (!currentUser) return [];
+    let firebaseEmpresas: LucroPresumidoEmpresa[] = [];
+    
+    const isMasterAdmin = currentUser.role === 'admin' || currentUser.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+
+    if (isFirebaseConfigured && db && auth?.currentUser) {
+        try {
+            let q;
+            const uid = auth.currentUser.uid;
+            
+            if (isMasterAdmin) {
+                q = collection(db, 'lucro_empresas');
+            } else {
+                q = query(collection(db, 'lucro_empresas'), where('createdBy', '==', uid));
+            }
+            const snapshot = await getDocs(q);
+            firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
+        } catch (e) {
+            console.info("Acesso à nuvem restrito ou offline. Usando dados locais.");
+        }
+    }
+
+    const localEmpresas = getLocalEmpresas();
+    let filteredLocal = localEmpresas;
+    
+    if (!isMasterAdmin) {
+         // FIX: Include items created by this user OR legacy items without owner
+        filteredLocal = localEmpresas.filter(e => e.createdBy === currentUser.id || !e.createdBy);
+    }
+
+    return firebaseEmpresas.length > 0 ? firebaseEmpresas : filteredLocal;
+};
+
+export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPresumidoEmpresa> => {
+    const newEmpresaData = { 
+        id: generateUUID(),
+        ...empresa, 
+        fichaFinanceira: [], 
+        createdBy: userId 
     };
 
-    if (isFirebaseConfigured && db) {
-        const docRef = await addDoc(collection(db, 'lucro_empresas'), newEmpresaData);
-        return { id: docRef.id, ...newEmpresaData };
-    } else {
-        const empresas = await getEmpresas(); // Local
-        const newEmpresa = { id: generateUUID(), ...newEmpresaData };
-        empresas.push(newEmpresa);
-        localStorage.setItem(STORAGE_KEY_LUCRO_EMPRESAS, JSON.stringify(empresas));
-        return newEmpresa;
+    // 1. Save Local
+    const localEmpresas = getLocalEmpresas();
+    localEmpresas.push(newEmpresaData);
+    saveLocalEmpresas(localEmpresas);
+
+    // 2. Try Firebase (Blindado com setDoc)
+    if (isFirebaseConfigured && db && auth?.currentUser) {
+        try {
+            newEmpresaData.createdBy = auth.currentUser.uid;
+            // Use setDoc para garantir que o ID gerado seja o usado como chave do documento
+            await setDoc(doc(db, 'lucro_empresas', newEmpresaData.id), newEmpresaData);
+        } catch (e) { console.warn("Firebase save failed (Lucro), local only:", e); }
     }
+
+    return newEmpresaData;
 };
 
 export const updateEmpresa = async (id: string, data: Partial<LucroPresumidoEmpresa>): Promise<LucroPresumidoEmpresa | null> => {
-    if (isFirebaseConfigured && db) {
-        const docRef = doc(db, 'lucro_empresas', id);
-        await updateDoc(docRef, data);
-        const updatedSnap = await getDoc(docRef);
-        return { id: updatedSnap.id, ...updatedSnap.data() } as LucroPresumidoEmpresa;
-    } else {
-        const empresas = await getEmpresas();
-        const index = empresas.findIndex(e => e.id === id);
-        if (index === -1) return null;
-        const updated = { ...empresas[index], ...data };
-        empresas[index] = updated;
-        localStorage.setItem(STORAGE_KEY_LUCRO_EMPRESAS, JSON.stringify(empresas));
-        return updated;
+    const localEmpresas = getLocalEmpresas();
+    const index = localEmpresas.findIndex(e => e.id === id);
+    if (index !== -1) {
+        localEmpresas[index] = { ...localEmpresas[index], ...data };
+        saveLocalEmpresas(localEmpresas);
     }
+
+    if (isFirebaseConfigured && db && auth?.currentUser) {
+        try {
+            const docRef = doc(db, 'lucro_empresas', id);
+            await updateDoc(docRef, data);
+        } catch (e) { 
+            // Silent fail
+        }
+    }
+
+    return index !== -1 ? localEmpresas[index] : null;
 };
 
 export const deleteEmpresa = async (id: string): Promise<boolean> => {
+    const localEmpresas = getLocalEmpresas();
+    const filtered = localEmpresas.filter(e => e.id !== id);
+    saveLocalEmpresas(filtered);
+
     if (isFirebaseConfigured && db) {
-        // In Firestore we'd deleteDoc(doc(db, 'lucro_empresas', id))
-        // Simulated for now to avoid importing deleteDoc unless strictly needed
-        return true; 
-    } else {
-        const empresas = await getEmpresas();
-        const filtered = empresas.filter(e => e.id !== id);
-        if (filtered.length === empresas.length) return false;
-        localStorage.setItem(STORAGE_KEY_LUCRO_EMPRESAS, JSON.stringify(filtered));
-        return true;
+        try {
+            await deleteDoc(doc(db, 'lucro_empresas', id));
+        } catch(e) {}
     }
+    return true;
 };
 
-export const addFichaFinanceira = async (empresaId: string, registro: Omit<FichaFinanceiraRegistro, 'id' | 'dataRegistro'>): Promise<LucroPresumidoEmpresa | null> => {
-    // Get current state
-    let empresa: LucroPresumidoEmpresa | undefined;
-    if (isFirebaseConfigured && db) {
-        const snap = await getDoc(doc(db, 'lucro_empresas', empresaId));
-        if (snap.exists()) empresa = { id: snap.id, ...snap.data() } as LucroPresumidoEmpresa;
-    } else {
-        empresa = (await getEmpresas()).find(e => e.id === empresaId);
-    }
-
-    if (!empresa) return null;
-
-    const novoRegistro: FichaFinanceiraRegistro = {
-        ...registro,
-        id: generateUUID(),
-        dataRegistro: Date.now()
-    };
-
-    const fichaAtual = empresa.fichaFinanceira ? empresa.fichaFinanceira.filter(f => f.mesReferencia !== registro.mesReferencia) : [];
-    const updatedData = { fichaFinanceira: [novoRegistro, ...fichaAtual] };
-    
-    return updateEmpresa(empresaId, updatedData);
+export const addFichaFinanceira = async (empresaId: string, registro: any) => {
+    const empresas = await getEmpresas({ id: 'dummy', role: 'admin', name: '', email: '' } as User);
+    const emp = empresas.find(e => e.id === empresaId);
+    const currentFicha = emp?.fichaFinanceira || [];
+    return updateEmpresa(empresaId, { fichaFinanceira: [...currentFicha, registro] });
 };

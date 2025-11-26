@@ -61,19 +61,19 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 </div>
                 
                 <div className="p-8">
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 text-center">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-6 text-center">
                         {isRegistering ? 'Criar Nova Conta' : 'Acesso ao Sistema'}
                     </h2>
                     
                     <form onSubmit={handleRegisterOrLogin} className="space-y-4">
                         {isRegistering && (
                             <div className="animate-fade-in">
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome do Colaborador</label>
+                                <label className="block text-sm font-bold text-slate-900 dark:text-slate-300 dark:font-medium mb-1">Nome do Colaborador</label>
                                 <input 
                                     type="text" 
                                     value={name}
                                     onChange={(e) => setName(e.target.value)}
-                                    className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none dark:text-white text-slate-900"
+                                    className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none text-slate-900 dark:text-white font-bold dark:font-normal"
                                     placeholder="Seu nome completo"
                                     required={isRegistering}
                                 />
@@ -81,31 +81,31 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         )}
                         
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">E-mail Corporativo</label>
+                            <label className="block text-sm font-bold text-slate-900 dark:text-slate-300 dark:font-medium mb-1">E-mail Corporativo</label>
                             <input 
                                 type="email" 
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none dark:text-white text-slate-900"
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none text-slate-900 dark:text-white font-bold dark:font-normal"
                                 placeholder="nome@spassessoriacontabil.com.br"
                                 required
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Senha</label>
+                            <label className="block text-sm font-bold text-slate-900 dark:text-slate-300 dark:font-medium mb-1">Senha</label>
                             <input 
                                 type="password" 
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none dark:text-white text-slate-900"
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 focus:outline-none text-slate-900 dark:text-white font-bold dark:font-normal"
                                 placeholder="••••••••"
                                 required
                             />
                         </div>
 
                         {error && (
-                            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-300 animate-shake font-medium text-center">
+                            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-300 animate-shake font-bold text-center">
                                 {error}
                             </div>
                         )}
@@ -129,7 +129,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     <div className="mt-6 text-center">
                         <button 
                             onClick={() => { setIsRegistering(!isRegistering); setError(''); }}
-                            className="text-sm text-sky-600 dark:text-sky-400 hover:underline font-medium"
+                            className="text-sm font-bold text-sky-600 dark:text-sky-400 hover:underline"
                         >
                             {isRegistering ? 'Já tem uma conta? Faça login' : 'Primeiro acesso? Cadastre-se aqui'}
                         </button>
@@ -137,7 +137,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 </div>
                 
                 <div className="bg-slate-50 dark:bg-slate-900 p-4 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2">
-                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${isFirebaseConfigured ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold ${isFirebaseConfigured ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                         {isFirebaseConfigured ? (
                             <>
                                 <GlobeIcon className="w-3 h-3" />
@@ -151,7 +151,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         )}
                     </div>
                     {!isFirebaseConfigured && (
-                        <p className="text-[10px] text-slate-400 text-center max-w-xs">
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center max-w-xs font-bold dark:font-normal">
                             Para ativar o acesso multi-usuário entre computadores diferentes, configure as chaves do Firebase no arquivo de sistema.
                         </p>
                     )}
