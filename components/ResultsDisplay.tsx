@@ -13,10 +13,11 @@ interface ResultsDisplayProps {
     onError: (message: string) => void;
     searchType: SearchType;
     onFindSimilar: () => void;
+    onShowToast?: (message: string) => void;
 }
 
 
-const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartCompare, isFavorite, onToggleFavorite, onError, searchType, onFindSimilar }) => {
+const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartCompare, isFavorite, onToggleFavorite, onError, searchType, onFindSimilar, onShowToast }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [animateFavorite, setAnimateFavorite] = useState(false);
 
@@ -24,6 +25,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
         onToggleFavorite();
         setAnimateFavorite(true);
         setTimeout(() => setAnimateFavorite(false), 300); // Reset animation class
+        if (onShowToast) {
+            // Message is actually set in parent state, this just ensures visual feedback loop is complete if needed
+        }
     };
 
     const handleExportPDF = async () => {

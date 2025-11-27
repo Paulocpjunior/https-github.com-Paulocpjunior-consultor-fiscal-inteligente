@@ -21,7 +21,21 @@ export const fetchFiscalData = async (
     aliquotaIss?: string
 ): Promise<SearchResult> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Analise "${query}" no contexto de ${type}. Forneça detalhes tributários completos.`;
+  
+  // Build context string from optional inputs
+  let contextParts = [];
+  if (municipio) contextParts.push(`Município Prestador: ${municipio}`);
+  if (alias) contextParts.push(`Tomador/Cliente: ${alias}`);
+  if (regimeTributario) contextParts.push(`Regime Tributário: ${regimeTributario}`);
+  
+  // Add specific tax rates if provided
+  if (aliquotaIcms) contextParts.push(`Alíquota ICMS informada pelo usuário: ${aliquotaIcms}%`);
+  if (aliquotaPisCofins) contextParts.push(`Alíquota PIS/COFINS informada pelo usuário: ${aliquotaPisCofins}%`);
+  if (aliquotaIss) contextParts.push(`Alíquota ISS informada pelo usuário: ${aliquotaIss}%`);
+
+  const contextInfo = contextParts.length > 0 ? `\nCONSIDERE OS SEGUINTES DADOS ESPECÍFICOS PARA O CÁLCULO/ANÁLISE: ${contextParts.join('; ')}.` : '';
+
+  const prompt = `Analise "${query}" no contexto de ${type}.${contextInfo}\nForneça detalhes tributários completos, base legal e se há retenções obrigatórias considerando os dados informados.`;
   
   let tools: any[] = [];
   if ([SearchType.REFORMA_TRIBUTARIA, SearchType.SERVICO, SearchType.CFOP, SearchType.NCM].includes(type)) {

@@ -10,6 +10,11 @@ const generateUUID = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
+// Helper to remove undefined values which Firestore dislikes
+const sanitizePayload = (obj: any) => {
+    return JSON.parse(JSON.stringify(obj));
+};
+
 const getLocalEmpresas = (): LucroPresumidoEmpresa[] => {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_LUCRO_EMPRESAS);
@@ -39,8 +44,11 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
             }
             const snapshot = await getDocs(q);
             firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
-        } catch (e) {
-            console.info("Acesso à nuvem restrito ou offline. Usando dados locais.");
+        } catch (e: any) {
+            // Fallback silencioso
+            if (e.code !== 'permission-denied' && e.code !== 'failed-precondition') {
+                console.warn("Firestore Warning:", e.message);
+            }
         }
     }
 
@@ -52,7 +60,18 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
         filteredLocal = localEmpresas.filter(e => e.createdBy === currentUser.id || !e.createdBy);
     }
 
-    return firebaseEmpresas.length > 0 ? firebaseEmpresas : filteredLocal;
+    // Mescla Inteligente
+    const empresaMap = new Map<string, LucroPresumidoEmpresa>();
+    
+    firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
+    
+    filteredLocal.forEach(e => {
+        if (!empresaMap.has(e.id)) {
+            empresaMap.set(e.id, e);
+        }
+    });
+
+    return Array.from(empresaMap.values());
 };
 
 export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPresumidoEmpresa> => {
@@ -72,9 +91,15 @@ export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPr
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             newEmpresaData.createdBy = auth.currentUser.uid;
+            
+            const payload = sanitizePayload(newEmpresaData);
             // Use setDoc para garantir que o ID gerado seja o usado como chave do documento
-            await setDoc(doc(db, 'lucro_empresas', newEmpresaData.id), newEmpresaData);
-        } catch (e) { console.warn("Firebase save failed (Lucro), local only:", e); }
+            await setDoc(doc(db, 'lucro_empresas', newEmpresaData.id), payload);
+        } catch (e: any) { 
+            if (e.code !== 'permission-denied') {
+                console.warn("Erro ao salvar na nuvem:", e);
+            }
+        }
     }
 
     return newEmpresaData;
@@ -91,9 +116,18 @@ export const updateEmpresa = async (id: string, data: Partial<LucroPresumidoEmpr
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'lucro_empresas', id);
-            await updateDoc(docRef, data);
-        } catch (e) { 
-            // Silent fail
+            
+            // IMPORTANTE: Remove campos que as regras de segurança podem bloquear alteração (ownership)
+            const { id: _, createdBy: __, ...safeData } = data as any;
+            
+            if (Object.keys(safeData).length > 0) {
+                const payload = sanitizePayload(safeData);
+                await updateDoc(docRef, payload);
+            }
+        } catch (e: any) { 
+            if (e.code !== 'permission-denied') {
+                console.warn("Cloud update failed:", e);
+            }
         }
     }
 

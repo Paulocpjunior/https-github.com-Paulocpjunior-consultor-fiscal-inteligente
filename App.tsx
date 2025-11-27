@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -14,11 +13,13 @@ import SimilarServicesDisplay from './components/SimilarServicesDisplay';
 import AccessLogsModal from './components/AccessLogsModal';
 import UserManagementModal from './components/UserManagementModal';
 import { PopularSuggestions } from './components/PopularSuggestions';
+import Tooltip from './components/Tooltip';
+import Toast from './components/Toast';
 import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem, type HistoryItem, type SimilarService, type CnaeSuggestion, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalAnexo, SimplesNacionalImportResult, SimplesNacionalAtividade, User } from './types';
 import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSuggestions } from './services/geminiService';
 import * as simplesService from './services/simplesNacionalService';
 import * as authService from './services/authService';
-import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon } from './components/Icons';
+import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon, InfoIcon } from './components/Icons';
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -76,6 +77,7 @@ const App: React.FC = () => {
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   const [similarServices, setSimilarServices] = useState<SimilarService[] | null>(null);
   const [isLoadingSimilar, setIsLoadingSimilar] = useState(false);
@@ -84,6 +86,7 @@ const App: React.FC = () => {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   
   const [cnaeSuggestions, setCnaeSuggestions] = useState<CnaeSuggestion[]>([]);
   const [isLoadingCnaeSuggestions, setIsLoadingCnaeSuggestions] = useState(false);
@@ -233,8 +236,10 @@ const App: React.FC = () => {
       let newFavorites;
       if (existingIndex >= 0) {
           newFavorites = favorites.filter((_, i) => i !== existingIndex);
+          setToastMessage("Favorito removido com sucesso!");
       } else {
           newFavorites = [...favorites, { code, description, type: searchType }];
+          setToastMessage("Adicionado aos Favoritos!");
       }
       saveFavorites(newFavorites);
   };
@@ -266,8 +271,36 @@ const App: React.FC = () => {
       return message || "Ocorreu um erro inesperado ao comunicar com a API.";
   };
 
+  const validateInputs = (q1: string, q2?: string) => {
+      const errors: Record<string, string> = {};
+      if (!q1.trim()) {
+          errors.query1 = "O campo de busca é obrigatório.";
+      }
+      if (mode === 'compare' && q2 !== undefined && !q2.trim()) {
+          errors.query2 = "O segundo campo é obrigatório para comparação.";
+      }
+      
+      const validateRate = (rate: string, fieldName: string) => {
+          if (rate) {
+              const num = parseFloat(rate);
+              if (isNaN(num) || num < 0 || num > 100) {
+                  errors[fieldName] = "Alíquota inválida (0-100).";
+              }
+          }
+      };
+
+      validateRate(aliquotaIcms, 'aliquotaIcms');
+      validateRate(aliquotaPisCofins, 'aliquotaPisCofins');
+      validateRate(aliquotaIss, 'aliquotaIss');
+
+      setValidationErrors(errors);
+      return Object.keys(errors).length === 0;
+  };
+
   const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string) => {
-    if (!currentQuery1.trim()) return;
+    if (isLoading) return; // Prevent double submission
+    if (!validateInputs(currentQuery1, currentQuery2)) return;
+
     setIsLoading(true);
     setError(null);
     setResult(null);
@@ -318,10 +351,15 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, currentUser, aliquotaIcms, aliquotaPisCofins, aliquotaIss]);
+  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, currentUser, aliquotaIcms, aliquotaPisCofins, aliquotaIss, isLoading]);
 
   const handleReformaSearch = useCallback(async (query: string) => {
-      if (!query.trim()) return;
+      if (isLoading) return;
+      if (!query.trim()) {
+          setValidationErrors({ reformaQuery: "Digite um termo para pesquisar." });
+          return;
+      }
+      setValidationErrors({});
       setIsLoading(true);
       setError(null);
       setResult(null);
@@ -343,7 +381,7 @@ const App: React.FC = () => {
       } finally {
           setIsLoading(false);
       }
-  }, [currentUser]);
+  }, [currentUser, isLoading]);
 
   const handleFindSimilar = async () => {
       if (!result || searchType !== SearchType.SERVICO) return;
@@ -450,6 +488,7 @@ const App: React.FC = () => {
                                     setQuery1(''); 
                                     setQuery2(''); 
                                     setError(null);
+                                    setValidationErrors({});
                                     if (type === SearchType.SIMPLES_NACIONAL) {
                                         setSimplesView('dashboard');
                                         loadSimplesData(currentUser);
@@ -503,11 +542,15 @@ const App: React.FC = () => {
                                         <input
                                             type="text"
                                             value={query1}
-                                            onChange={(e) => setQuery1(e.target.value)}
+                                            onChange={(e) => { setQuery1(e.target.value); if(validationErrors.query1) setValidationErrors({...validationErrors, query1: ''}); }}
                                             onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
                                             placeholder={mode === 'single' ? `Digite o código ou descrição do ${searchType}` : `Primeiro código ${searchType}`}
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal"
+                                            className={`w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.query1 ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                            aria-label="Campo de busca principal"
+                                            aria-invalid={!!validationErrors.query1}
+                                            aria-describedby="query1-error"
                                         />
+                                        {validationErrors.query1 && <p id="query1-error" className="text-xs text-red-500 mt-1">{validationErrors.query1}</p>}
                                     </div>
                                     
                                     {mode === 'compare' && (
@@ -518,17 +561,19 @@ const App: React.FC = () => {
                                             <input
                                                 type="text"
                                                 value={query2}
-                                                onChange={(e) => setQuery2(e.target.value)}
+                                                onChange={(e) => { setQuery2(e.target.value); if(validationErrors.query2) setValidationErrors({...validationErrors, query2: ''}); }}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
                                                 placeholder={`Segundo código ${searchType}`}
-                                                className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal"
+                                                className={`w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.query2 ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                aria-label="Segundo campo de busca para comparação"
                                             />
+                                            {validationErrors.query2 && <p className="text-xs text-red-500 mt-1">{validationErrors.query2}</p>}
                                         </div>
                                     )}
                                     
                                     <button
                                         onClick={() => handleSearch(query1, query2)}
-                                        disabled={isLoading || !query1.trim() || (mode === 'compare' && !query2.trim())}
+                                        disabled={isLoading}
                                         className="btn-press px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 min-w-[120px]"
                                     >
                                         {isLoading ? (
@@ -565,19 +610,69 @@ const App: React.FC = () => {
                                 {/* Optional Tax Rates */}
                                 {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO].includes(searchType) && (
                                     <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                                        <p className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-2 uppercase">Refinar Análise com Alíquotas (Opcional)</p>
+                                        <p className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-2 uppercase flex items-center gap-2">
+                                            Refinar Análise com Alíquotas (Opcional)
+                                            <Tooltip content="Informe as alíquotas para um cálculo mais preciso dos impostos.">
+                                                <InfoIcon className="w-4 h-4 text-sky-400 cursor-help" />
+                                            </Tooltip>
+                                        </p>
                                         <div className="grid grid-cols-3 gap-4">
                                             <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase">ICMS (%)</label>
-                                                <input type="number" min="0" value={aliquotaIcms} onChange={e => setAliquotaIcms(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                                                    ICMS (%)
+                                                    <Tooltip content="Alíquota do ICMS (Imposto sobre Circulação de Mercadorias).">
+                                                        <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                    </Tooltip>
+                                                </label>
+                                                <input 
+                                                    type="number" 
+                                                    min="0" 
+                                                    max="100"
+                                                    value={aliquotaIcms} 
+                                                    onChange={e => { setAliquotaIcms(e.target.value); if(validationErrors.aliquotaIcms) setValidationErrors({...validationErrors, aliquotaIcms: ''}); }}
+                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaIcms ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                    placeholder="0.00" 
+                                                    aria-label="Alíquota ICMS"
+                                                />
+                                                {validationErrors.aliquotaIcms && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIcms}</p>}
                                             </div>
                                             <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase">PIS/COFINS (%)</label>
-                                                <input type="number" min="0" value={aliquotaPisCofins} onChange={e => setAliquotaPisCofins(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                                                    PIS/COFINS (%)
+                                                    <Tooltip content="Alíquota combinada de PIS e COFINS.">
+                                                        <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                    </Tooltip>
+                                                </label>
+                                                <input 
+                                                    type="number" 
+                                                    min="0" 
+                                                    max="100"
+                                                    value={aliquotaPisCofins} 
+                                                    onChange={e => { setAliquotaPisCofins(e.target.value); if(validationErrors.aliquotaPisCofins) setValidationErrors({...validationErrors, aliquotaPisCofins: ''}); }}
+                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaPisCofins ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                    placeholder="0.00" 
+                                                    aria-label="Alíquota PIS e COFINS"
+                                                />
+                                                {validationErrors.aliquotaPisCofins && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaPisCofins}</p>}
                                             </div>
                                             <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase">ISS (%)</label>
-                                                <input type="number" min="0" value={aliquotaIss} onChange={e => setAliquotaIss(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="0.00" />
+                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                                                    ISS (%)
+                                                    <Tooltip content="Alíquota do ISS (Imposto Sobre Serviços).">
+                                                        <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                    </Tooltip>
+                                                </label>
+                                                <input 
+                                                    type="number" 
+                                                    min="0" 
+                                                    max="100"
+                                                    value={aliquotaIss} 
+                                                    onChange={e => { setAliquotaIss(e.target.value); if(validationErrors.aliquotaIss) setValidationErrors({...validationErrors, aliquotaIss: ''}); }}
+                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaIss ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                    placeholder="0.00" 
+                                                    aria-label="Alíquota ISS"
+                                                />
+                                                {validationErrors.aliquotaIss && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIss}</p>}
                                             </div>
                                         </div>
                                     </div>
@@ -597,12 +692,14 @@ const App: React.FC = () => {
                                         onChange={(e) => setReformaQuery(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && handleReformaSearch(reformaQuery)}
                                         placeholder="Digite o CNAE ou descrição da atividade..."
-                                        className="w-full pl-4 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal"
+                                        className={`w-full pl-4 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.reformaQuery ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                        aria-label="Busca Reforma Tributária"
                                     />
+                                    {validationErrors.reformaQuery && <p className="text-xs text-red-500 mt-1">{validationErrors.reformaQuery}</p>}
                                 </div>
                                 <button
                                     onClick={() => handleReformaSearch(reformaQuery)}
-                                    disabled={isLoading || !reformaQuery.trim()}
+                                    disabled={isLoading}
                                     className="btn-press px-6 py-3 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
                                 >
                                     {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>Analisar Impacto</span>}
@@ -685,6 +782,7 @@ const App: React.FC = () => {
                                 onError={(msg) => setError(msg)}
                                 searchType={searchType}
                                 onFindSimilar={handleFindSimilar}
+                                onShowToast={(msg) => setToastMessage(msg)}
                             />
                         )}
                     </Suspense>
@@ -727,6 +825,9 @@ const App: React.FC = () => {
             </div>
             <Footer />
         </div>
+
+        {/* Global Toast Notification */}
+        {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
 
         {/* Modals */}
         <AccessLogsModal isOpen={isLogsModalOpen} onClose={() => setIsLogsModalOpen(false)} />

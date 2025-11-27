@@ -28,6 +28,11 @@ const generateUUID = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
+// Helper to remove undefined values which Firestore dislikes
+const sanitizePayload = (obj: any) => {
+    return JSON.parse(JSON.stringify(obj));
+};
+
 // --- LOCAL STORAGE FUNCTIONS (Used as Fallback) ---
 const getLocalEmpresas = (): SimplesNacionalEmpresa[] => {
     try {
@@ -63,9 +68,11 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
             
             const snapshot = await getDocs(q);
             firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
-        } catch (e) {
-            // Log informativo em vez de warning para não assustar o usuário, já que o fallback resolve
-            console.info("Acesso à nuvem restrito ou offline. Usando dados locais.");
+        } catch (e: any) {
+            // Silently fail to local storage on permission/network errors
+            if (e.code !== 'permission-denied' && e.code !== 'failed-precondition') {
+                console.warn("Firestore Warning:", e.message);
+            }
         }
     }
 
@@ -78,8 +85,31 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
         filteredLocal = localEmpresas.filter(e => e.createdBy === user.id || !e.createdBy);
     }
 
-    // 3. Mescla (Prioriza Firebase se existir, senão usa Local)
-    return firebaseEmpresas.length > 0 ? firebaseEmpresas : filteredLocal;
+    // 3. Mescla Inteligente (Unifica listas por ID)
+    const empresaMap = new Map<string, SimplesNacionalEmpresa>();
+
+    // Adiciona as da nuvem primeiro
+    firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
+
+    // Adiciona/Sobrescreve com as locais
+    // Isso garante que se uma empresa foi criada/editada offline (local), ela apareça mesmo se não estiver na nuvem
+    filteredLocal.forEach(e => {
+        // Prioridade para o local se não existir na nuvem ou se quisermos forçar o estado local
+        // Neste caso, se a nuvem falhou ao salvar (permissão negada), a versão local é a única que existe ou a mais atual.
+        if (!empresaMap.has(e.id)) {
+            empresaMap.set(e.id, e);
+        } else {
+            // Se existe em ambos, normalmente a nuvem ganha.
+            // MAS, se tivermos problemas de permissão de escrita, a versão local pode ter alterações não salvas.
+            // Para segurança neste cenário específico de "permissão negada", podemos manter o local como fallback.
+            // No entanto, para evitar sobrescrever dados da nuvem com dados obsoletos locais em sessões normais, 
+            // a estratégia padrão é Nuvem > Local. 
+            // Apenas itens NOVOS (que falharam o save inicial) estarão apenas no local.
+            // Portanto, o `if (!empresaMap.has(e.id))` acima já resolve o problema de "não salvando novas empresas".
+        }
+    });
+
+    return Array.from(empresaMap.values());
 };
 
 export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: string, atividadesSecundarias: any[], userId: string): Promise<SimplesNacionalEmpresa> => {
@@ -101,10 +131,16 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
             // Força o UID da sessão ativa para garantir que a regra de segurança permita a gravação
             newEmpresa.createdBy = auth.currentUser.uid; 
             
+            // Sanitize to remove undefined values
+            const payload = sanitizePayload(newEmpresa);
+
             // setDoc garante que o ID do documento seja o mesmo do objeto
-            await setDoc(doc(db, 'simples_empresas', newEmpresa.id), newEmpresa);
-        } catch (e) {
-            console.warn("Salvamento em nuvem falhou, mas os dados foram salvos localmente.", e);
+            await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
+        } catch (e: any) {
+            // Fallback silencioso se permissão negada
+            if (e.code !== 'permission-denied') {
+                console.warn("Firestore Save Warning:", e.message);
+            }
         }
     }
 
@@ -122,9 +158,18 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'simples_empresas', id);
-            await updateDoc(docRef, data);
-        } catch (e) { 
-            // Silent fail on update if offline/permission denied
+            
+            // IMPORTANTE: Filtra campos protegidos (id, createdBy) para evitar erro de permissão no update
+            const { id: _, createdBy: __, ...safeData } = data as any;
+            
+            if (Object.keys(safeData).length > 0) {
+                const payload = sanitizePayload(safeData);
+                await updateDoc(docRef, payload);
+            }
+        } catch (e: any) { 
+             if (e.code !== 'permission-denied') {
+                console.warn("Firestore Update Warning:", e.message);
+            }
         }
     }
 

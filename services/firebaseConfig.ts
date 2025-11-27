@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, initializeAuth, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
@@ -25,9 +25,12 @@ let db: any;
 if (isFirebaseConfigured) {
     try {
         app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
+        // Use initializeAuth with browserLocalPersistence to avoid IndexedDB issues (app/idb-set errors)
+        auth = initializeAuth(app, {
+            persistence: browserLocalPersistence
+        });
         db = getFirestore(app);
-        console.log("Firebase conectado com sucesso.");
+        console.log("Firebase conectado com sucesso (Persistência Local).");
     } catch (e) {
         console.error("Erro ao inicializar Firebase:", e);
         // Fallback para evitar crash total se as chaves estiverem erradas

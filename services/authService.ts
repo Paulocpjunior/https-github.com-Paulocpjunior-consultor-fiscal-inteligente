@@ -86,12 +86,21 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
             return userData;
         } else {
             // Se não existe, tenta criar (pode falhar se sem permissão, mas não trava)
-            await setDoc(doc(db, 'users', firebaseUser.uid), fallbackUser).catch(() => {});
+            // Isola o setDoc para não falhar o retorno da função se a regra bloquear
+            try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), fallbackUser);
+            } catch (innerError: any) {
+                // Apenas loga, não re-lança o erro
+                if (innerError.code === 'permission-denied') {
+                    console.error("Erro de Permissão no Firestore: Verifique as Regras no Console do Firebase.");
+                }
+                console.warn("Não foi possível salvar o perfil do usuário no DB (permissão ou rede):", innerError);
+            }
             createSession(fallbackUser);
             return fallbackUser;
         }
     } catch (e) {
-        // SE DER ERRO DE PERMISSÃO, RETORNA O USUÁRIO BÁSICO (FALLBACK)
+        // SE DER ERRO GERAL, RETORNA O USUÁRIO BÁSICO (FALLBACK)
         // Isso garante que o login NUNCA trave por causa do Firestore
         console.info("Modo de Fallback de Auth ativado (Permissão ou Rede):", e);
         createSession(fallbackUser);

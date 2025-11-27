@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
@@ -219,7 +218,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
 
     // Prepare breakdown list (last 12 months)
     const getRbt12Breakdown = () => {
-        const breakdown = [];
+        const breakdown: { mes: string; valor: number }[] = [];
         const dataInicioPeriodoRBT12 = new Date(mesApuracao.getFullYear(), mesApuracao.getMonth() - 12, 1);
         
         for (let i = 0; i < 12; i++) {
@@ -447,7 +446,7 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                                     <SimpleChart type="bar" options={chartOptions} data={chartData} />
                                 ) : (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                        <p>Sem dados financeiros para o período.</p>
+                                        <p>Sem dados.</p>
                                     </div>
                                 )}
                             </div>
