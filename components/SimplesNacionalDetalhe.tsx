@@ -1,5 +1,6 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade, SimplesCalculoMensal } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails } from '../services/geminiService';
 import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, CopyIcon, PencilIcon } from './Icons';
@@ -16,13 +17,18 @@ interface SimplesNacionalDetalheProps {
     onSaveFaturamentoManual: (id: string, faturamento: any) => void;
     onUpdateEmpresa: (id: string, data: Partial<SimplesNacionalEmpresa>) => void;
     onShowClienteView: () => void;
+    onShowToast?: (msg: string) => void;
 }
 
 interface CnaeInputState {
     valor: string;
     issRetido: boolean;
     icmsSt: boolean;
+    issRate?: string;
+    icmsStRate?: string;
 }
+
+type TabType = 'cadastrais' | 'faturamento' | 'simulacoes' | 'historico';
 
 const CurrencyInput: React.FC<{ 
     value: number; 
@@ -69,14 +75,13 @@ const CurrencyInput: React.FC<{
 };
 
 const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ 
-    empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView 
+    empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView, onShowToast 
 }) => {
+    const [activeTab, setActiveTab] = useState<TabType>('faturamento');
     const [mesApuracao, setMesApuracao] = useState(new Date());
     const [folha12Input, setFolha12Input] = useState(empresa.folha12);
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<SimplesNacionalImportResult | null>(null);
-    const [manualSuccess, setManualSuccess] = useState('');
-    const [historySuccess, setHistorySuccess] = useState('');
     
     const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
     const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
@@ -187,18 +192,22 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         const createInitialState = (val: number = 0): CnaeInputState => ({
             valor: val > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) : '0,00',
             issRetido: false,
-            icmsSt: false
+            icmsSt: false,
+            issRate: '',
+            icmsStRate: ''
         });
 
         const keyPrincipal = `${empresa.cnae}_${empresa.anexo}`;
         novoFaturamentoPorCnae[keyPrincipal] = createInitialState(totalMes);
         
-        empresa.atividadesSecundarias?.forEach(ativ => {
-            const key = `${ativ.cnae}_${ativ.anexo}`;
-            if (!novoFaturamentoPorCnae[key]) {
-                novoFaturamentoPorCnae[key] = createInitialState(0);
-            }
-        });
+        if (Array.isArray(empresa.atividadesSecundarias)) {
+            empresa.atividadesSecundarias.forEach(ativ => {
+                const key = `${ativ.cnae}_${ativ.anexo}`;
+                if (!novoFaturamentoPorCnae[key]) {
+                    novoFaturamentoPorCnae[key] = createInitialState(0);
+                }
+            });
+        }
         
         setFaturamentoPorCnae(novoFaturamentoPorCnae);
         setHistoricoManualEditavel(empresa.faturamentoManual || {});
@@ -208,10 +217,10 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     // --- HANDLERS ---
 
-    const handleFaturamentoChange = (key: string, value: string) => {
+    const handleFaturamentoChange = (key: string, field: keyof CnaeInputState, value: any) => {
         setFaturamentoPorCnae(prev => ({
             ...prev,
-            [key]: { ...prev[key], valor: value }
+            [key]: { ...prev[key], [field]: value }
         }));
     };
 
@@ -235,8 +244,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         onSaveFaturamentoManual(empresa.id, updatedManual);
         setHistoricoManualEditavel(updatedManual);
         
-        setManualSuccess('Apuração salva!');
-        setTimeout(() => setManualSuccess(''), 3000);
+        if (onShowToast) onShowToast('Apuração salva com sucesso!');
         
         // Salvar também no histórico de cálculos automaticamente
         simplesService.saveHistoricoCalculo(empresa.id, resumo, mesApuracao);
@@ -264,8 +272,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const handleSaveHistorico = () => {
         if (window.confirm('Deseja salvar todo o faturamento manual dos meses informados? Isso substituirá os dados existentes.')) {
             onSaveFaturamentoManual(empresa.id, historicoManualEditavel);
-            setHistorySuccess('Faturamento manual salvo com sucesso!');
-            setTimeout(() => setHistorySuccess(''), 3000);
+            if (onShowToast) onShowToast('Faturamento manual salvo com sucesso!');
             setIsHistoryModalOpen(false);
         }
     };
@@ -280,8 +287,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 novoHistorico[m.iso] = valorBase;
             });
             setHistoricoManualEditavel(novoHistorico);
-            setHistorySuccess('Valor replicado para 12 meses!');
-            setTimeout(() => setHistorySuccess(''), 3000);
+            if (onShowToast) onShowToast('Valor replicado para 12 meses!');
         } else {
             alert("Preencha pelo menos um mês com valor maior que zero para replicar.");
         }
@@ -434,11 +440,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             doc.setFontSize(8);
             doc.setTextColor(150);
             doc.text(`CNAE Principal: ${empresa.cnae} (Anexo ${empresa.anexo})`, 20, y);
-            if (empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0) {
+            
+            // Check if array exists and has items before mapping
+            const atividadesSecundarias = empresa.atividadesSecundarias;
+            if (atividadesSecundarias && atividadesSecundarias.length > 0) {
                  y += 5;
-                 // Explicitly cast to any[] to avoid 'unknown' type error during build
-                 const secActivities = (empresa.atividadesSecundarias || []) as any[];
-                 doc.text(`Atividades Secundárias: ${secActivities.map((a: any) => a.cnae).join(', ')}`, 20, y);
+                 doc.text(`Atividades Secundárias: ${atividadesSecundarias.map((a) => a.cnae).join(', ')}`, 20, y);
             }
 
             doc.save(`memoria-calculo-das-${empresa.nome.replace(/\s+/g, '-')}-${mesApuracao.toISOString().slice(0, 7)}.pdf`);
@@ -458,9 +465,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         try {
             const result = await onImport(empresa.id, file);
             setImportResult(result);
-            if (result.successCount > 0 && result.errors.length === 0 && file.name.endsWith('.pdf')) {
-                 const updatedEmpresa = (await simplesService.getEmpresas(null)).find(e => e.id === empresa.id);
-                 if(updatedEmpresa?.faturamentoManual) setHistoricoManualEditavel(updatedEmpresa.faturamentoManual);
+            if (result.successCount > 0) {
+                 if (result.errors.length === 0 && file.name.endsWith('.pdf')) {
+                     const updatedEmpresa = (await simplesService.getEmpresas(null)).find(e => e.id === empresa.id);
+                     if(updatedEmpresa?.faturamentoManual) setHistoricoManualEditavel(updatedEmpresa.faturamentoManual);
+                 }
+                 if(onShowToast) onShowToast(`${result.successCount} registros importados com sucesso!`);
             }
         } catch (error) {
             setImportResult({ successCount: 0, failCount: 0, errors: ["Erro na importação"] });
@@ -470,17 +480,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     };
 
     const chartData = {
-        labels: resumo.historico_simulado.map(h => h.label),
+        labels: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.label),
         datasets: [
             {
                 label: 'Faturamento (R$)',
-                data: resumo.historico_simulado.map(h => h.faturamento),
+                data: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.faturamento),
                 backgroundColor: 'rgba(14, 165, 233, 0.6)',
                 yAxisID: 'y',
             },
             {
                 label: 'Alíquota (%)',
-                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
+                data: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.aliquotaEfetiva),
                 type: 'line' as const,
                 borderColor: 'rgb(245, 158, 11)',
                 borderWidth: 2,
@@ -492,8 +502,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const renderCardCnae = (cnae: string, anexo: string, label: string, isSecondary: boolean = false, index?: number) => {
         const key = `${cnae}_${anexo}`;
         const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false };
-        const showIcmsSt = ['I', 'II'].includes(anexo);
+        const showIcmsSt = ['I', 'II', 'V'].includes(anexo);
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexo);
+        const isAnexoV = anexo === 'V';
 
         return (
             <div key={key} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 relative group hover:border-sky-300 transition-colors shadow-sm">
@@ -522,13 +533,13 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         <input 
                             type="text" 
                             value={state.valor} 
-                            onChange={(e) => handleFaturamentoChange(key, e.target.value)}
+                            onChange={(e) => handleFaturamentoChange(key, 'valor', e.target.value)}
                             className="w-full pl-9 pr-3 py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-500 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-right font-mono font-bold text-slate-900 dark:text-white text-xl shadow-inner"
                             aria-label={`Faturamento para CNAE ${cnae}`}
                         />
                     </div>
 
-                    <div className="flex gap-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+                    <div className="flex flex-wrap gap-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
                         {showIcmsSt && (
                             <label className="flex items-center gap-2 cursor-pointer select-none">
                                 <input 
@@ -539,7 +550,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     aria-label="Deduzir ICMS ST"
                                 />
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                                    ICMS ST
+                                    Retenção ST
                                     <Tooltip content="Marque se houve Substituição Tributária de ICMS nesta receita (o valor será deduzido do cálculo).">
                                         <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
                                     </Tooltip>
@@ -563,6 +574,32 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </span>
                             </label>
                         )}
+                        
+                        {isAnexoV && (
+                            <div className="w-full flex gap-3 mt-2 border-t border-dashed border-slate-200 dark:border-slate-700 pt-2">
+                                <div className="flex-1">
+                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold block mb-1">Alíquota ISS (%)</label>
+                                    <input 
+                                        type="number" 
+                                        placeholder="0.00" 
+                                        value={state.issRate || ''}
+                                        onChange={(e) => handleFaturamentoChange(key, 'issRate', e.target.value)}
+                                        className="w-full p-1 text-xs border rounded bg-white dark:bg-slate-700 dark:text-white"
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold block mb-1">Alíquota ICMS ST (%)</label>
+                                    <input 
+                                        type="number" 
+                                        placeholder="0.00"
+                                        value={state.icmsStRate || ''}
+                                        onChange={(e) => handleFaturamentoChange(key, 'icmsStRate', e.target.value)}
+                                        className="w-full p-1 text-xs border rounded bg-white dark:bg-slate-700 dark:text-white"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
                         {!showIcmsSt && !showIss && <span className="text-[10px] text-slate-400 italic">Sem deduções aplicáveis</span>}
                     </div>
                 </div>
@@ -573,90 +610,425 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     return (
         <div className="animate-fade-in pb-12">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors font-bold" aria-label="Voltar ao painel">
-                    <ArrowLeftIcon className="w-5 h-5" /> Voltar
-                </button>
+            <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                    <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors font-bold" aria-label="Voltar ao painel">
+                        <ArrowLeftIcon className="w-5 h-5" /> Voltar
+                    </button>
+                    <div className="border-l border-slate-300 dark:border-slate-600 h-6 mx-2 hidden md:block"></div>
+                    <div>
+                        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{empresa.nome}</h1>
+                        <p className="text-slate-500 dark:text-slate-400 font-mono text-xs font-bold">CNPJ: {empresa.cnpj}</p>
+                    </div>
+                </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-3 w-full md:w-auto">
                     <button 
                         onClick={handleGerarDasPdf} 
                         disabled={isPdfGenerating} 
-                        className="btn-press flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 shadow-sm"
+                        className="flex-1 md:flex-none btn-press flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors disabled:opacity-50 shadow-sm text-xs md:text-sm"
                     >
                         <DocumentTextIcon className="w-5 h-5 text-sky-600" />
-                        {isPdfGenerating ? 'Gerando...' : 'Exportar Memória de Cálculo'}
+                        {isPdfGenerating ? 'Gerando...' : 'Exportar Memória'}
                     </button>
-                    <button onClick={onShowClienteView} className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors">
-                        <UserIcon className="w-5 h-5" /> Visão do Cliente
+                    <button onClick={onShowClienteView} className="flex-1 md:flex-none btn-press flex items-center justify-center gap-2 px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors text-xs md:text-sm">
+                        <UserIcon className="w-5 h-5" /> Visão Cliente
                     </button>
                 </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 border-l-4 border-sky-500">
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{empresa.nome}</h1>
-                <p className="text-slate-500 dark:text-slate-400 font-mono text-sm font-bold mt-1">CNPJ: {empresa.cnpj}</p>
+            {/* Abas de Navegação */}
+            <div className="flex overflow-x-auto gap-2 mb-6 pb-2 border-b border-slate-200 dark:border-slate-700 no-scrollbar">
+                {[
+                    { id: 'cadastrais', label: 'Dados Cadastrais', icon: <UserIcon className="w-4 h-4" /> },
+                    { id: 'faturamento', label: 'Faturamento do Mês', icon: <CalculatorIcon className="w-4 h-4" /> },
+                    { id: 'simulacoes', label: 'Simulações & Resultados', icon: <SimpleChart type="bar" data={{labels:[], datasets:[]}} options={{}} /> /* Icon Placeholder */ },
+                    { id: 'historico', label: 'Histórico & Ajustes', icon: <HistoryIcon className="w-4 h-4" /> },
+                ].map((tab) => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as TabType)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-t-lg font-bold text-sm whitespace-nowrap transition-colors border-b-2 ${
+                            activeTab === tab.id
+                                ? 'border-sky-600 text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-900/20'
+                                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                    >
+                        {tab.id !== 'simulacoes' && tab.icon} 
+                        {tab.label}
+                    </button>
+                ))}
             </div>
 
-            {/* SEÇÃO DE ANÁLISE TRIBUTÁRIA */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-                            <ShieldIcon className="w-5 h-5 text-sky-600" />
-                            Análise Tributária (IA)
-                        </h3>
-                        <p className="text-sm text-slate-500">Consulte a incidência de impostos para suas atividades.</p>
+            {/* Conteúdo das Abas */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* ABA 1: DADOS CADASTRAIS */}
+                {activeTab === 'cadastrais' && (
+                    <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                                <UserIcon className="w-5 h-5 text-sky-600" /> Folha de Salários (12m)
+                            </h3>
+                            <p className="text-xs text-slate-500 mb-4">Soma da folha de salários dos últimos 12 meses (incluindo encargos) para cálculo do Fator R.</p>
+                            <CurrencyInput value={folha12Input} onChange={setFolha12Input} label="Valor Total Folha" />
+                            <button onClick={() => onUpdateFolha12(empresa.id, folha12Input)} className="btn-press w-full mt-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors">
+                                Atualizar Folha
+                            </button>
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                                <DownloadIcon className="w-5 h-5 text-sky-600" /> Importar Arquivo
+                            </h3>
+                            <p className="text-xs text-slate-500 mb-4">Importe notas fiscais ou extrato do PGDAS (PDF, XML, Excel) para preenchimento automático.</p>
+                            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 text-center relative hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer group">
+                                <input 
+                                    type="file" 
+                                    accept=".pdf, .xml, .xlsx, .xls"
+                                    onChange={handleFileUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    disabled={isImporting}
+                                    aria-label="Upload de arquivo para importação"
+                                />
+                                {isImporting ? <LoadingSpinner /> : (
+                                    <div className="flex flex-col items-center">
+                                        <DocumentTextIcon className="w-8 h-8 text-slate-400 group-hover:text-sky-500 mb-2 transition-colors" />
+                                        <p className="text-sm text-slate-600 font-bold dark:text-slate-300">Clique para enviar</p>
+                                        <p className="text-xs text-slate-400">PDF, XML ou Excel</p>
+                                    </div>
+                                )}
+                            </div>
+                            {importResult && (
+                                <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-900/50 rounded text-xs">
+                                    <p className="text-green-600 font-bold">Sucesso: {importResult.successCount} registros</p>
+                                    {importResult.failCount > 0 && <p className="text-red-500 font-bold">Falhas: {importResult.failCount}</p>}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm md:col-span-2">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
+                                        <ShieldIcon className="w-5 h-5 text-sky-600" />
+                                        Análise Tributária (IA)
+                                    </h3>
+                                    <p className="text-sm text-slate-500">Consulte a incidência de impostos para suas atividades.</p>
+                                </div>
+                                <div className="flex gap-2 items-end">
+                                    <div className="flex gap-2">
+                                        <div className="w-20">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">ICMS (%)</label>
+                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 18" value={manualTaxRates.icms} onChange={e => setManualTaxRates(p => ({...p, icms: e.target.value}))} aria-label="Alíquota ICMS manual" />
+                                        </div>
+                                        <div className="w-20">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">PIS/COF</label>
+                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 3.65" value={manualTaxRates.pisCofins} onChange={e => setManualTaxRates(p => ({...p, pisCofins: e.target.value}))} aria-label="Alíquota PIS/COFINS manual" />
+                                        </div>
+                                        <div className="w-20">
+                                            <label className="text-[10px] uppercase font-bold text-slate-500">ISS (%)</label>
+                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 5" value={manualTaxRates.iss} onChange={e => setManualTaxRates(p => ({...p, iss: e.target.value}))} aria-label="Alíquota ISS manual" />
+                                        </div>
+                                    </div>
+                                    <button onClick={handleAnalyzeTax} disabled={isAnalyzingTax} className="btn-press px-4 py-1.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 text-sm h-[34px]">
+                                        {isAnalyzingTax ? <LoadingSpinner /> : 'Refinar'}
+                                    </button>
+                                </div>
+                            </div>
+                            {Object.keys(taxDetails).length > 0 && (
+                                <div className="space-y-4">
+                                    {Object.entries(taxDetails).map(([cnae, details]) => (
+                                        <div key={cnae} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                                            <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700">
+                                                <span className="font-bold text-sky-700 dark:text-sky-300 text-xs">CNAE: {cnae}</span>
+                                            </div>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
+                                                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
+                                                        <tr>
+                                                            <th className="px-4 py-2">Tributo</th>
+                                                            <th className="px-4 py-2">Incidência</th>
+                                                            <th className="px-4 py-2">Alíquota Média</th>
+                                                            <th className="px-4 py-2">Base Legal</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                                        {details.map((row, idx) => (
+                                                            <tr key={idx}>
+                                                                <td className="px-4 py-2 font-bold">{row.tributo}</td>
+                                                                <td className="px-4 py-2">{row.incidencia}</td>
+                                                                <td className="px-4 py-2">{row.aliquotaMedia}</td>
+                                                                <td className="px-4 py-2">
+                                                                    <a href={`https://www.google.com/search?q=${encodeURIComponent(row.baseLegal)}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                                                                        {row.baseLegal}
+                                                                    </a>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    
-                    <div className="flex gap-2 items-end">
-                        <div className="flex gap-2">
-                            <div className="w-20">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">ICMS (%)</label>
-                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 18" value={manualTaxRates.icms} onChange={e => setManualTaxRates(p => ({...p, icms: e.target.value}))} aria-label="Alíquota ICMS manual" />
-                            </div>
-                            <div className="w-20">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">PIS/COF</label>
-                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 3.65" value={manualTaxRates.pisCofins} onChange={e => setManualTaxRates(p => ({...p, pisCofins: e.target.value}))} aria-label="Alíquota PIS/COFINS manual" />
-                            </div>
-                            <div className="w-20">
-                                <label className="text-[10px] uppercase font-bold text-slate-500">ISS (%)</label>
-                                <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 5" value={manualTaxRates.iss} onChange={e => setManualTaxRates(p => ({...p, iss: e.target.value}))} aria-label="Alíquota ISS manual" />
+                )}
+
+                {/* ABA 2: FATURAMENTO DO MÊS */}
+                {activeTab === 'faturamento' && (
+                    <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                        <div className="lg:col-span-1 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
+                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Competência</label>
+                            <input 
+                                type="date" 
+                                value={mesApuracao.toISOString().substring(0, 10)}
+                                onChange={(e) => {
+                                    if(e.target.value) setMesApuracao(new Date(e.target.value));
+                                }}
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white"
+                                aria-label="Mês de competência"
+                            />
+                            <div className="mt-6 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-100 dark:border-sky-800">
+                                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase mb-1">Faturamento Total do Mês</p>
+                                <p className="text-2xl font-mono font-bold text-sky-800 dark:text-white">
+                                    R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </p>
                             </div>
                         </div>
-                        <button onClick={handleAnalyzeTax} disabled={isAnalyzingTax} className="btn-press px-4 py-1.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 text-sm h-[34px]">
-                            {isAnalyzingTax ? <LoadingSpinner /> : 'Refinar Cálculo'}
-                        </button>
-                    </div>
-                </div>
 
-                {Object.keys(taxDetails).length > 0 && (
-                    <div className="space-y-4">
-                        {Object.entries(taxDetails).map(([cnae, details]) => (
-                            <div key={cnae} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                                <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700">
-                                    <span className="font-bold text-sky-700 dark:text-sky-300 text-xs">CNAE: {cnae}</span>
+                        <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-2 border-sky-100 dark:border-sky-900">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                    <CalculatorIcon className="w-5 h-5 text-sky-600" />
+                                    Lançamento de Receita
+                                </h3>
+                            </div>
+
+                            <div className="space-y-6">
+                                {/* ATIVIDADE PRINCIPAL */}
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividade Principal</h4>
+                                    {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
-                                        <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
+
+                                {/* ATIVIDADES SECUNDÁRIAS */}
+                                {(Array.isArray(empresa.atividadesSecundarias) && empresa.atividadesSecundarias.length > 0) && (
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividades Secundárias</h4>
+                                        <div className="space-y-3">
+                                            {(empresa.atividadesSecundarias as any[]).map((ativ, i) => 
+                                                renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i)
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {!isAddingCnae ? (
+                                <button onClick={() => setIsAddingCnae(true)} className="w-full mt-6 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 hover:border-sky-300 dark:hover:border-sky-700 transition-colors text-xs font-bold flex justify-center items-center gap-2">
+                                    <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
+                                </button>
+                            ) : (
+                                <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in">
+                                    <p className="text-xs font-bold text-sky-700 dark:text-sky-300 mb-3 uppercase tracking-wide">Nova Atividade</p>
+                                    <div className="flex gap-2 mb-3">
+                                        <input 
+                                            type="text" 
+                                            placeholder="CNAE" 
+                                            value={newCnaeCode}
+                                            onChange={e => setNewCnaeCode(e.target.value)}
+                                            className="flex-1 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
+                                            aria-label="Código CNAE"
+                                        />
+                                        <select 
+                                            value={newCnaeAnexo} 
+                                            onChange={e => setNewCnaeAnexo(e.target.value)}
+                                            className="w-28 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
+                                            aria-label="Anexo do Simples"
+                                        >
+                                            <option value="I">Anexo I</option>
+                                            <option value="II">Anexo II</option>
+                                            <option value="III">Anexo III</option>
+                                            <option value="IV">Anexo IV</option>
+                                            <option value="V">Anexo V</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => setIsAddingCnae(false)} className="px-3 py-1.5 text-xs text-red-500 font-bold hover:bg-red-50 rounded">Cancelar</button>
+                                        <button onClick={handleAddNewCnae} className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded hover:bg-sky-700 shadow-sm">Confirmar</button>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <button 
+                                onClick={handleSaveMesVigente}
+                                className="btn-press w-full mt-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 shadow-md"
+                            >
+                                <SaveIcon className="w-4 h-4" />
+                                Salvar Apuração do Mês
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* ABA 3: SIMULAÇÕES & RESULTADOS */}
+                {activeTab === 'simulacoes' && (
+                    <div className="lg:col-span-3 space-y-6 animate-fade-in">
+                        <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
+                                <CalculatorIcon className="w-6 h-6 text-sky-600" /> Resumo Consolidado
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
+                                    <p className="text-xs font-bold text-slate-500 uppercase">RBT12</p>
+                                    <p className="text-2xl font-mono font-bold text-slate-800 dark:text-white">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                </div>
+                                <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
+                                    <p className="text-xs font-bold text-slate-500 uppercase">Alíquota Efetiva Global</p>
+                                    <p className="text-2xl font-mono font-bold text-sky-600 dark:text-sky-400">{resumo.aliq_eff.toFixed(2)}%</p>
+                                    <p className="text-xs text-slate-400">Nominal Ref.: {resumo.aliq_nom}%</p>
+                                </div>
+                                <div className="md:col-span-2 p-6 bg-sky-600 text-white rounded-xl shadow-lg relative overflow-hidden">
+                                    <div className="relative z-10">
+                                        <p className="text-sky-100 font-bold uppercase text-xs tracking-wider mb-1">Valor Estimado do DAS (A Pagar)</p>
+                                        <p className="text-4xl font-extrabold">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                        <p className="text-sky-200 text-sm mt-2 font-medium">Competência: {mesApuracao.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {resumo.detalhamento_anexos && resumo.detalhamento_anexos.length > 0 && (
+                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
+                                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30">
+                                    <h3 className="font-bold text-slate-700 dark:text-slate-200">Detalhamento por Anexo</h3>
+                                </div>
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
+                                        <tr>
+                                            <th className="px-6 py-3">Anexo</th>
+                                            <th className="px-6 py-3 text-right">Base Cálculo</th>
+                                            <th className="px-6 py-3 text-center">Aliq. Efetiva</th>
+                                            <th className="px-6 py-3 text-right">Valor DAS</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {(resumo.detalhamento_anexos || []).map((detalhe, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                                <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-200">
+                                                    Anexo {detalhe.anexo}
+                                                    {(detalhe.issRetido || detalhe.icmsSt) && (
+                                                        <div className="flex flex-col gap-0.5 mt-1">
+                                                            {detalhe.issRetido && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ISS Retido</span>}
+                                                            {detalhe.icmsSt && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ICMS ST</span>}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-mono text-slate-600 dark:text-slate-300">{detalhe.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                <td className="px-6 py-4 text-center font-mono text-slate-600 dark:text-slate-300">{detalhe.aliquotaEfetiva.toFixed(2)}%</td>
+                                                <td className="px-6 py-4 text-right font-mono font-bold text-sky-600 dark:text-sky-400">{detalhe.valorDas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-4">Gráfico de Evolução</h3>
+                            <div id="chart-container" className="h-80 w-full border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+                                {resumo.historico_simulado.length > 0 ? <SimpleChart type="bar" data={chartData} /> : <div className="h-full flex flex-col items-center justify-center text-slate-400"><p>Sem dados suficientes para gráfico.</p></div>}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ABA 4: HISTÓRICO & AJUSTES */}
+                {activeTab === 'historico' && (
+                    <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
+                            <div className="flex justify-between items-center mb-4">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                                        Faturamento Manual
+                                    </h3>
+                                    <p className="text-[10px] text-slate-500 font-bold">RBT12 Acumulado: <span className="text-sky-700 dark:text-sky-400 font-mono text-xs">R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
+                                </div>
+                                <button 
+                                    onClick={() => setIsHistoryModalOpen(true)}
+                                    className="btn-press text-xs flex items-center gap-1 text-white bg-sky-600 hover:bg-sky-700 font-bold px-3 py-2 rounded-lg shadow-sm transition-colors"
+                                >
+                                    <PencilIcon className="w-4 h-4" /> Editar em Lote
+                                </button>
+                            </div>
+                            
+                            <div className="max-h-96 overflow-y-auto custom-scrollbar pr-1 border border-slate-100 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/20">
+                                <table className="w-full text-sm">
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {mesesHistorico.map(m => (
+                                            <tr key={m.iso}>
+                                                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-bold text-xs capitalize">{m.label}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <span className="font-mono text-slate-700 dark:text-slate-200">
+                                                        {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {empresa.historicoCalculos && empresa.historicoCalculos.length > 0 ? (
+                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden h-fit">
+                                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                        <HistoryIcon className="w-4 h-4" /> Apurações Salvas
+                                    </h3>
+                                    
+                                    <div className="flex gap-2">
+                                        <select 
+                                            value={filterYear} 
+                                            onChange={(e) => setFilterYear(e.target.value)}
+                                            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs rounded px-2 py-1 focus:ring-2 focus:ring-sky-500 outline-none"
+                                        >
+                                            <option value="all">Todos os Anos</option>
+                                            {(availableYears as number[]).map(year => (
+                                                <option key={year} value={year}>{year}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
                                             <tr>
-                                                <th className="px-4 py-2">Tributo</th>
-                                                <th className="px-4 py-2">Incidência</th>
-                                                <th className="px-4 py-2">Alíquota Média</th>
-                                                <th className="px-4 py-2">Base Legal</th>
+                                                <th className="px-6 py-3">Competência</th>
+                                                <th className="px-6 py-3 text-right">RBT12</th>
+                                                <th className="px-6 py-3 text-right">DAS</th>
+                                                <th className="px-6 py-3 text-center">Ação</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                            {details.map((row, idx) => (
-                                                <tr key={idx}>
-                                                    <td className="px-4 py-2 font-bold">{row.tributo}</td>
-                                                    <td className="px-4 py-2">{row.incidencia}</td>
-                                                    <td className="px-4 py-2">{row.aliquotaMedia}</td>
-                                                    <td className="px-4 py-2">
-                                                        <a href={`https://www.google.com/search?q=${encodeURIComponent(row.baseLegal)}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                                                            {row.baseLegal}
-                                                        </a>
+                                            {filteredHistory.map((hist) => (
+                                                <tr key={hist.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => setSelectedHistoryItem(hist)}>
+                                                    <td className="px-6 py-3 font-medium text-slate-700 dark:text-slate-200 capitalize">
+                                                        {hist.mesReferencia}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-right font-mono text-slate-600 dark:text-slate-300">
+                                                        {hist.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-right font-mono font-bold text-sky-600 dark:text-sky-400">
+                                                        {hist.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className="px-6 py-3 text-center">
+                                                        <button className="text-slate-400 hover:text-sky-600" aria-label="Ver detalhes">
+                                                            <InfoIcon className="w-4 h-4" />
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -664,345 +1036,14 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     </table>
                                 </div>
                             </div>
-                        ))}
+                        ) : (
+                            <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-sm text-center text-slate-500">
+                                <HistoryIcon className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                                <p>Nenhum histórico de apuração salvo ainda.</p>
+                            </div>
+                        )}
                     </div>
                 )}
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Coluna Esquerda: Inputs */}
-                <div className="lg:col-span-1 space-y-6">
-                    
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Competência</label>
-                        <input 
-                            type="date" 
-                            value={mesApuracao.toISOString().substring(0, 10)}
-                            onChange={(e) => {
-                                if(e.target.value) setMesApuracao(new Date(e.target.value));
-                            }}
-                            className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white"
-                            aria-label="Mês de competência"
-                        />
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-2 border-sky-100 dark:border-sky-900">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                <CalculatorIcon className="w-5 h-5 text-sky-600" />
-                                Apuração do Mês
-                            </h3>
-                            <div className="text-right">
-                                <p className="text-[10px] text-slate-500 font-bold uppercase">Total</p>
-                                <p className="text-lg font-bold text-sky-700 dark:text-sky-400 font-mono">
-                                    R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="space-y-6">
-                            {/* ATIVIDADE PRINCIPAL */}
-                            <div>
-                                <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividade Principal</h4>
-                                {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
-                            </div>
-
-                            {/* ATIVIDADES SECUNDÁRIAS */}
-                            {(empresa.atividadesSecundarias && empresa.atividadesSecundarias.length > 0) && (
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividades Secundárias</h4>
-                                    <div className="space-y-3">
-                                        {empresa.atividadesSecundarias.map((ativ, i) => 
-                                            renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i)
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {!isAddingCnae ? (
-                            <button onClick={() => setIsAddingCnae(true)} className="w-full mt-6 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 hover:border-sky-300 dark:hover:border-sky-700 transition-colors text-xs font-bold flex justify-center items-center gap-2">
-                                <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
-                            </button>
-                        ) : (
-                            <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in">
-                                <p className="text-xs font-bold text-sky-700 dark:text-sky-300 mb-3 uppercase tracking-wide">Nova Atividade</p>
-                                <div className="flex gap-2 mb-3">
-                                    <input 
-                                        type="text" 
-                                        placeholder="CNAE" 
-                                        value={newCnaeCode}
-                                        onChange={e => setNewCnaeCode(e.target.value)}
-                                        className="flex-1 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-                                        aria-label="Código CNAE"
-                                    />
-                                    <select 
-                                        value={newCnaeAnexo} 
-                                        onChange={e => setNewCnaeAnexo(e.target.value)}
-                                        className="w-28 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-                                        aria-label="Anexo do Simples"
-                                    >
-                                        <option value="I">Anexo I</option>
-                                        <option value="II">Anexo II</option>
-                                        <option value="III">Anexo III</option>
-                                        <option value="IV">Anexo IV</option>
-                                        <option value="V">Anexo V</option>
-                                    </select>
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                    <button onClick={() => setIsAddingCnae(false)} className="px-3 py-1.5 text-xs text-red-500 font-bold hover:bg-red-50 rounded">Cancelar</button>
-                                    <button onClick={handleAddNewCnae} className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded hover:bg-sky-700 shadow-sm">Confirmar</button>
-                                </div>
-                            </div>
-                        )}
-
-                        {manualSuccess && (
-                            <div className="mt-4 p-3 bg-green-50 text-green-700 text-xs font-bold rounded-lg flex items-center gap-2">
-                                <AnimatedCheckIcon size="w-5 h-5" /> {manualSuccess}
-                            </div>
-                        )}
-                        
-                        <button 
-                            onClick={handleSaveMesVigente}
-                            className="btn-press w-full mt-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 shadow-md"
-                        >
-                            <SaveIcon className="w-4 h-4" />
-                            Salvar Apuração do Mês
-                        </button>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                        <div className="flex justify-between items-center mb-2">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                                    Faturamento Manual (Lançar/Editar)
-                                </h3>
-                                <p className="text-[10px] text-slate-500 font-bold">RBT12 Acumulado: <span className="text-sky-700 dark:text-sky-400 font-mono text-xs">R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
-                            </div>
-                             {/* BOTÃO DESTACADO PARA ABRIR MODAL DE LANÇAMENTO EM LOTE */}
-                            <button 
-                                onClick={() => setIsHistoryModalOpen(true)}
-                                className="btn-press text-xs flex items-center gap-1 text-white bg-sky-600 hover:bg-sky-700 font-bold px-3 py-2 rounded-lg shadow-sm transition-colors"
-                                title="Lançar valores de vários meses de uma vez para compor o RBT12"
-                            >
-                                <PencilIcon className="w-4 h-4" /> Editar em Lote (12 Meses)
-                            </button>
-                        </div>
-                        
-                        {/* Tabela Compacta de Visualização Rápida */}
-                        <div className="max-h-60 overflow-y-auto custom-scrollbar pr-1 border border-slate-100 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/20">
-                            <table className="w-full text-sm">
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                    {mesesHistorico.map(m => (
-                                        <tr key={m.iso}>
-                                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-bold text-xs capitalize">{m.label}</td>
-                                            <td className="px-3 py-2 text-right">
-                                                <span className="font-mono text-slate-700 dark:text-slate-200">
-                                                    {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                        {historySuccess && (
-                            <div className="mt-2 p-2 bg-green-50 text-green-700 text-xs font-bold rounded flex items-center gap-2 justify-center">
-                                <AnimatedCheckIcon size="w-4 h-4" /> {historySuccess}
-                            </div>
-                        )}
-                        <div className="flex gap-2 mt-4">
-                             <button onClick={handleReplicarUltimoValor} className="flex-1 btn-press py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors text-xs" title="Replicar o valor mais recente para todos os 12 meses">
-                                Replicar Último
-                            </button>
-                            <button onClick={() => handleSaveHistorico()} className="flex-1 btn-press py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors text-xs">
-                                Salvar Faturamento Manual
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
-                            <UserIcon className="w-4 h-4 text-sky-600" /> Folha de Salários (12m)
-                        </h3>
-                        <CurrencyInput value={folha12Input} onChange={setFolha12Input} label="Valor Total Folha" tooltip="Soma da folha de salários dos últimos 12 meses (incluindo encargos) para cálculo do Fator R." />
-                        <button onClick={() => onUpdateFolha12(empresa.id, folha12Input)} className="btn-press w-full mt-2 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors">
-                            Atualizar Folha
-                        </button>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center gap-2">
-                            <DownloadIcon className="w-4 h-4 text-sky-600" /> Importar Arquivo
-                        </h3>
-                        <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-4 text-center relative hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer">
-                            <input 
-                                type="file" 
-                                accept=".pdf, .xml, .xlsx, .xls"
-                                onChange={handleFileUpload}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                disabled={isImporting}
-                                aria-label="Upload de arquivo para importação"
-                            />
-                            {isImporting ? <LoadingSpinner /> : <p className="text-xs text-slate-500 font-bold">Clique para enviar (XML/PDF/XLS)</p>}
-                        </div>
-                        {importResult && (
-                            <div className="mt-2 text-xs">
-                                <p className="text-green-600 font-bold">Sucesso: {importResult.successCount}</p>
-                                <p className="text-red-500 font-bold">Falhas: {importResult.failCount}</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Direita: Resultados */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
-                             <CalculatorIcon className="w-6 h-6 text-sky-600" /> Resumo
-                        </h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
-                                <p className="text-xs font-bold text-slate-500 uppercase">RBT12</p>
-                                <p className="text-2xl font-mono font-bold text-slate-800 dark:text-white">R$ {resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                            </div>
-                            <div className="p-4 bg-white dark:bg-slate-700/50 rounded-lg border border-slate-100 dark:border-slate-600">
-                                <p className="text-xs font-bold text-slate-500 uppercase">Alíquota Efetiva</p>
-                                <p className="text-2xl font-mono font-bold text-sky-600 dark:text-sky-400">{resumo.aliq_eff.toFixed(2)}%</p>
-                                <p className="text-xs text-slate-400">Nominal: {resumo.aliq_nom}%</p>
-                            </div>
-                            <div className="md:col-span-2 p-6 bg-sky-600 text-white rounded-xl shadow-lg relative overflow-hidden">
-                                <div className="relative z-10">
-                                    <p className="text-sky-100 font-bold uppercase text-xs tracking-wider mb-1">Valor Estimado do DAS (A Pagar)</p>
-                                    <p className="text-4xl font-extrabold">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                    <p className="text-sky-200 text-sm mt-2 font-medium">Competência: {mesApuracao.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {resumo.detalhamento_anexos && resumo.detalhamento_anexos.length > 0 && (
-                        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30">
-                                <div className="flex justify-between items-center">
-                                    <h3 className="font-bold text-slate-700 dark:text-slate-200">Detalhamento por Anexo</h3>
-                                </div>
-                            </div>
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
-                                    <tr>
-                                        <th className="px-6 py-3">Anexo</th>
-                                        <th className="px-6 py-3 text-right">Base Cálculo</th>
-                                        <th className="px-6 py-3 text-center">Aliq. Efetiva</th>
-                                        <th className="px-6 py-3 text-right">Valor DAS</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                    {(resumo.detalhamento_anexos || ([] as DetalhamentoAnexo[])).map((detalhe, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                                            <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-200">
-                                                Anexo {detalhe.anexo}
-                                                {(detalhe.issRetido || detalhe.icmsSt) && (
-                                                    <div className="flex flex-col gap-0.5 mt-1">
-                                                        {detalhe.issRetido && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ISS Retido</span>}
-                                                        {detalhe.icmsSt && <span className="text-[10px] bg-sky-100 text-sky-700 px-1.5 rounded w-fit font-bold">ICMS ST</span>}
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 text-right font-mono text-slate-600 dark:text-slate-300">{detalhe.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                            <td className="px-6 py-4 text-center font-mono text-slate-600 dark:text-slate-300">{detalhe.aliquotaEfetiva.toFixed(2)}%</td>
-                                            <td className="px-6 py-4 text-right font-mono font-bold text-sky-600 dark:text-sky-400">{detalhe.valorDas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-
-                    {/* Histórico de Apurações Salvas */}
-                    {empresa.historicoCalculos && empresa.historicoCalculos.length > 0 && (
-                        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                    <HistoryIcon className="w-4 h-4" /> Histórico de Apurações
-                                </h3>
-                                
-                                <div className="flex gap-2">
-                                    <select 
-                                        value={filterMonth} 
-                                        onChange={(e) => setFilterMonth(e.target.value)}
-                                        className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs rounded px-2 py-1 focus:ring-2 focus:ring-sky-500 outline-none"
-                                        aria-label="Filtrar por mês"
-                                    >
-                                        <option value="all">Todos os Meses</option>
-                                        {Array.from({ length: 12 }, (_, i) => (
-                                            <option key={i} value={i}>{new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}</option>
-                                        ))}
-                                    </select>
-
-                                    <select 
-                                        value={filterYear} 
-                                        onChange={(e) => setFilterYear(e.target.value)}
-                                        className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs rounded px-2 py-1 focus:ring-2 focus:ring-sky-500 outline-none"
-                                        aria-label="Filtrar por ano"
-                                    >
-                                        <option value="all">Todos os Anos</option>
-                                        {availableYears.map(year => (
-                                            <option key={year} value={year}>{year}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
-                                        <tr>
-                                            <th className="px-6 py-3">Competência</th>
-                                            <th className="px-6 py-3 text-right">RBT12</th>
-                                            <th className="px-6 py-3 text-right">DAS</th>
-                                            <th className="px-6 py-3 text-center">Ação</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                        {filteredHistory.map((hist) => (
-                                            <tr key={hist.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => setSelectedHistoryItem(hist)}>
-                                                <td className="px-6 py-3 font-medium text-slate-700 dark:text-slate-200 capitalize">
-                                                    {hist.mesReferencia}
-                                                </td>
-                                                <td className="px-6 py-3 text-right font-mono text-slate-600 dark:text-slate-300">
-                                                    {hist.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </td>
-                                                <td className="px-6 py-3 text-right font-mono font-bold text-sky-600 dark:text-sky-400">
-                                                    {hist.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </td>
-                                                <td className="px-6 py-3 text-center">
-                                                    <button className="text-slate-400 hover:text-sky-600" aria-label="Ver detalhes">
-                                                        <InfoIcon className="w-4 h-4" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {filteredHistory.length === 0 && (
-                                            <tr>
-                                                <td colSpan={4} className="px-6 py-8 text-center text-slate-400 dark:text-slate-500">
-                                                    Nenhum histórico encontrado para este filtro.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200 mb-4">Gráfico de Evolução</h3>
-                        <div id="chart-container" className="h-80 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm">
-                            {resumo.historico_simulado.length > 0 ? <SimpleChart type="bar" data={chartData} /> : <div className="h-full flex flex-col items-center justify-center text-slate-400"><p>Sem dados.</p></div>}
-                        </div>
-                    </div>
-                </div>
             </div>
 
             {/* Modal de Detalhes do Histórico */}

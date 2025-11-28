@@ -1,5 +1,5 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, initializeAuth, browserLocalPersistence } from 'firebase/auth';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // --- CONFIGURAÇÃO DO FIREBASE ---
@@ -24,16 +24,32 @@ let db: any;
 
 if (isFirebaseConfigured) {
     try {
-        app = initializeApp(firebaseConfig);
-        // Use initializeAuth with browserLocalPersistence to avoid IndexedDB issues (app/idb-set errors)
-        auth = initializeAuth(app, {
-            persistence: browserLocalPersistence
-        });
+        // Previne inicialização duplicada (Erro comum em React Strict Mode / HMR)
+        // Isso corrige o erro: "Failed to execute 'transaction' on 'IDBDatabase'"
+        if (getApps().length === 0) {
+            app = initializeApp(firebaseConfig);
+            
+            // Tenta inicializar com persistência Local (Padrão)
+            try {
+                auth = initializeAuth(app, {
+                    persistence: browserLocalPersistence
+                });
+            } catch (authError) {
+                console.warn("Auth persistence error, falling back to standard getAuth:", authError);
+                // Fallback seguro: usa getAuth padrão se a inicialização explícita falhar
+                auth = getAuth(app); 
+            }
+        } else {
+            // Se já existe, reutiliza a instância (evita crash)
+            app = getApp();
+            auth = getAuth(app);
+        }
+
         db = getFirestore(app);
-        console.log("Firebase conectado com sucesso (Persistência Local).");
+        console.log("Firebase conectado com sucesso (Nuvem Ativa).");
     } catch (e) {
-        console.error("Erro ao inicializar Firebase:", e);
-        // Fallback para evitar crash total se as chaves estiverem erradas
+        console.error("Erro Crítico ao inicializar Firebase:", e);
+        // Fallback para evitar crash total se as chaves estiverem erradas ou erro de rede grave
         isFirebaseConfigured = false;
     }
 } else {

@@ -404,6 +404,7 @@ const App: React.FC = () => {
       setSimplesEmpresas(prev => [...prev, newEmpresa]);
       if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
       setSimplesView('dashboard');
+      setToastMessage("Empresa cadastrada com sucesso!");
   };
 
   const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
@@ -414,6 +415,7 @@ const App: React.FC = () => {
           setSimplesNotas(notas);
           setSimplesEmpresas(empresas); 
           if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'import_notas', empresaId);
+          setToastMessage(result.successCount > 0 ? `${result.successCount} registros importados com sucesso!` : "Nenhum dado importado.");
           return result;
       } catch (e: any) {
           return { successCount: 0, failCount: 0, errors: [e.message] };
@@ -424,6 +426,7 @@ const App: React.FC = () => {
       simplesService.updateFolha12(empresaId, val);
       const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, folha12: val } : e);
       setSimplesEmpresas(updated);
+      setToastMessage("Folha de salários atualizada!");
       return updated.find(e => e.id === empresaId) || null;
   };
 
@@ -431,6 +434,7 @@ const App: React.FC = () => {
       simplesService.saveFaturamentoManual(empresaId, faturamento);
       const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, faturamentoManual: faturamento } : e);
       setSimplesEmpresas(updated);
+      setToastMessage("Histórico de faturamento salvo!");
       return updated.find(e => e.id === empresaId) || null;
   };
   
@@ -438,6 +442,7 @@ const App: React.FC = () => {
       simplesService.updateEmpresa(empresaId, data);
       const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, ...data } : e);
       setSimplesEmpresas(updated);
+      setToastMessage("Dados da empresa atualizados!");
       return updated.find(e => e.id === empresaId) || null;
   }
 
@@ -515,8 +520,8 @@ const App: React.FC = () => {
                         ))}
                     </div>
 
-                    {/* Standard Search Views (CFOP, NCM, Serviço) */}
-                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO].includes(searchType) && (
+                    {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro) */}
+                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
                         <>
                             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in">
                                 <div className="flex items-center gap-4 mb-4">
@@ -530,7 +535,7 @@ const App: React.FC = () => {
                                         onClick={() => setMode('compare')}
                                         className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${mode === 'compare' ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
                                     >
-                                        Comparar Códigos
+                                        Comparar Tópicos
                                     </button>
                                 </div>
 
@@ -544,7 +549,7 @@ const App: React.FC = () => {
                                             value={query1}
                                             onChange={(e) => { setQuery1(e.target.value); if(validationErrors.query1) setValidationErrors({...validationErrors, query1: ''}); }}
                                             onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
-                                            placeholder={mode === 'single' ? `Digite o código ou descrição do ${searchType}` : `Primeiro código ${searchType}`}
+                                            placeholder={mode === 'single' ? `Digite o termo ou dúvida sobre ${searchType}` : `Primeiro termo ${searchType}`}
                                             className={`w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.query1 ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'}`}
                                             aria-label="Campo de busca principal"
                                             aria-invalid={!!validationErrors.query1}
@@ -563,7 +568,7 @@ const App: React.FC = () => {
                                                 value={query2}
                                                 onChange={(e) => { setQuery2(e.target.value); if(validationErrors.query2) setValidationErrors({...validationErrors, query2: ''}); }}
                                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch(query1, query2)}
-                                                placeholder={`Segundo código ${searchType}`}
+                                                placeholder={`Segundo termo ${searchType}`}
                                                 className={`w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent outline-none transition-all text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.query2 ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-700'}`}
                                                 aria-label="Segundo campo de busca para comparação"
                                             />
@@ -579,7 +584,7 @@ const App: React.FC = () => {
                                         {isLoading ? (
                                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                            <span>Consultar</span>
+                                            <span>Consultar IA</span>
                                         )}
                                     </button>
                                 </div>
@@ -717,12 +722,14 @@ const App: React.FC = () => {
                                     notas={simplesNotas}
                                     onSelectEmpresa={(id, view) => { setSelectedSimplesEmpresaId(id); setSimplesView(view); }} 
                                     onAddNew={() => setSimplesView('nova')}
+                                    onShowToast={(msg) => setToastMessage(msg)}
                                 />
                             )}
                             {simplesView === 'nova' && (
                                 <SimplesNacionalNovaEmpresa 
                                     onSave={handleSaveSimplesEmpresa} 
                                     onCancel={() => setSimplesView('dashboard')} 
+                                    onShowToast={(msg) => setToastMessage(msg)}
                                 />
                             )}
                             {simplesView === 'detalhe' && selectedEmpresa && (
@@ -735,6 +742,7 @@ const App: React.FC = () => {
                                     onSaveFaturamentoManual={handleSaveFaturamentoManual}
                                     onUpdateEmpresa={handleUpdateEmpresa}
                                     onShowClienteView={() => setSimplesView('cliente')}
+                                    onShowToast={(msg) => setToastMessage(msg)}
                                 />
                             )}
                             {simplesView === 'cliente' && selectedEmpresa && (
@@ -794,7 +802,7 @@ const App: React.FC = () => {
                         onSelectService={(code) => { setQuery1(code); handleSearch(code); }}
                     />
 
-                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA].includes(searchType) && !result && (
+                    {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.REFORMA_TRIBUTARIA, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && !result && (
                         <PopularSuggestions searchType={searchType} onSelect={(code) => { 
                             if (searchType === SearchType.REFORMA_TRIBUTARIA) setReformaQuery(code);
                             else setQuery1(code); 
@@ -805,9 +813,10 @@ const App: React.FC = () => {
                         <NewsAlerts />
                     )}
                     
-                    {searchType !== SearchType.SIMPLES_NACIONAL && searchType !== SearchType.LUCRO_PRESUMIDO_REAL && (
+                    {/* Allow tax alerts/results to show for Simples/Lucro if a search was performed */}
+                    {(result && (searchType === SearchType.SIMPLES_NACIONAL || searchType === SearchType.LUCRO_PRESUMIDO_REAL)) || (searchType !== SearchType.SIMPLES_NACIONAL && searchType !== SearchType.LUCRO_PRESUMIDO_REAL) ? (
                         <TaxAlerts results={result ? [result] : []} searchType={searchType} />
-                    )}
+                    ) : null}
                 </main>
 
                 {/* Sidebar */}

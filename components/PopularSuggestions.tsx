@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { SearchType } from '../types';
-import { TagIcon, BuildingIcon, DocumentTextIcon, CalculatorIcon } from './Icons';
+import { TagIcon, BuildingIcon, DocumentTextIcon, CalculatorIcon, ShieldIcon } from './Icons';
 
 interface PopularSuggestionsProps {
     searchType: SearchType;
@@ -44,6 +43,24 @@ const popularCnaes = [
     { code: '4930-2/02', description: 'Transporte rodoviário de carga' },
 ];
 
+const popularSimples = [
+    { code: 'O que é Fator R?', description: 'Entenda o cálculo de 28%' },
+    { code: 'Limites de Faturamento', description: 'R$ 4.8M e Sublimites' },
+    { code: 'Tabelas dos Anexos', description: 'I, II, III, IV e V' },
+    { code: 'Atividades Vedadas', description: 'O que não pode optar' },
+    { code: 'Cálculo do DAS', description: 'Como é feito o apuro' },
+    { code: 'Simples vs Presumido', description: 'Comparativo básico' },
+];
+
+const popularLucro = [
+    { code: 'Presunção IRPJ/CSLL', description: 'Base de cálculo Comércio/Serviço' },
+    { code: 'PIS/COFINS Cumulativo', description: 'Regras do Lucro Presumido' },
+    { code: 'PIS/COFINS Não Cumulativo', description: 'Regras do Lucro Real' },
+    { code: 'Adicional de IRPJ', description: '10% sobre excedente de 20k' },
+    { code: 'Obrigações Acessórias', description: 'ECD, ECF, DCTF' },
+    { code: 'Lucro Real Trimestral', description: 'Vantagens e desvantagens' },
+];
+
 export const PopularSuggestions: React.FC<PopularSuggestionsProps> = ({ searchType, onSelect }) => {
     let items = [];
     let icon = <TagIcon className="w-4 h-4" />;
@@ -65,14 +82,22 @@ export const PopularSuggestions: React.FC<PopularSuggestionsProps> = ({ searchTy
             icon = <CalculatorIcon className="w-4 h-4" />;
             label = "CNAEs Impactados";
             break;
+        case SearchType.SIMPLES_NACIONAL:
+            items = popularSimples;
+            icon = <CalculatorIcon className="w-4 h-4" />;
+            label = "Consultas Frequentes";
+            break;
+        case SearchType.LUCRO_PRESUMIDO_REAL:
+            items = popularLucro;
+            icon = <ShieldIcon className="w-4 h-4" />;
+            label = "Tópicos Importantes";
+            break;
         case SearchType.CFOP:
         default:
             items = popularCfops;
             label = "CFOPs Populares";
             break;
     }
-
-    if (searchType === SearchType.SIMPLES_NACIONAL) return null;
 
     return (
         <div className="mt-8 animate-fade-in">

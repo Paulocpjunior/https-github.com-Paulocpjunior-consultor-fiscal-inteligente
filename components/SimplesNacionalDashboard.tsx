@@ -9,9 +9,10 @@ interface SimplesNacionalDashboardProps {
     onSelectEmpresa: (id: string, view: 'detalhe' | 'cliente') => void;
     onAddNew: () => void;
     currentUser?: User | null;
+    onShowToast?: (msg: string) => void;
 }
 
-const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew, currentUser }) => {
+const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew, currentUser, onShowToast }) => {
     
     const empresasComResumo = useMemo(() => {
         return empresas.map(empresa => {

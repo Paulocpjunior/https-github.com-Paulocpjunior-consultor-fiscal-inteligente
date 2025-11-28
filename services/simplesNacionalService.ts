@@ -86,26 +86,19 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     }
 
     // 3. Mescla Inteligente (Unifica listas por ID)
+    // Isso resolve o problema de dados não aparecendo se o Firebase falhar.
+    // Usamos um Map onde a chave é o ID. Se existir no Firebase, usa o Firebase. Se não, usa o local.
     const empresaMap = new Map<string, SimplesNacionalEmpresa>();
 
-    // Adiciona as da nuvem primeiro
+    // Primeiro popula com Firebase (fonte da verdade quando disponível)
     firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
 
-    // Adiciona/Sobrescreve com as locais
-    // Isso garante que se uma empresa foi criada/editada offline (local), ela apareça mesmo se não estiver na nuvem
+    // Depois tenta inserir os locais. Se o ID já existir, NÃO sobrescreve (presume que nuvem é mais atual),
+    // EXCETO se a lista da nuvem estiver vazia ou incompleta devido a erros parciais.
+    // Mas para garantir que itens NOVOS criados offline apareçam:
     filteredLocal.forEach(e => {
-        // Prioridade para o local se não existir na nuvem ou se quisermos forçar o estado local
-        // Neste caso, se a nuvem falhou ao salvar (permissão negada), a versão local é a única que existe ou a mais atual.
         if (!empresaMap.has(e.id)) {
             empresaMap.set(e.id, e);
-        } else {
-            // Se existe em ambos, normalmente a nuvem ganha.
-            // MAS, se tivermos problemas de permissão de escrita, a versão local pode ter alterações não salvas.
-            // Para segurança neste cenário específico de "permissão negada", podemos manter o local como fallback.
-            // No entanto, para evitar sobrescrever dados da nuvem com dados obsoletos locais em sessões normais, 
-            // a estratégia padrão é Nuvem > Local. 
-            // Apenas itens NOVOS (que falharam o save inicial) estarão apenas no local.
-            // Portanto, o `if (!empresaMap.has(e.id))` acima já resolve o problema de "não salvando novas empresas".
         }
     });
 
@@ -184,28 +177,36 @@ export const getAllNotas = async (): Promise<Record<string, SimplesNacionalNota[
 // --- PARSER HELPERS ---
 
 const parseXmlNfe = (xmlContent: string): any[] => {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
-    const notes: any[] = [];
-    
-    const nfeNodes = xmlDoc.getElementsByTagName("infNFe");
-    
-    for (let i = 0; i < nfeNodes.length; i++) {
-        const node = nfeNodes[i];
-        const dhEmi = node.getElementsByTagName("dhEmi")[0]?.textContent || node.getElementsByTagName("dEmi")[0]?.textContent;
-        const vNF = node.getElementsByTagName("vNF")[0]?.textContent; // Total Value
-        const xNome = node.getElementsByTagName("emit")[0]?.getElementsByTagName("xNome")[0]?.textContent;
+    try {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
+        const notes: any[] = [];
         
-        if (dhEmi && vNF) {
-            notes.push({
-                data: dhEmi.split('T')[0],
-                valor: parseFloat(vNF),
-                descricao: "NFe Importada (XML)",
-                origem: xNome || "XML"
-            });
+        // Verifica se é uma NFe válida antes de iterar
+        if (xmlDoc.getElementsByTagName("parsererror").length > 0) return [];
+
+        const nfeNodes = xmlDoc.getElementsByTagName("infNFe");
+        
+        for (let i = 0; i < nfeNodes.length; i++) {
+            const node = nfeNodes[i];
+            const dhEmi = node.getElementsByTagName("dhEmi")[0]?.textContent || node.getElementsByTagName("dEmi")[0]?.textContent;
+            const vNF = node.getElementsByTagName("vNF")[0]?.textContent; // Total Value
+            const xNome = node.getElementsByTagName("emit")[0]?.getElementsByTagName("xNome")[0]?.textContent;
+            
+            if (dhEmi && vNF) {
+                notes.push({
+                    data: dhEmi.split('T')[0],
+                    valor: parseFloat(vNF),
+                    descricao: "NFe Importada (XML)",
+                    origem: xNome || "XML"
+                });
+            }
         }
+        return notes;
+    } catch (e) {
+        console.warn("Falha no parser local de XML, tentando via IA:", e);
+        return [];
     }
-    return notes;
 };
 
 export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
@@ -217,7 +218,8 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         if (fileType.endsWith('.pdf')) {
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
             
-            // Try PGDAS Extraction first (official extract)
+            // 1. Tentar extrair Extrato PGDAS (Oficial do Simples Nacional)
+            // A função extractPgdasDataFromPdf foi aprimorada para detectar tabelas complexas do PGDAS
             const pgdasHistory = await extractPgdasDataFromPdf(base64);
             
             if (pgdasHistory && pgdasHistory.length > 0) {
@@ -225,39 +227,64 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                 const emp = empresas.find(e => e.id === empresaId);
                 if (emp) {
                     const currentHistory = emp.faturamentoManual || {};
+                    let updatesCount = 0;
+                    
                     pgdasHistory.forEach((item: any) => {
-                        if (item.periodo && item.valor) {
-                            let key = item.periodo;
+                        if (item.periodo && (typeof item.valor === 'number')) {
+                            let key = item.periodo; // Esperado MM/YYYY ou YYYY-MM
+                            
+                            // Normalizar formato de data para YYYY-MM
                             if (key.includes('/')) {
                                 const parts = key.split('/');
                                 if (parts.length === 2) key = `${parts[1]}-${parts[0]}`;
                             }
+                            
                             currentHistory[key] = item.valor;
+                            updatesCount++;
                         }
                     });
-                    await updateEmpresa(empresaId, { faturamentoManual: currentHistory });
-                    return { successCount: pgdasHistory.length, failCount: 0, errors: ["Histórico PGDAS atualizado com sucesso!"] };
+                    
+                    if (updatesCount > 0) {
+                        await updateEmpresa(empresaId, { faturamentoManual: currentHistory });
+                        return { 
+                            successCount: updatesCount, 
+                            failCount: 0, 
+                            errors: [`Extrato PGDAS processado! ${updatesCount} meses de histórico atualizados.`] 
+                        };
+                    }
                 }
             }
             
-            // If not PGDAS, try generic invoice
+            // 2. Se não for PGDAS, tentar extração genérica de notas (PDF/Imagem)
             extractedData = await extractDocumentData(base64, 'application/pdf');
+
         } else if (fileType.endsWith('.xml')) {
+            // Tentar parser local primeiro (mais rápido e barato)
             const textDecoder = new TextDecoder('utf-8');
             const xmlContent = textDecoder.decode(buffer);
             extractedData = parseXmlNfe(xmlContent);
-        } else {
+
+            // Fallback para IA se o parser local falhar ou não encontrar notas (ex: XML de prefeitura específica)
+            if (extractedData.length === 0) {
+                // Passa o conteúdo do XML como texto para a IA (limitado por tamanho se necessário)
+                // Usamos 'application/xml' ou 'text/plain' como indicação para a IA
+                const base64 = btoa(unescape(encodeURIComponent(xmlContent))); // Safe btoa for utf8
+                extractedData = await extractDocumentData(base64, 'text/xml');
+            }
+
+        } else if (fileType.endsWith('.xlsx') || fileType.endsWith('.xls')) {
+            // Suporte a planilhas Excel via Gemini
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-            const mimeType = fileType.endsWith('.xlsx') || fileType.endsWith('.xls') 
-                ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-                : 'application/pdf';
+            const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             extractedData = await extractDocumentData(base64, mimeType);
+        } else {
+            throw new Error("Formato de arquivo não suportado.");
         }
     } catch (e: any) {
-        throw new Error("Erro na importação: " + e.message);
+        throw new Error("Erro no processamento do arquivo: " + e.message);
     }
 
-    if (!extractedData || extractedData.length === 0) return { successCount: 0, failCount: 0, errors: ["Nenhum dado válido encontrado."] };
+    if (!extractedData || extractedData.length === 0) return { successCount: 0, failCount: 0, errors: ["Nenhum dado válido encontrado pelo sistema inteligente."] };
 
     const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
     const notasMap = stored ? JSON.parse(stored) : {};
@@ -265,18 +292,29 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
     
     let success = 0;
     extractedData.forEach(item => {
-        if(item.data && item.valor) {
-            notasMap[empresaId].push({
-                id: generateUUID(),
-                empresaId,
-                data: new Date(item.data).getTime(),
-                valor: typeof item.valor === 'string' ? parseFloat(item.valor) : item.valor,
-                descricao: item.descricao || "Importado",
-                origem: item.origem || (fileType.endsWith('.xml') ? "XML" : "Importação AI")
-            });
-            success++;
+        // Validação flexível dos campos retornados pela IA
+        if(item.data && (item.valor !== undefined && item.valor !== null)) {
+            // Tentar normalizar data se vier DD/MM/YYYY
+            let dateVal = new Date(item.data).getTime();
+            if (isNaN(dateVal) && item.data.includes('/')) {
+                const parts = item.data.split('/');
+                if (parts.length === 3) dateVal = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
+            }
+
+            if (!isNaN(dateVal)) {
+                notasMap[empresaId].push({
+                    id: generateUUID(),
+                    empresaId,
+                    data: dateVal,
+                    valor: typeof item.valor === 'string' ? parseFloat(item.valor.replace('R$', '').replace('.', '').replace(',', '.')) : item.valor,
+                    descricao: item.descricao || "Importado via IA",
+                    origem: item.origem || (fileType.toUpperCase().replace('.', '') + " Import")
+                });
+                success++;
+            }
         }
     });
+    
     localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(notasMap));
     return { successCount: success, failCount: extractedData.length - success, errors: [] };
 };

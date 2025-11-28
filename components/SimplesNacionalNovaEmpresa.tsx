@@ -10,6 +10,7 @@ import { FormattedText } from './FormattedText';
 interface SimplesNacionalNovaEmpresaProps {
     onSave: (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => void;
     onCancel: () => void;
+    onShowToast?: (message: string) => void;
 }
 
 const anexoDescriptions: Record<SimplesNacionalAnexo, string> = {
@@ -21,7 +22,7 @@ const anexoDescriptions: Record<SimplesNacionalAnexo, string> = {
     'III_V': 'Serviços com Fator R (III/V automático)',
 };
 
-const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({ onSave, onCancel }) => {
+const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({ onSave, onCancel, onShowToast }) => {
     const [nome, setNome] = useState('');
     const [cnpj, setCnpj] = useState('');
     const [cnae, setCnae] = useState('');
@@ -45,7 +46,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
     const suggestionsRef = useRef<HTMLDivElement>(null);
 
-    // Estado para Validação de CNAE (Modal) - Modificado para string | null
+    // Estado para Validação de CNAE (Modal)
     const [isValidatingCnae, setIsValidatingCnae] = useState<string | null>(null); 
     const [cnaeAnalysis, setCnaeAnalysis] = useState<string | null>(null);
 
@@ -133,6 +134,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         }
         setError('');
         onSave(nome, cnpj, cnae, anexo, atividadesSecundarias);
+        if (onShowToast) onShowToast("Empresa salva com sucesso!");
     };
 
     const handleCnpjVerification = async () => {
@@ -181,11 +183,11 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         if (cnaeSuggestions.length === 0 && !isSearchingCnae) return null;
 
         return (
-            <div ref={suggestionsRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto animate-fade-in">
+            <div ref={suggestionsRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-fade-in top-full left-0">
                 {isSearchingCnae && (
                      <div className="p-4 flex justify-center items-center gap-2 text-sm text-slate-500">
                         <LoadingSpinner />
-                        <span className="ml-2">Buscando na legislação vigente...</span>
+                        <span className="ml-2">Buscando na legislação...</span>
                      </div>
                 )}
                 {!isSearchingCnae && cnaeSuggestions.map((s) => (
@@ -193,13 +195,13 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                         key={s.code}
                         type="button"
                         onClick={() => handleSelectSuggestion(s)}
-                        className="w-full text-left px-4 py-2.5 hover:bg-sky-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
+                        className="w-full text-left px-4 py-3 hover:bg-sky-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
                     >
                         <div className="flex items-center justify-between">
                             <span className="font-bold text-sky-600 dark:text-sky-400 text-sm">{s.code}</span>
-                            <span className="text-xs bg-slate-100 dark:bg-slate-600 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-300">CNAE</span>
+                            <span className="text-[10px] bg-slate-100 dark:bg-slate-600 px-1.5 py-0.5 rounded text-slate-500 dark:text-slate-300 font-bold uppercase">CNAE</span>
                         </div>
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 truncate">{s.description}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 truncate font-medium">{s.description}</p>
                     </button>
                 ))}
             </div>
@@ -224,7 +226,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                 value={cnpj}
                                 onChange={(e) => setCnpj(e.target.value)}
                                 placeholder="00.000.000/0001-00"
-                                className="flex-grow w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                className="flex-grow w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono"
                                 required
                             />
                             <button
@@ -260,7 +262,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                 CNAE Principal
                                 <SearchIcon className="w-3 h-3 text-slate-400" />
                             </label>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 relative">
                                 <input
                                     type="text"
                                     id="cnae"
@@ -311,12 +313,13 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                     )}
 
                     {/* Seção de Atividades Secundárias */}
-                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4 relative">
                         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
                             Atividades Secundárias / Outros CNAEs
                         </h3>
-                        <div className="flex gap-2 mb-3 relative">
+                        <div className="flex gap-2 mb-3 relative items-end">
                              <div className="flex-grow relative">
+                                <label className="text-xs text-slate-500 uppercase font-bold mb-1 block">CNAE Secundário</label>
                                 <input
                                     type="text"
                                     value={newAtividadeCnae}
@@ -327,22 +330,25 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                 />
                                 {activeCnaeField === 'secundario' && renderSuggestions()}
                              </div>
-                             <select
-                                value={newAtividadeAnexo}
-                                onChange={(e) => setNewAtividadeAnexo(e.target.value as SimplesNacionalAnexo)}
-                                className="w-32 pl-2 pr-2 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                            >
-                                <option value="I">Anexo I</option>
-                                <option value="II">Anexo II</option>
-                                <option value="III">Anexo III</option>
-                                <option value="IV">Anexo IV</option>
-                                <option value="V">Anexo V</option>
-                                <option value="III_V">III/V</option>
-                            </select>
+                             <div className="w-32">
+                                 <label className="text-xs text-slate-500 uppercase font-bold mb-1 block">Anexo</label>
+                                 <select
+                                    value={newAtividadeAnexo}
+                                    onChange={(e) => setNewAtividadeAnexo(e.target.value as SimplesNacionalAnexo)}
+                                    className="w-full pl-2 pr-2 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                >
+                                    <option value="I">Anexo I</option>
+                                    <option value="II">Anexo II</option>
+                                    <option value="III">Anexo III</option>
+                                    <option value="IV">Anexo IV</option>
+                                    <option value="V">Anexo V</option>
+                                    <option value="III_V">III/V</option>
+                                </select>
+                             </div>
                             <button
                                 type="button"
                                 onClick={handleAddAtividade}
-                                className="btn-press p-2 bg-slate-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600"
+                                className="btn-press p-2 bg-slate-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 h-[38px] w-[38px] flex items-center justify-center"
                                 title="Adicionar Atividade"
                             >
                                 <PlusIcon className="w-5 h-5" />
