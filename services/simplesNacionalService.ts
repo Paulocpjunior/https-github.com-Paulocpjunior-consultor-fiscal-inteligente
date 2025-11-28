@@ -1,3 +1,4 @@
+
 import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo, User } from '../types';
 import { extractDocumentData, extractPgdasDataFromPdf } from './geminiService';
 import { db, isFirebaseConfigured, auth } from './firebaseConfig';
@@ -15,12 +16,49 @@ export const ANEXOS_TABELAS: any = {
     "V": [{"limite":180000,"aliquota":15.5,"parcela":0},{"limite":360000,"aliquota":18,"parcela":4500},{"limite":720000,"aliquota":19.5,"parcela":9900},{"limite":1800000,"aliquota":20.5,"parcela":17100},{"limite":3600000,"aliquota":23,"parcela":62100},{"limite":4800000,"aliquota":30.5,"parcela":540000}]
 };
 
+// Tabela Completa de Repartição dos Tributos (Percentuais da Alíquota Efetiva)
+// Fonte: LC 123/2006 atualizada
 export const REPARTICAO_IMPOSTOS: any = {
-    "I": { 0: { "IRPJ": 5.5, "CSLL": 3.5, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.5, "ICMS": 34.0 }, 5: { "IRPJ": 13.5, "CSLL": 10.0, "COFINS": 28.27, "PIS": 6.13, "CPP": 42.1, "ICMS": 0.0 } },
-    "II": { 0: { "IRPJ": 5.5, "CSLL": 3.5, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.5, "IPI": 7.5, "ICMS": 32.0 } },
-    "III": { 0: { "IRPJ": 4.0, "CSLL": 3.5, "COFINS": 12.82, "PIS": 2.78, "CPP": 43.4, "ISS": 33.5 } },
-    "IV": { 0: { "IRPJ": 18.8, "CSLL": 15.2, "COFINS": 17.67, "PIS": 3.83, "CPP": 0.0, "ISS": 44.5 } }, // CPP recolhido fora
-    "V": { 0: { "IRPJ": 4.0, "CSLL": 3.5, "COFINS": 12.82, "PIS": 2.78, "CPP": 28.85, "ISS": 48.05 } }
+    "I": { // Comércio
+        0: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 }, // 1ª Faixa
+        1: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 }, // 2ª Faixa
+        2: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 3ª Faixa
+        3: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 4ª Faixa
+        4: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 5ª Faixa
+        5: { "IRPJ": 13.50, "CSLL": 10.00, "COFINS": 28.27, "PIS": 6.13, "CPP": 42.10, "ICMS": 0.00 }  // 6ª Faixa (ICMS Fixo/Separado em alguns casos, mas na regra geral segue. Ajustado conforme LC)
+    },
+    "II": { // Indústria
+        0: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
+        1: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
+        2: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
+        3: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
+        4: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
+        5: { "IRPJ": 8.50, "CSLL": 7.50, "COFINS": 20.96, "PIS": 4.54, "CPP": 23.50, "IPI": 35.00, "ICMS": 0.00 }
+    },
+    "III": { // Serviços (Sem CPP separado)
+        0: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 43.40, "ISS": 33.50 },
+        1: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 14.05, "PIS": 3.05, "CPP": 43.40, "ISS": 32.00 },
+        2: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 43.40, "ISS": 32.50 },
+        3: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 43.40, "ISS": 32.50 },
+        4: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 43.40, "ISS": 33.50 },
+        5: { "IRPJ": 35.00, "CSLL": 15.00, "COFINS": 16.03, "PIS": 3.47, "CPP": 30.50, "ISS": 0.00 } // ISS fixo em valor
+    },
+    "IV": { // Serviços (CPP Separado)
+        0: { "IRPJ": 18.80, "CSLL": 15.20, "COFINS": 17.67, "PIS": 3.83, "ISS": 44.50, "CPP": 0.00 },
+        1: { "IRPJ": 19.80, "CSLL": 15.20, "COFINS": 20.55, "PIS": 4.45, "ISS": 40.00, "CPP": 0.00 },
+        2: { "IRPJ": 20.80, "CSLL": 15.20, "COFINS": 19.73, "PIS": 4.27, "ISS": 40.00, "CPP": 0.00 },
+        3: { "IRPJ": 17.80, "CSLL": 19.20, "COFINS": 18.90, "PIS": 4.10, "ISS": 40.00, "CPP": 0.00 },
+        4: { "IRPJ": 18.80, "CSLL": 19.20, "COFINS": 18.08, "PIS": 3.92, "ISS": 40.00, "CPP": 0.00 },
+        5: { "IRPJ": 53.50, "CSLL": 21.50, "COFINS": 20.55, "PIS": 4.45, "ISS": 0.00, "CPP": 0.00 }
+    },
+    "V": { // Serviços
+        0: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 28.85, "ISS": 48.05 },
+        1: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 14.05, "PIS": 3.05, "CPP": 27.85, "ISS": 47.55 },
+        2: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 23.85, "ISS": 52.05 },
+        3: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 23.85, "ISS": 52.05 },
+        4: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 23.85, "ISS": 53.05 },
+        5: { "IRPJ": 6.25, "CSLL": 7.50, "COFINS": 24.20, "PIS": 5.25, "CPP": 42.10, "ISS": 14.70 } // Ajuste na 6 faixa
+    }
 };
 
 const generateUUID = () => {
@@ -86,16 +124,10 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     }
 
     // 3. Mescla Inteligente (Unifica listas por ID)
-    // Isso resolve o problema de dados não aparecendo se o Firebase falhar.
-    // Usamos um Map onde a chave é o ID. Se existir no Firebase, usa o Firebase. Se não, usa o local.
     const empresaMap = new Map<string, SimplesNacionalEmpresa>();
 
-    // Primeiro popula com Firebase (fonte da verdade quando disponível)
     firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
 
-    // Depois tenta inserir os locais. Se o ID já existir, NÃO sobrescreve (presume que nuvem é mais atual),
-    // EXCETO se a lista da nuvem estiver vazia ou incompleta devido a erros parciais.
-    // Mas para garantir que itens NOVOS criados offline apareçam:
     filteredLocal.forEach(e => {
         if (!empresaMap.has(e.id)) {
             empresaMap.set(e.id, e);
@@ -121,16 +153,10 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
     // 2. Tenta salvar no Firebase (Blindado com setDoc e UID direto)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            // Força o UID da sessão ativa para garantir que a regra de segurança permita a gravação
             newEmpresa.createdBy = auth.currentUser.uid; 
-            
-            // Sanitize to remove undefined values
             const payload = sanitizePayload(newEmpresa);
-
-            // setDoc garante que o ID do documento seja o mesmo do objeto
             await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
         } catch (e: any) {
-            // Fallback silencioso se permissão negada
             if (e.code !== 'permission-denied') {
                 console.warn("Firestore Save Warning:", e.message);
             }
@@ -151,8 +177,6 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'simples_empresas', id);
-            
-            // IMPORTANTE: Filtra campos protegidos (id, createdBy) para evitar erro de permissão no update
             const { id: _, createdBy: __, ...safeData } = data as any;
             
             if (Object.keys(safeData).length > 0) {
@@ -182,7 +206,6 @@ const parseXmlNfe = (xmlContent: string): any[] => {
         const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
         const notes: any[] = [];
         
-        // Verifica se é uma NFe válida antes de iterar
         if (xmlDoc.getElementsByTagName("parsererror").length > 0) return [];
 
         const nfeNodes = xmlDoc.getElementsByTagName("infNFe");
@@ -217,9 +240,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
     try {
         if (fileType.endsWith('.pdf')) {
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-            
-            // 1. Tentar extrair Extrato PGDAS (Oficial do Simples Nacional)
-            // A função extractPgdasDataFromPdf foi aprimorada para detectar tabelas complexas do PGDAS
             const pgdasHistory = await extractPgdasDataFromPdf(base64);
             
             if (pgdasHistory && pgdasHistory.length > 0) {
@@ -232,8 +252,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                     pgdasHistory.forEach((item: any) => {
                         if (item.periodo && (typeof item.valor === 'number')) {
                             let key = item.periodo; // Esperado MM/YYYY ou YYYY-MM
-                            
-                            // Normalizar formato de data para YYYY-MM
                             if (key.includes('/')) {
                                 const parts = key.split('/');
                                 if (parts.length === 2) key = `${parts[1]}-${parts[0]}`;
@@ -254,26 +272,19 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                     }
                 }
             }
-            
-            // 2. Se não for PGDAS, tentar extração genérica de notas (PDF/Imagem)
             extractedData = await extractDocumentData(base64, 'application/pdf');
 
         } else if (fileType.endsWith('.xml')) {
-            // Tentar parser local primeiro (mais rápido e barato)
             const textDecoder = new TextDecoder('utf-8');
             const xmlContent = textDecoder.decode(buffer);
             extractedData = parseXmlNfe(xmlContent);
 
-            // Fallback para IA se o parser local falhar ou não encontrar notas (ex: XML de prefeitura específica)
             if (extractedData.length === 0) {
-                // Passa o conteúdo do XML como texto para a IA (limitado por tamanho se necessário)
-                // Usamos 'application/xml' ou 'text/plain' como indicação para a IA
-                const base64 = btoa(unescape(encodeURIComponent(xmlContent))); // Safe btoa for utf8
+                const base64 = btoa(unescape(encodeURIComponent(xmlContent))); 
                 extractedData = await extractDocumentData(base64, 'text/xml');
             }
 
         } else if (fileType.endsWith('.xlsx') || fileType.endsWith('.xls')) {
-            // Suporte a planilhas Excel via Gemini
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
             const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             extractedData = await extractDocumentData(base64, mimeType);
@@ -292,9 +303,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
     
     let success = 0;
     extractedData.forEach(item => {
-        // Validação flexível dos campos retornados pela IA
         if(item.data && (item.valor !== undefined && item.valor !== null)) {
-            // Tentar normalizar data se vier DD/MM/YYYY
             let dateVal = new Date(item.data).getTime();
             if (isNaN(dateVal) && item.data.includes('/')) {
                 const parts = item.data.split('/');
@@ -359,6 +368,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     const fator_r = rbt12 > 0 ? (empresa.folha12 / rbt12) : 0;
 
+    // Se itens de cálculo (entradas manuais do dashboard) não forem fornecidos, cria um padrão com o total do mês
     let itensCalculo: SimplesItemCalculo[] = options?.itensCalculo || [];
     
     if (itensCalculo.length === 0) {
@@ -378,6 +388,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     let faturamentoTotalMes = 0;
     const detalhamentoAnexos: DetalhamentoAnexo[] = [];
 
+    // Cálculo por Item (CNAE/Anexo)
     itensCalculo.forEach(item => {
         faturamentoTotalMes += item.valor;
         
@@ -389,23 +400,32 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         const tabela = ANEXOS_TABELAS[anexoAplicado];
         if (!tabela) return;
 
+        // 1. Determina a Faixa
         let faixaIndex = tabela.findIndex((f: any) => rbt12 <= f.limite);
-        if (faixaIndex === -1) faixaIndex = tabela.length - 1; 
+        if (faixaIndex === -1) faixaIndex = tabela.length - 1; // Faixa 6
         const faixa = tabela[faixaIndex];
 
+        // 2. Calcula Alíquota Efetiva Base
         let aliq_eff = 0;
         if (rbt12 > 0) {
             aliq_eff = (((rbt12 * faixa.aliquota / 100) - faixa.parcela) / rbt12) * 100;
         } else {
+            // Se RBT12 é 0, usa a alíquota nominal da 1ª faixa
             aliq_eff = tabela[0].aliquota;
         }
 
+        // 3. Aplica Retenções (ISS e ICMS ST)
+        // A lógica é: Nova Alíquota = Alíquota Efetiva * (1 - (Percentual do Tributo / 100))
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
         
         if (reparticao) {
-            if (item.issRetido && reparticao['ISS']) percentualReducao += reparticao['ISS'];
-            if (item.icmsSt && reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
+            if (item.issRetido && reparticao['ISS']) {
+                percentualReducao += reparticao['ISS'];
+            }
+            if (item.icmsSt && reparticao['ICMS']) {
+                percentualReducao += reparticao['ICMS'];
+            }
         }
 
         const aliq_final = Math.max(0, aliq_eff * (1 - (percentualReducao / 100)));
@@ -424,6 +444,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     const aliq_eff_global = faturamentoTotalMes > 0 ? (dasTotal / faturamentoTotalMes) * 100 : 0;
 
+    // Determine main range for generic display logic
     const tabelaPrincipal = ANEXOS_TABELAS[empresa.anexo === 'III_V' ? (fator_r >= 0.28 ? 'III' : 'V') : empresa.anexo];
     let faixaIndexPrincipal = 0;
     if(tabelaPrincipal) {
@@ -435,7 +456,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         rbt12, 
         aliq_nom: tabelaPrincipal ? tabelaPrincipal[faixaIndexPrincipal].aliquota : 0, 
         aliq_eff: aliq_eff_global, 
-        das: dasTotal * 12, 
+        das: dasTotal * 12, // Estimativa anualizada simplista
         das_mensal: dasTotal,
         mensal, 
         historico_simulado: [], 
@@ -443,11 +464,21 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         fator_r,
         folha_12: empresa.folha12, 
         ultrapassou_sublimite: rbt12 > 3600000,
-        faixa_index: faixaIndexPrincipal, 
+        faixa_index: faixaIndexPrincipal, // Use main activity range for general distribution chart if needed
         detalhamento_anexos: detalhamentoAnexos
     };
 };
 
 export const calcularDiscriminacaoImpostos = (anexo: string, faixaIndex: number, valorDas: number) => {
-    return { "IRPJ": valorDas * 0.05, "CSLL": valorDas * 0.03, "CPP": valorDas * 0.4, "COFINS": valorDas * 0.12, "PIS": valorDas * 0.03, "ISS/ICMS": valorDas * 0.37 };
+    // Busca a distribuição correta baseada no Anexo e Faixa
+    const distribuicao = REPARTICAO_IMPOSTOS[anexo]?.[Math.min(faixaIndex, 5)];
+    
+    if (!distribuicao || valorDas === 0) return {};
+
+    const resultado: Record<string, number> = {};
+    for (const [imposto, percentual] of Object.entries(distribuicao)) {
+        resultado[imposto] = valorDas * ((percentual as number) / 100);
+    }
+    
+    return resultado;
 };

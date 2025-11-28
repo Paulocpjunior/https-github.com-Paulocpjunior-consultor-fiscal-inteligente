@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade, SimplesCalculoMensal } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails } from '../services/geminiService';
 import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, CopyIcon, PencilIcon } from './Icons';
@@ -24,8 +24,6 @@ interface CnaeInputState {
     valor: string;
     issRetido: boolean;
     icmsSt: boolean;
-    issRate?: string;
-    icmsStRate?: string;
 }
 
 type TabType = 'cadastrais' | 'faturamento' | 'simulacoes' | 'historico';
@@ -83,6 +81,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<SimplesNacionalImportResult | null>(null);
     
+    // Novo estado complexo para suportar valor + checkboxes por CNAE
     const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
     const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
 
@@ -124,24 +123,25 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     }, [mesesHistorico, historicoManualEditavel]);
 
     const resumo: SimplesNacionalResumo = useMemo(() => {
+        // Prepara os itens de cálculo com base no estado atual dos inputs (valores + retencoes)
         const itensCalculo: any[] = [];
         
-        Object.entries(faturamentoPorCnae).forEach(([key, state]) => {
-            const typedState = state as CnaeInputState;
+        Object.entries(faturamentoPorCnae).forEach(([key, state]: [string, CnaeInputState]) => {
             const [cnaeCode, anexoCode] = key.split('_');
-            const val = parseFloat(typedState.valor.replace(/\./g, '').replace(',', '.') || '0');
+            const val = parseFloat(state.valor.replace(/\./g, '').replace(',', '.') || '0');
             
             if (val > 0) {
                 itensCalculo.push({ 
                     cnae: cnaeCode, 
                     anexo: anexoCode, 
                     valor: val, 
-                    issRetido: typedState.issRetido, 
-                    icmsSt: typedState.icmsSt 
+                    issRetido: state.issRetido, 
+                    icmsSt: state.icmsSt 
                 });
             }
         });
 
+        // Cria uma cópia da empresa com o histórico manual atualizado
         const empresaTemp = { ...empresa, faturamentoManual: historicoManualEditavel };
 
         return simplesService.calcularResumoEmpresa(
@@ -154,9 +154,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     const totalMesVigente = useMemo(() => {
         let total = 0;
-        Object.values(faturamentoPorCnae).forEach((item) => {
-            const typedItem = item as CnaeInputState;
-            total += parseFloat(typedItem.valor.replace(/\./g, '').replace(',', '.') || '0');
+        Object.values(faturamentoPorCnae).forEach((item: CnaeInputState) => {
+            total += parseFloat(item.valor.replace(/\./g, '').replace(',', '.') || '0');
         });
         return total;
     }, [faturamentoPorCnae]);
@@ -187,20 +186,21 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
         const totalMes = empresa.faturamentoManual?.[mesChave] || 0;
         
+        // Inicializa o estado complexo de inputs
         const novoFaturamentoPorCnae: Record<string, CnaeInputState> = {};
         
         const createInitialState = (val: number = 0): CnaeInputState => ({
             valor: val > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) : '0,00',
             issRetido: false,
-            icmsSt: false,
-            issRate: '',
-            icmsStRate: ''
+            icmsSt: false
         });
 
+        // Principal
         const keyPrincipal = `${empresa.cnae}_${empresa.anexo}`;
         novoFaturamentoPorCnae[keyPrincipal] = createInitialState(totalMes);
         
-        if (Array.isArray(empresa.atividadesSecundarias)) {
+        // Secundários
+        if (empresa.atividadesSecundarias) {
             empresa.atividadesSecundarias.forEach(ativ => {
                 const key = `${ativ.cnae}_${ativ.anexo}`;
                 if (!novoFaturamentoPorCnae[key]) {
@@ -212,20 +212,19 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         setFaturamentoPorCnae(novoFaturamentoPorCnae);
         setHistoricoManualEditavel(empresa.faturamentoManual || {});
 
-    // Stringify objects in dependency array to avoid loops if reference changes
-    }, [mesApuracao, empresa.id, JSON.stringify(empresa.faturamentoManual), JSON.stringify(empresa.atividadesSecundarias)]); 
+    }, [mesApuracao, empresa.id, empresa.faturamentoManual]); // Simplified dependency array to prevent loops
 
     // --- HANDLERS ---
 
     const handleFaturamentoChange = (key: string, field: keyof CnaeInputState, value: any) => {
-        setFaturamentoPorCnae(prev => ({
+        setFaturamentoPorCnae((prev: Record<string, CnaeInputState>) => ({
             ...prev,
             [key]: { ...prev[key], [field]: value }
         }));
     };
 
     const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt') => {
-        setFaturamentoPorCnae(prev => ({
+        setFaturamentoPorCnae((prev: Record<string, CnaeInputState>) => ({
             ...prev,
             [key]: { ...prev[key], [field]: !prev[key][field] }
         }));
@@ -233,9 +232,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     const handleSaveMesVigente = () => {
         let totalCalculado = 0;
-        Object.values(faturamentoPorCnae).forEach((item) => {
-            const typedItem = item as CnaeInputState;
-            totalCalculado += parseFloat(typedItem.valor.replace(/\./g, '').replace(',', '.') || '0');
+        Object.values(faturamentoPorCnae).forEach((item: CnaeInputState) => {
+            totalCalculado += parseFloat(item.valor.replace(/\./g, '').replace(',', '.') || '0');
         });
 
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -442,7 +440,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             doc.text(`CNAE Principal: ${empresa.cnae} (Anexo ${empresa.anexo})`, 20, y);
             
             // Check if array exists and has items before mapping
-            const atividadesSecundarias = empresa.atividadesSecundarias;
+            const atividadesSecundarias = empresa.atividadesSecundarias as SimplesNacionalAtividade[] | undefined;
             if (atividadesSecundarias && atividadesSecundarias.length > 0) {
                  y += 5;
                  doc.text(`Atividades Secundárias: ${atividadesSecundarias.map((a) => a.cnae).join(', ')}`, 20, y);
@@ -480,17 +478,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     };
 
     const chartData = {
-        labels: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.label),
+        labels: resumo.historico_simulado.map(h => h.label),
         datasets: [
             {
                 label: 'Faturamento (R$)',
-                data: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.faturamento),
+                data: resumo.historico_simulado.map(h => h.faturamento),
                 backgroundColor: 'rgba(14, 165, 233, 0.6)',
                 yAxisID: 'y',
             },
             {
                 label: 'Alíquota (%)',
-                data: (resumo.historico_simulado as SimplesCalculoMensal[] || []).map(h => h.aliquotaEfetiva),
+                data: resumo.historico_simulado.map(h => h.aliquotaEfetiva),
                 type: 'line' as const,
                 borderColor: 'rgb(245, 158, 11)',
                 borderWidth: 2,
@@ -504,7 +502,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false };
         const showIcmsSt = ['I', 'II', 'V'].includes(anexo);
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexo);
-        const isAnexoV = anexo === 'V';
 
         return (
             <div key={key} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 relative group hover:border-sky-300 transition-colors shadow-sm">
@@ -550,7 +547,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     aria-label="Deduzir ICMS ST"
                                 />
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                                    Retenção ST
+                                    Subst. Tributária (ST)
                                     <Tooltip content="Marque se houve Substituição Tributária de ICMS nesta receita (o valor será deduzido do cálculo).">
                                         <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
                                     </Tooltip>
@@ -574,32 +571,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </span>
                             </label>
                         )}
-                        
-                        {isAnexoV && (
-                            <div className="w-full flex gap-3 mt-2 border-t border-dashed border-slate-200 dark:border-slate-700 pt-2">
-                                <div className="flex-1">
-                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold block mb-1">Alíquota ISS (%)</label>
-                                    <input 
-                                        type="number" 
-                                        placeholder="0.00" 
-                                        value={state.issRate || ''}
-                                        onChange={(e) => handleFaturamentoChange(key, 'issRate', e.target.value)}
-                                        className="w-full p-1 text-xs border rounded bg-white dark:bg-slate-700 dark:text-white"
-                                    />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold block mb-1">Alíquota ICMS ST (%)</label>
-                                    <input 
-                                        type="number" 
-                                        placeholder="0.00"
-                                        value={state.icmsStRate || ''}
-                                        onChange={(e) => handleFaturamentoChange(key, 'icmsStRate', e.target.value)}
-                                        className="w-full p-1 text-xs border rounded bg-white dark:bg-slate-700 dark:text-white"
-                                    />
-                                </div>
-                            </div>
-                        )}
-
                         {!showIcmsSt && !showIss && <span className="text-[10px] text-slate-400 italic">Sem deduções aplicáveis</span>}
                     </div>
                 </div>
@@ -641,7 +612,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             <div className="flex overflow-x-auto gap-2 mb-6 pb-2 border-b border-slate-200 dark:border-slate-700 no-scrollbar">
                 {[
                     { id: 'cadastrais', label: 'Dados Cadastrais', icon: <UserIcon className="w-4 h-4" /> },
-                    { id: 'faturamento', label: 'Faturamento do Mês', icon: <CalculatorIcon className="w-4 h-4" /> },
+                    { id: 'faturamento', label: 'Apuração do Mês', icon: <CalculatorIcon className="w-4 h-4" /> },
                     { id: 'simulacoes', label: 'Simulações & Resultados', icon: <SimpleChart type="bar" data={{labels:[], datasets:[]}} options={{}} /> /* Icon Placeholder */ },
                     { id: 'historico', label: 'Histórico & Ajustes', icon: <HistoryIcon className="w-4 h-4" /> },
                 ].map((tab) => (
