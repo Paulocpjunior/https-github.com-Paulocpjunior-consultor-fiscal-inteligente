@@ -771,6 +771,7 @@ const App: React.FC = () => {
                                     onUpdateEmpresa={handleUpdateEmpresa}
                                     onShowClienteView={() => setSimplesView('cliente')}
                                     onShowToast={(msg) => setToastMessage(msg)}
+                                    currentUser={currentUser}
                                 />
                             )}
                             {simplesView === 'cliente' && selectedEmpresa && (

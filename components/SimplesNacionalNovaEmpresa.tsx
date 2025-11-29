@@ -432,7 +432,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                             </button>
                         </div>
                         <div className="p-6 overflow-y-auto prose prose-slate dark:prose-invert max-w-none text-sm">
-                            <FormattedText text={cnaeAnalysis} />
+                            <FormattedText text={cnaeAnalysis || ''} />
                         </div>
                         <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-b-xl border-t border-slate-200 dark:border-slate-700">
                             <button 

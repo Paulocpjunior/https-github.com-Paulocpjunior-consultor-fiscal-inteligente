@@ -1,8 +1,12 @@
 
 import React from 'react';
 
-export const FormattedText: React.FC<{ text: string }> = ({ text }) => {
-    const lines = text.split('\n');
+export const FormattedText: React.FC<{ text?: string | null }> = ({ text }) => {
+    if (!text) {
+        return null;
+    }
+
+    const lines = String(text).split('\n');
     const elements: React.ReactNode[] = [];
     let listItems: string[] = [];
 

@@ -367,11 +367,26 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     let rbt12 = 0;
     const mensal: any = empresa.faturamentoManual || {};
     
+    // Create an array for the historical chart (last 12 months)
+    const historico_simulado: SimplesCalculoMensal[] = [];
+
     const dataInicioRBT12 = new Date(mesReferencia.getFullYear(), mesReferencia.getMonth() - 12, 1);
     for (let i = 0; i < 12; i++) {
         const d = new Date(dataInicioRBT12.getFullYear(), dataInicioRBT12.getMonth() + i, 1);
         const k = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
-        rbt12 += (mensal[k] || 0);
+        const val = (mensal[k] || 0);
+        rbt12 += val;
+
+        historico_simulado.push({
+            competencia: k,
+            label: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
+            faturamento: val,
+            rbt12: 0, // Placeholder, calculated properly only for current context usually
+            aliquotaEfetiva: 0,
+            fatorR: 0,
+            dasCalculado: 0,
+            anexoAplicado: empresa.anexo
+        });
     }
 
     // Calcula Fator R padrão, mas aceita override manual se fornecido nas opções
@@ -391,7 +406,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 anexo: empresa.anexo,
                 valor: faturamentoTotalMes,
                 issRetido: false,
-                icmsSt: false
+                icmsSt: false,
+                isSup: false // Default
             });
         }
     }
@@ -414,7 +430,9 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
         // 1. Determina a Faixa
         let faixaIndex = tabela.findIndex((f: any) => rbt12 <= f.limite);
-        if (faixaIndex === -1) faixaIndex = tabela.length - 1; // Faixa 6
+        if (faixaIndex === -1 && rbt12 > 0) faixaIndex = tabela.length - 1; // Faixa 6
+        if (rbt12 === 0) faixaIndex = 0;
+        
         const faixa = tabela[faixaIndex];
 
         // 2. Calcula Alíquota Efetiva Base
@@ -426,13 +444,14 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             aliq_eff = tabela[0].aliquota;
         }
 
-        // 3. Aplica Retenções (ISS e ICMS ST)
+        // 3. Aplica Retenções (ISS e ICMS ST) e SUP
         // A lógica é: Nova Alíquota = Alíquota Efetiva * (1 - (Percentual do Tributo / 100))
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
         
         if (reparticao) {
-            if (item.issRetido && reparticao['ISS']) {
+            // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
+            if ((item.issRetido || item.isSup) && reparticao['ISS']) {
                 percentualReducao += reparticao['ISS'];
             }
             if (item.icmsSt && reparticao['ICMS']) {
@@ -445,6 +464,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         dasTotal += valorDasItem;
 
         detalhamentoAnexos.push({
+            cnae: item.cnae, // Added cnae field for mapping
             anexo: anexoAplicado as any,
             faturamento: item.valor,
             aliquotaNominal: faixa.aliquota,
@@ -462,7 +482,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     let faixaIndexPrincipal = 0;
     if(tabelaPrincipal) {
         faixaIndexPrincipal = tabelaPrincipal.findIndex((f: any) => rbt12 <= f.limite);
-        if (faixaIndexPrincipal === -1) faixaIndexPrincipal = 5;
+        if (faixaIndexPrincipal === -1 && rbt12 > 0) faixaIndexPrincipal = 5;
     }
 
     return {
@@ -472,7 +492,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         das: dasTotal * 12, // Estimativa anualizada simplista
         das_mensal: dasTotal,
         mensal, 
-        historico_simulado: [], 
+        historico_simulado: historico_simulado, 
         anexo_efetivo: empresa.anexo, 
         fator_r,
         folha_12: empresa.folha12, 

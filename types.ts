@@ -149,9 +149,10 @@ export interface SimplesCalculoMensal {
 }
 
 export interface DetalhamentoAnexo {
+    cnae?: string; // NEW field to track origin
     anexo: SimplesNacionalAnexo;
     faturamento: number;
-    aliquotaNominal: number; // Novo campo
+    aliquotaNominal: number; 
     aliquotaEfetiva: number;
     valorDas: number;
     issRetido?: boolean;
@@ -164,6 +165,7 @@ export interface SimplesItemCalculo {
     valor: number;
     issRetido: boolean;
     icmsSt: boolean;
+    isSup?: boolean; // Sociedade Uniprofissional (ISS Fixo)
 }
 
 export interface SimplesNacionalResumo {
