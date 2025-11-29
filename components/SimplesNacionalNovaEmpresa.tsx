@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { SimplesNacionalAnexo, SimplesNacionalAtividade, CnaeSuggestion } from '../types';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
@@ -186,7 +187,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
             <div ref={suggestionsRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-fade-in top-full left-0">
                 {isSearchingCnae && (
                      <div className="p-4 flex justify-center items-center gap-2 text-sm text-slate-500">
-                        <LoadingSpinner />
+                        <LoadingSpinner small />
                         <span className="ml-2">Buscando na legislação...</span>
                      </div>
                 )}
@@ -268,6 +269,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                     id="cnae"
                                     value={cnae}
                                     onChange={(e) => handleSearchCnae(e.target.value, 'principal')}
+                                    onFocus={() => setActiveCnaeField('principal')}
                                     placeholder="Código ou descrição..."
                                     className="w-full pl-4 pr-4 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
                                     required
@@ -280,7 +282,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                     className="btn-press px-3 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 disabled:opacity-50"
                                     title="Validar CNAE e ver detalhes"
                                 >
-                                    {isValidatingCnae === cnae ? <LoadingSpinner /> : <ShieldIcon className="w-5 h-5" />}
+                                    {isValidatingCnae === cnae ? <LoadingSpinner small /> : <ShieldIcon className="w-5 h-5" />}
                                 </button>
                             </div>
                             {activeCnaeField === 'principal' && renderSuggestions()}
@@ -324,6 +326,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                     type="text"
                                     value={newAtividadeCnae}
                                     onChange={(e) => handleSearchCnae(e.target.value, 'secundario')}
+                                    onFocus={() => setActiveCnaeField('secundario')}
                                     placeholder="Busque CNAE Secundário..."
                                     className="w-full pl-3 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                                     autoComplete="off"
@@ -371,10 +374,15 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                                                 type="button"
                                                 onClick={() => handleValidateCnae(item.cnae)}
                                                 disabled={!!isValidatingCnae}
-                                                className="p-1 text-sky-600 hover:bg-sky-100 dark:hover:bg-sky-900/30 rounded"
+                                                className="p-1 text-sky-600 hover:bg-sky-100 dark:hover:bg-sky-900/30 rounded flex items-center gap-1"
                                                 title="Validar"
                                             >
-                                                {isValidatingCnae === item.cnae ? <LoadingSpinner /> : <ShieldIcon className="w-4 h-4" />}
+                                                {isValidatingCnae === item.cnae ? <LoadingSpinner small /> : (
+                                                    <>
+                                                        <ShieldIcon className="w-4 h-4" />
+                                                        <span className="text-[10px] font-bold uppercase hidden sm:inline">Validar</span>
+                                                    </>
+                                                )}
                                             </button>
                                             <button
                                                 type="button"

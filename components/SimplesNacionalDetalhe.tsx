@@ -1,12 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade } from '../types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, DetalhamentoAnexo, SimplesNacionalResumo, SimplesNacionalAtividade, CnaeSuggestion } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { fetchCnaeTaxDetails } from '../services/geminiService';
-import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, CopyIcon, PencilIcon } from './Icons';
+import { fetchCnaeTaxDetails, fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
+import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, CopyIcon, PencilIcon, SearchIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 import SimpleChart from './SimpleChart';
 import Tooltip from './Tooltip';
+import { FormattedText } from './FormattedText';
 
 interface SimplesNacionalDetalheProps {
     empresa: SimplesNacionalEmpresa;
@@ -14,7 +15,7 @@ interface SimplesNacionalDetalheProps {
     onBack: () => void;
     onImport: (empresaId: string, file: File) => Promise<SimplesNacionalImportResult>;
     onUpdateFolha12: (id: string, value: number) => void;
-    onSaveFaturamentoManual: (id: string, faturamento: any) => void;
+    onSaveFaturamentoManual: (id: string, faturamento: any, faturamentoDetalhado: any) => Promise<void> | void;
     onUpdateEmpresa: (id: string, data: Partial<SimplesNacionalEmpresa>) => void;
     onShowClienteView: () => void;
     onShowToast?: (msg: string) => void;
@@ -26,7 +27,7 @@ interface CnaeInputState {
     icmsSt: boolean;
 }
 
-type TabType = 'cadastrais' | 'faturamento' | 'simulacoes' | 'historico';
+type TabType = 'calculo' | 'analise' | 'historico_salvo';
 
 const CurrencyInput: React.FC<{ 
     value: number; 
@@ -35,7 +36,9 @@ const CurrencyInput: React.FC<{
     className?: string;
     error?: string;
     tooltip?: string;
-}> = ({ value, onChange, label, className, error, tooltip }) => {
+    placeholder?: string;
+    disabled?: boolean;
+}> = ({ value, onChange, label, className, error, tooltip, placeholder, disabled }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -57,12 +60,14 @@ const CurrencyInput: React.FC<{
                 </label>
             )}
             <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>
+                {!disabled && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">R$</span>}
                 <input 
                     type="text" 
-                    value={formatted} 
+                    value={value === 0 && placeholder && !disabled ? '' : formatted} 
                     onChange={handleChange} 
-                    className={`w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-700 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal text-right ${error ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-600'}`}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                    className={`w-full ${!disabled ? 'pl-9' : 'pl-3'} pr-3 py-2 bg-white dark:bg-slate-700 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal text-right ${error ? 'border-red-500 focus:ring-red-500' : 'border-slate-200 dark:border-slate-600'} ${disabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : ''}`}
                     aria-label={label || "Valor monetário"}
                     aria-invalid={!!error}
                 />
@@ -75,23 +80,41 @@ const CurrencyInput: React.FC<{
 const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({ 
     empresa, notas, onBack, onImport, onUpdateFolha12, onSaveFaturamentoManual, onUpdateEmpresa, onShowClienteView, onShowToast 
 }) => {
-    const [activeTab, setActiveTab] = useState<TabType>('faturamento');
+    const [activeTab, setActiveTab] = useState<TabType>('calculo');
     const [mesApuracao, setMesApuracao] = useState(new Date());
     const [folha12Input, setFolha12Input] = useState(empresa.folha12);
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<SimplesNacionalImportResult | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
     
     // Novo estado complexo para suportar valor + checkboxes por CNAE
     const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
+    
+    // Estados para Histórico
     const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
+    const [historicoDetalhadoEditavel, setHistoricoDetalhadoEditavel] = useState<Record<string, Record<string, number>>>({});
+    
+    const [valorPadraoHistorico, setValorPadraoHistorico] = useState<number>(0); // Para aplicar em lote
+    const [fatorRManual, setFatorRManual] = useState<string>(''); // Fator R manual input (percentage)
 
+    // Estados para Adição de CNAE com IA
     const [isAddingCnae, setIsAddingCnae] = useState(false);
     const [newCnaeCode, setNewCnaeCode] = useState('');
     const [newCnaeAnexo, setNewCnaeAnexo] = useState<any>('I');
+    const [cnaeSuggestions, setCnaeSuggestions] = useState<CnaeSuggestion[]>([]);
+    const [isSearchingCnae, setIsSearchingCnae] = useState(false);
+    const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const suggestionsRef = useRef<HTMLDivElement>(null);
 
+    // Estados para Validação/Análise de Impostos
     const [isAnalyzingTax, setIsAnalyzingTax] = useState(false);
     const [taxDetails, setTaxDetails] = useState<Record<string, CnaeTaxDetail[]>>({});
     const [manualTaxRates, setManualTaxRates] = useState({ icms: '', pisCofins: '', iss: '' });
+    const [showRefinement, setShowRefinement] = useState(false);
+    
+    // Modal de Análise CNAE
+    const [cnaeAnalysis, setCnaeAnalysis] = useState<string | null>(null);
+    const [isValidatingCnae, setIsValidatingCnae] = useState<string | null>(null);
 
     const [selectedHistoryItem, setSelectedHistoryItem] = useState<SimplesHistoricoCalculo | null>(null);
     const [isPdfGenerating, setIsPdfGenerating] = useState(false);
@@ -101,7 +124,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const [filterYear, setFilterYear] = useState<string>('all');
     const [filterMonth, setFilterMonth] = useState<string>('all');
 
-    // --- CÁLCULOS (MOVED UP) ---
+    // --- CÁLCULOS ---
 
     const mesesHistorico = useMemo<{ date: Date; iso: string; label: string }[]>(() => {
         const lista: { date: Date; iso: string; label: string }[] = [];
@@ -122,12 +145,34 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         return mesesHistorico.reduce((acc, m) => acc + (historicoManualEditavel[m.iso] || 0), 0);
     }, [mesesHistorico, historicoManualEditavel]);
 
+    const allActivities = useMemo(() => {
+        const list = [{ cnae: empresa.cnae, anexo: empresa.anexo, label: 'Principal' }];
+        if (empresa.atividadesSecundarias) {
+            empresa.atividadesSecundarias.forEach((sec, idx) => {
+                list.push({ ...sec, label: `Secundário ${idx + 1}` });
+            });
+        }
+        return list;
+    }, [empresa]);
+
     const resumo: SimplesNacionalResumo = useMemo(() => {
         // Prepara os itens de cálculo com base no estado atual dos inputs (valores + retencoes)
         const itensCalculo: any[] = [];
         
         Object.entries(faturamentoPorCnae).forEach(([key, state]: [string, CnaeInputState]) => {
-            const [cnaeCode, anexoCode] = key.split('_');
+            // Nova lógica de chave: TIPO::INDEX::CNAE::ANEXO
+            const parts = key.split('::');
+            
+            let cnaeCode = '';
+            let anexoCode = '';
+            
+            if (parts.length >= 4) {
+                cnaeCode = parts[2];
+                anexoCode = parts[3];
+            } else {
+                [cnaeCode, anexoCode] = key.split('_');
+            }
+
             const val = parseFloat(state.valor.replace(/\./g, '').replace(',', '.') || '0');
             
             if (val > 0) {
@@ -144,13 +189,33 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         // Cria uma cópia da empresa com o histórico manual atualizado
         const empresaTemp = { ...empresa, faturamentoManual: historicoManualEditavel };
 
+        // Parse fator R manual se existir
+        let fatorRValue: number | undefined = undefined;
+        if (fatorRManual.trim() !== '') {
+            const parsed = parseFloat(fatorRManual.replace(',', '.'));
+            if (!isNaN(parsed)) {
+                fatorRValue = parsed / 100; // Converte 28.5 para 0.285
+            }
+        }
+
         return simplesService.calcularResumoEmpresa(
             empresaTemp, 
             notas, 
             mesApuracao, 
-            { itensCalculo: itensCalculo.length > 0 ? itensCalculo : undefined }
+            { 
+                itensCalculo: itensCalculo.length > 0 ? itensCalculo : undefined,
+                fatorRManual: fatorRValue
+            }
         );
-    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel]);
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel, fatorRManual]);
+
+    const discriminacaoImpostos = useMemo(() => {
+        return simplesService.calcularDiscriminacaoImpostos(
+            resumo.anexo_efetivo,
+            resumo.faixa_index,
+            resumo.das_mensal
+        );
+    }, [resumo]);
 
     const totalMesVigente = useMemo(() => {
         let total = 0;
@@ -185,7 +250,11 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     useEffect(() => {
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
         const totalMes = empresa.faturamentoManual?.[mesChave] || 0;
+        const detalheMes = empresa.faturamentoMensalDetalhado?.[mesChave] || {};
         
+        // Verifica se há dados detalhados para este mês. Se houver, usa-os. Se não, usa o totalMes (Legacy) na principal.
+        const hasDetalhe = Object.keys(detalheMes).length > 0;
+
         // Inicializa o estado complexo de inputs
         const novoFaturamentoPorCnae: Record<string, CnaeInputState> = {};
         
@@ -195,26 +264,90 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             icmsSt: false
         });
 
-        // Principal
-        const keyPrincipal = `${empresa.cnae}_${empresa.anexo}`;
-        novoFaturamentoPorCnae[keyPrincipal] = createInitialState(totalMes);
+        // Principal - Chave Única com Prefixo
+        const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
+        // Se tem detalhe, pega o valor específico do CNAE Principal. Se não tem detalhe mas tem total, assume tudo na principal.
+        const valorPrincipal = hasDetalhe ? (detalheMes[empresa.cnae] || 0) : totalMes;
+        novoFaturamentoPorCnae[keyPrincipal] = createInitialState(valorPrincipal);
         
-        // Secundários
+        // Secundários - Chave Única com Prefixo e Índice
         if (empresa.atividadesSecundarias) {
-            empresa.atividadesSecundarias.forEach(ativ => {
-                const key = `${ativ.cnae}_${ativ.anexo}`;
+            empresa.atividadesSecundarias.forEach((ativ, index) => {
+                const key = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
+                // Se tem detalhe, pega o valor específico. Se não tem detalhe, secundários começam zerados (pois o total foi pra principal).
+                const valorSecundario = hasDetalhe ? (detalheMes[ativ.cnae] || 0) : 0;
+                
                 if (!novoFaturamentoPorCnae[key]) {
-                    novoFaturamentoPorCnae[key] = createInitialState(0);
+                    novoFaturamentoPorCnae[key] = createInitialState(valorSecundario);
                 }
             });
         }
         
         setFaturamentoPorCnae(novoFaturamentoPorCnae);
         setHistoricoManualEditavel(empresa.faturamentoManual || {});
+        setHistoricoDetalhadoEditavel(empresa.faturamentoMensalDetalhado || {});
 
-    }, [mesApuracao, empresa.id, empresa.faturamentoManual]); // Simplified dependency array to prevent loops
+    }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.faturamentoMensalDetalhado]);
+
+    // Fecha sugestões ao clicar fora
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+                setCnaeSuggestions([]);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     // --- HANDLERS ---
+
+    const handleSearchCnae = (query: string) => {
+        setNewCnaeCode(query);
+        if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+        if (query.length < 3) {
+            setCnaeSuggestions([]);
+            return;
+        }
+
+        setIsSearchingCnae(true);
+        searchTimeout.current = setTimeout(async () => {
+            try {
+                const suggestions = await fetchCnaeSuggestions(query);
+                setCnaeSuggestions(suggestions);
+            } catch (error) {
+                console.error("Erro ao buscar sugestões CNAE:", error);
+            } finally {
+                setIsSearchingCnae(false);
+            }
+        }, 600);
+    };
+
+    const handleSelectSuggestion = (suggestion: CnaeSuggestion) => {
+        setNewCnaeCode(suggestion.code);
+        setCnaeSuggestions([]);
+        // Tenta inferir anexo básico
+        if (suggestion.code.startsWith('47')) setNewCnaeAnexo('I');
+        else if (suggestion.code.startsWith('10')) setNewCnaeAnexo('II');
+        else setNewCnaeAnexo('III');
+    };
+
+    const handleValidateCnae = async (cnaeToValidate: string) => {
+        if (!cnaeToValidate.trim()) return;
+        setIsValidatingCnae(cnaeToValidate);
+        try {
+            const result = await fetchCnaeDescription(cnaeToValidate);
+            setCnaeAnalysis(result.text);
+        } catch (e) {
+            console.error(e);
+            if(onShowToast) onShowToast("Erro ao validar CNAE.");
+        } finally {
+            setIsValidatingCnae(null);
+        }
+    };
 
     const handleFaturamentoChange = (key: string, field: keyof CnaeInputState, value: any) => {
         setFaturamentoPorCnae((prev: Record<string, CnaeInputState>) => ({
@@ -230,22 +363,46 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }));
     };
 
-    const handleSaveMesVigente = () => {
-        let totalCalculado = 0;
-        Object.values(faturamentoPorCnae).forEach((item: CnaeInputState) => {
-            totalCalculado += parseFloat(item.valor.replace(/\./g, '').replace(',', '.') || '0');
-        });
+    const handleSaveMesVigente = async () => {
+        setIsSaving(true);
+        try {
+            let totalCalculado = 0;
+            Object.values(faturamentoPorCnae).forEach((item: CnaeInputState) => {
+                totalCalculado += parseFloat(item.valor.replace(/\./g, '').replace(',', '.') || '0');
+            });
 
-        const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
-        const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
-        
-        onSaveFaturamentoManual(empresa.id, updatedManual);
-        setHistoricoManualEditavel(updatedManual);
-        
-        if (onShowToast) onShowToast('Apuração salva com sucesso!');
-        
-        // Salvar também no histórico de cálculos automaticamente
-        simplesService.saveHistoricoCalculo(empresa.id, resumo, mesApuracao);
+            const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
+            const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
+            
+            const detalheMes: Record<string, number> = {};
+            Object.entries(faturamentoPorCnae).forEach(([key, state]) => {
+                 const parts = key.split('::');
+                 // Chave é "principal::0::CNAE::ANEXO" ou "secundario::i::CNAE::ANEXO"
+                 // Pega o CNAE da posição 2
+                 let cnaeCode = parts.length >= 3 ? parts[2] : key;
+                 
+                 const typedState = state as CnaeInputState;
+                 const val = parseFloat(typedState.valor.replace(/\./g, '').replace(',', '.') || '0');
+                 if(val > 0) {
+                     detalheMes[cnaeCode] = (detalheMes[cnaeCode] || 0) + val;
+                 }
+            });
+            
+            const updatedDetalhado = { ...historicoDetalhadoEditavel, [mesChave]: detalheMes };
+
+            await onSaveFaturamentoManual(empresa.id, updatedManual, updatedDetalhado);
+            setHistoricoManualEditavel(updatedManual);
+            setHistoricoDetalhadoEditavel(updatedDetalhado);
+            
+            await simplesService.saveHistoricoCalculo(empresa.id, resumo, mesApuracao);
+            
+            if (onShowToast) onShowToast('Apuração salva com sucesso!');
+        } catch (error) {
+            console.error("Erro ao salvar:", error);
+            if (onShowToast) onShowToast('Erro ao salvar apuração.');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleAddNewCnae = () => {
@@ -263,32 +420,45 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
     };
 
-    const handleHistoricoChange = (mesIso: string, valor: number) => {
-        setHistoricoManualEditavel(prev => ({ ...prev, [mesIso]: valor }));
+    const handleHistoricoDetalheChange = (mesIso: string, cnaeKey: string, valor: number) => {
+        const currentDetalheMes = historicoDetalhadoEditavel[mesIso] || {};
+        const newDetalheMes = { ...currentDetalheMes, [cnaeKey]: valor };
+        
+        let totalMes = 0;
+        Object.values(newDetalheMes).forEach((v: number) => totalMes += v);
+
+        setHistoricoDetalhadoEditavel(prev => ({
+            ...prev,
+            [mesIso]: newDetalheMes
+        }));
+
+        setHistoricoManualEditavel(prev => ({
+            ...prev,
+            [mesIso]: totalMes
+        }));
     };
 
     const handleSaveHistorico = () => {
         if (window.confirm('Deseja salvar todo o faturamento manual dos meses informados? Isso substituirá os dados existentes.')) {
-            onSaveFaturamentoManual(empresa.id, historicoManualEditavel);
+            onSaveFaturamentoManual(empresa.id, historicoManualEditavel, historicoDetalhadoEditavel);
             if (onShowToast) onShowToast('Faturamento manual salvo com sucesso!');
             setIsHistoryModalOpen(false);
         }
     };
 
-    const handleReplicarUltimoValor = () => {
-        const primeiroMesValido = mesesHistorico.find(m => (historicoManualEditavel[m.iso] || 0) > 0);
-        const valorBase = primeiroMesValido ? historicoManualEditavel[primeiroMesValido.iso] : 0;
+    const handleAplicarValorEmLote = () => {
+        const novoHistorico = { ...historicoManualEditavel };
+        const novoDetalhado = { ...historicoDetalhadoEditavel };
         
-        if (valorBase > 0) {
-            const novoHistorico = { ...historicoManualEditavel };
-            mesesHistorico.forEach(m => {
-                novoHistorico[m.iso] = valorBase;
-            });
-            setHistoricoManualEditavel(novoHistorico);
-            if (onShowToast) onShowToast('Valor replicado para 12 meses!');
-        } else {
-            alert("Preencha pelo menos um mês com valor maior que zero para replicar.");
-        }
+        mesesHistorico.forEach(m => {
+            novoHistorico[m.iso] = valorPadraoHistorico;
+            novoDetalhado[m.iso] = { [empresa.cnae]: valorPadraoHistorico };
+        });
+        
+        setHistoricoManualEditavel(novoHistorico);
+        setHistoricoDetalhadoEditavel(novoDetalhado);
+        
+        if (onShowToast) onShowToast(`Valor R$ ${valorPadraoHistorico.toFixed(2)} aplicado a todos os meses (Atrib. Principal)!`);
     };
 
     const handleAnalyzeTax = async () => {
@@ -383,18 +553,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 y += pdfImgHeight + 10;
             }
 
-            // 4. Memória de Cálculo Table
+            // 4. Memória de Cálculo Table (Detalhamento dos Tributos)
             if (y + 60 > pageHeight - 20) {
                 doc.addPage();
                 y = 20;
             }
 
             doc.setFont("helvetica", "bold");
-            doc.text("Detalhamento dos Tributos (Repartição)", 20, y);
+            doc.text("Discriminação dos Tributos (Repartição do DAS)", 20, y);
             y += 10;
 
-            const impostos = simplesService.calcularDiscriminacaoImpostos(resumo.anexo_efetivo, resumo.faixa_index, resumo.das_mensal);
-            
+            // Header Tabela
             doc.setFillColor(240, 240, 240);
             doc.rect(20, y, pageWidth - 40, 8, 'F');
             doc.setFontSize(10);
@@ -402,8 +571,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             doc.text("Valor (R$)", pageWidth - 25, y + 5, { align: 'right' });
             y += 10;
 
+            // Rows Tabela
             doc.setFont("helvetica", "normal");
-            Object.entries(impostos).forEach(([key, val]) => {
+            Object.entries(discriminacaoImpostos).forEach(([key, val]) => {
                 doc.text(key, 25, y + 5);
                 doc.text((val as number).toLocaleString('pt-BR', { minimumFractionDigits: 2 }), pageWidth - 25, y + 5, { align: 'right' });
                 y += 7;
@@ -440,10 +610,11 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             doc.text(`CNAE Principal: ${empresa.cnae} (Anexo ${empresa.anexo})`, 20, y);
             
             // Check if array exists and has items before mapping
-            const atividadesSecundarias = empresa.atividadesSecundarias as SimplesNacionalAtividade[] | undefined;
-            if (atividadesSecundarias && atividadesSecundarias.length > 0) {
+            const atividadesSecundarias = empresa.atividadesSecundarias;
+            if (atividadesSecundarias && Array.isArray(atividadesSecundarias) && atividadesSecundarias.length > 0) {
                  y += 5;
-                 doc.text(`Atividades Secundárias: ${atividadesSecundarias.map((a) => a.cnae).join(', ')}`, 20, y);
+                 const secCnaes = atividadesSecundarias.map((a: SimplesNacionalAtividade) => a.cnae).join(', ');
+                 doc.text(`Atividades Secundárias: ${secCnaes}`, 20, y);
             }
 
             doc.save(`memoria-calculo-das-${empresa.nome.replace(/\s+/g, '-')}-${mesApuracao.toISOString().slice(0, 7)}.pdf`);
@@ -497,24 +668,138 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         ],
     };
 
+    // Reusable Tax Analysis Component to maintain consistency across tabs
+    const renderTaxAnalysisSection = (compact = false) => (
+        <div className={`bg-white dark:bg-slate-800 ${compact ? 'p-4' : 'p-6'} rounded-xl shadow-sm ${compact ? 'border border-slate-200 dark:border-slate-700' : ''}`}>
+            {/* Header and Button Logic */}
+            <div className={`flex ${compact ? 'flex-col gap-3' : 'flex-col md:flex-row justify-between items-start md:items-center gap-4'} mb-4`}>
+                <div>
+                    <h3 className={`${compact ? 'text-sm' : 'text-lg'} font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2`}>
+                        <ShieldIcon className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-sky-600`} />
+                        {compact ? 'Consultor Tributário (IA)' : 'Análise Tributária Inteligente (IA)'}
+                    </h3>
+                    {!compact && <p className="text-sm text-slate-500">Consulte a incidência detalhada de impostos para os CNAEs desta empresa.</p>}
+                </div>
+                <div className="flex gap-2 w-full md:w-auto">
+                    {!showRefinement ? (
+                        <button 
+                            onClick={() => {
+                                if (Object.keys(taxDetails).length === 0) {
+                                    handleAnalyzeTax();
+                                } else {
+                                    setShowRefinement(true);
+                                }
+                            }} 
+                            disabled={isAnalyzingTax}
+                            className={`btn-press flex-1 md:flex-none px-4 py-2 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 text-sm h-[34px] flex items-center justify-center gap-2`}
+                        >
+                            {isAnalyzingTax ? <LoadingSpinner small /> : (
+                                Object.keys(taxDetails).length === 0 ? 'Analisar Impostos' : 'Refinar Cálculo'
+                            )}
+                        </button>
+                    ) : (
+                        <button onClick={() => setShowRefinement(false)} className="p-1 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 ml-auto">
+                            <CloseIcon className="w-5 h-5" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Refinement Inputs */}
+            {showRefinement && (
+                <div className={`mb-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 animate-fade-in`}>
+                    <p className="text-xs font-bold text-slate-500 mb-2">Informe alíquotas para maior precisão:</p>
+                    <div className={`grid ${compact ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-4'} gap-3 items-end`}>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">ICMS (%)</label>
+                            <input type="text" className="w-full p-2 text-sm border rounded bg-white dark:bg-slate-800 dark:text-white dark:border-slate-600 outline-none focus:ring-2 focus:ring-sky-500" placeholder="18.00" value={manualTaxRates.icms} onChange={e => setManualTaxRates(p => ({...p, icms: e.target.value}))} />
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">PIS/COFINS (%)</label>
+                            <input type="text" className="w-full p-2 text-sm border rounded bg-white dark:bg-slate-800 dark:text-white dark:border-slate-600 outline-none focus:ring-2 focus:ring-sky-500" placeholder="9.25" value={manualTaxRates.pisCofins} onChange={e => setManualTaxRates(p => ({...p, pisCofins: e.target.value}))} />
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 mb-1 block">ISS (%)</label>
+                            <input type="text" className="w-full p-2 text-sm border rounded bg-white dark:bg-slate-800 dark:text-white dark:border-slate-600 outline-none focus:ring-2 focus:ring-sky-500" placeholder="5.00" value={manualTaxRates.iss} onChange={e => setManualTaxRates(p => ({...p, iss: e.target.value}))} />
+                        </div>
+                        <button onClick={() => handleAnalyzeTax()} disabled={isAnalyzingTax} className="btn-press w-full py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 disabled:opacity-50 text-sm h-[38px]">
+                            {isAnalyzingTax ? 'Calculando...' : 'Aplicar'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Results List */}
+            {Object.keys(taxDetails).length > 0 && (
+                <div className="space-y-4 max-h-96 overflow-y-auto custom-scrollbar">
+                    {Object.entries(taxDetails).map(([cnae, details]) => (
+                        <div key={cnae} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            <div className="bg-slate-50 dark:bg-slate-700/50 px-3 py-2 border-b border-slate-200 dark:border-slate-700">
+                                <span className="font-bold text-sky-700 dark:text-sky-300 text-xs">CNAE: {cnae}</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
+                                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
+                                        <tr>
+                                            <th className="px-3 py-2">Tributo</th>
+                                            <th className="px-3 py-2">Incidência</th>
+                                            {!compact && <th className="px-3 py-2">Alíquota</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {(details as CnaeTaxDetail[]).map((row, idx) => (
+                                            <tr key={idx}>
+                                                <td className="px-3 py-2 font-bold">{row.tributo}</td>
+                                                <td className="px-3 py-2">{row.incidencia}</td>
+                                                {!compact && <td className="px-3 py-2">{row.aliquotaMedia}</td>}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+
     const renderCardCnae = (cnae: string, anexo: string, label: string, isSecondary: boolean = false, index?: number) => {
-        const key = `${cnae}_${anexo}`;
+        // Gera chave única baseada no tipo (principal/secundario) e índice
+        const key = isSecondary 
+            ? `secundario::${index}::${cnae}::${anexo}`
+            : `principal::0::${cnae}::${anexo}`;
+            
         const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false };
-        const showIcmsSt = ['I', 'II', 'V'].includes(anexo);
+        
+        // Regras de Exibição de Checkbox:
+        // ICMS ST: Anexos I e II (Comércio e Indústria)
+        // Retenção ISS: Anexos III, IV, V (Serviços)
+        const showIcmsSt = ['I', 'II'].includes(anexo);
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexo);
 
         return (
             <div key={key} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 relative group hover:border-sky-300 transition-colors shadow-sm">
-                {isSecondary && index !== undefined && (
-                    <button 
-                        onClick={() => handleRemoveSecondary(index)}
-                        className="absolute top-2 right-2 text-slate-400 hover:text-red-500 p-1"
-                        title="Excluir atividade"
-                        aria-label={`Excluir atividade secundária ${cnae}`}
+                <div className="absolute top-2 right-2 flex gap-1">
+                    {isSecondary && index !== undefined && (
+                        <button 
+                            onClick={() => handleRemoveSecondary(index)}
+                            className="text-slate-400 hover:text-red-500 p-1"
+                            title="Excluir atividade"
+                            aria-label={`Excluir atividade secundária ${cnae}`}
+                        >
+                            <TrashIcon className="w-4 h-4" />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => handleValidateCnae(cnae)}
+                        disabled={!!isValidatingCnae}
+                        className="text-slate-400 hover:text-sky-600 p-1"
+                        title="Validar CNAE com IA"
                     >
-                        <TrashIcon className="w-4 h-4" />
+                        {isValidatingCnae === cnae ? <LoadingSpinner small /> : <ShieldIcon className="w-4 h-4" />}
                     </button>
-                )}
+                </div>
                 
                 <div className="mb-3">
                     <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
@@ -538,7 +823,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
                     <div className="flex flex-wrap gap-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
                         {showIcmsSt && (
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <label className="flex items-center gap-2 cursor-pointer select-none bg-white dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">
                                 <input 
                                     type="checkbox" 
                                     checked={state.icmsSt} 
@@ -547,7 +832,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     aria-label="Deduzir ICMS ST"
                                 />
                                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1">
-                                    Subst. Tributária (ST)
+                                    ST (Substituição Tributária)
                                     <Tooltip content="Marque se houve Substituição Tributária de ICMS nesta receita (o valor será deduzido do cálculo).">
                                         <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
                                     </Tooltip>
@@ -555,7 +840,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             </label>
                         )}
                         {showIss && (
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <label className="flex items-center gap-2 cursor-pointer select-none bg-white dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700">
                                 <input 
                                     type="checkbox" 
                                     checked={state.issRetido} 
@@ -571,7 +856,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </span>
                             </label>
                         )}
-                        {!showIcmsSt && !showIss && <span className="text-[10px] text-slate-400 italic">Sem deduções aplicáveis</span>}
+                        {!showIcmsSt && !showIss && <span className="text-[10px] text-slate-400 italic">Sem deduções aplicáveis para este Anexo</span>}
                     </div>
                 </div>
             </div>
@@ -611,10 +896,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             {/* Abas de Navegação */}
             <div className="flex overflow-x-auto gap-2 mb-6 pb-2 border-b border-slate-200 dark:border-slate-700 no-scrollbar">
                 {[
-                    { id: 'cadastrais', label: 'Dados Cadastrais', icon: <UserIcon className="w-4 h-4" /> },
-                    { id: 'faturamento', label: 'Apuração do Mês', icon: <CalculatorIcon className="w-4 h-4" /> },
-                    { id: 'simulacoes', label: 'Simulações & Resultados', icon: <SimpleChart type="bar" data={{labels:[], datasets:[]}} options={{}} /> /* Icon Placeholder */ },
-                    { id: 'historico', label: 'Histórico & Ajustes', icon: <HistoryIcon className="w-4 h-4" /> },
+                    { id: 'calculo', label: 'Cálculo & Apuração', icon: <CalculatorIcon className="w-4 h-4" /> },
+                    { id: 'analise', label: 'Análise & Gráficos', icon: <SimpleChart type="bar" data={{labels:[], datasets:[]}} options={{}} /> },
+                    { id: 'historico_salvo', label: 'Histórico Salvo', icon: <HistoryIcon className="w-4 h-4" /> },
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -625,229 +909,274 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                         }`}
                     >
-                        {tab.id !== 'simulacoes' && tab.icon} 
+                        {tab.id !== 'analise' && tab.icon} 
                         {tab.label}
                     </button>
                 ))}
             </div>
 
             {/* Conteúdo das Abas */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6">
                 
-                {/* ABA 1: DADOS CADASTRAIS */}
-                {activeTab === 'cadastrais' && (
-                    <div className="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
-                                <UserIcon className="w-5 h-5 text-sky-600" /> Folha de Salários (12m)
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-4">Soma da folha de salários dos últimos 12 meses (incluindo encargos) para cálculo do Fator R.</p>
-                            <CurrencyInput value={folha12Input} onChange={setFolha12Input} label="Valor Total Folha" />
-                            <button onClick={() => onUpdateFolha12(empresa.id, folha12Input)} className="btn-press w-full mt-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-lg text-xs hover:bg-slate-200 transition-colors">
-                                Atualizar Folha
-                            </button>
+                {/* ABA 1: CÁLCULO & APURAÇÃO (MAIN) */}
+                {activeTab === 'calculo' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                        {/* COLUNA ESQUERDA: CÁLCULO DO MÊS */}
+                        <div className="lg:col-span-2 space-y-6">
+                            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-l-4 border-sky-500 dark:border-sky-400">
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                                    <div className="w-full sm:w-auto">
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Mês/Ano)</label>
+                                        <input 
+                                            type="month" 
+                                            value={mesApuracao.toISOString().substring(0, 7)}
+                                            onChange={(e) => {
+                                                if(e.target.value) {
+                                                    const [y, m] = e.target.value.split('-');
+                                                    setMesApuracao(new Date(parseInt(y), parseInt(m)-1, 1));
+                                                }
+                                            }}
+                                            className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white"
+                                        />
+                                    </div>
+                                    <div className="bg-sky-50 dark:bg-sky-900/20 px-4 py-2 rounded-lg border border-sky-100 dark:border-sky-800 text-center w-full sm:w-auto">
+                                        <p className="text-[10px] font-bold text-sky-700 dark:text-sky-400 uppercase">Faturamento Mês</p>
+                                        <p className="text-xl font-mono font-bold text-sky-800 dark:text-white">
+                                            R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividade Principal</h4>
+                                        {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
+                                    </div>
+
+                                    {(Array.isArray(empresa.atividadesSecundarias) && empresa.atividadesSecundarias.length > 0) && (
+                                        <div>
+                                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividades Secundárias</h4>
+                                            <div className="space-y-3">
+                                                {empresa.atividadesSecundarias.map((ativ: SimplesNacionalAtividade, i: number) => 
+                                                    renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i)
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {!isAddingCnae ? (
+                                    <button onClick={() => setIsAddingCnae(true)} className="w-full mt-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 hover:border-sky-300 dark:hover:border-sky-700 transition-colors text-xs font-bold flex justify-center items-center gap-2">
+                                        <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
+                                    </button>
+                                ) : (
+                                    <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in relative">
+                                        <p className="text-xs font-bold text-sky-700 dark:text-sky-300 mb-3 uppercase tracking-wide">Nova Atividade</p>
+                                        <div className="flex gap-2 mb-3 items-end">
+                                            <div className="flex-grow relative">
+                                                <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">CNAE (Busca Inteligente)</label>
+                                                <div className="relative">
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Digite código ou descrição..." 
+                                                        value={newCnaeCode}
+                                                        onChange={e => handleSearchCnae(e.target.value)}
+                                                        className="w-full p-2 pl-8 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none focus:ring-2 focus:ring-sky-500"
+                                                        autoComplete="off"
+                                                    />
+                                                    {isSearchingCnae ? (
+                                                        <div className="absolute left-2 top-2.5">
+                                                            <LoadingSpinner small />
+                                                        </div>
+                                                    ) : (
+                                                        <SearchIcon className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
+                                                    )}
+                                                </div>
+                                                {(cnaeSuggestions.length > 0 || isSearchingCnae) && (
+                                                    <div ref={suggestionsRef} className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto animate-fade-in">
+                                                        {cnaeSuggestions.map((s) => (
+                                                            <button
+                                                                key={s.code}
+                                                                type="button"
+                                                                onClick={() => handleSelectSuggestion(s)}
+                                                                className="w-full text-left px-4 py-2 hover:bg-sky-50 dark:hover:bg-slate-700 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors"
+                                                            >
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-bold text-sky-600 dark:text-sky-400 text-xs">{s.code}</span>
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-600 dark:text-slate-300 truncate font-medium">{s.description}</p>
+                                                            </button>
+                                                        ))}
+                                                        {cnaeSuggestions.length === 0 && isSearchingCnae && (
+                                                            <div className="p-3 text-xs text-slate-500 text-center">Buscando...</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="w-28">
+                                                <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Anexo</label>
+                                                <select 
+                                                    value={newCnaeAnexo} 
+                                                    onChange={e => setNewCnaeAnexo(e.target.value)}
+                                                    className="w-full p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
+                                                >
+                                                    <option value="I">Anexo I</option>
+                                                    <option value="II">Anexo II</option>
+                                                    <option value="III">Anexo III</option>
+                                                    <option value="IV">Anexo IV</option>
+                                                    <option value="V">Anexo V</option>
+                                                    <option value="III_V">III/V</option>
+                                                </select>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleValidateCnae(newCnaeCode)}
+                                                disabled={!!isValidatingCnae || !newCnaeCode.trim()}
+                                                className="p-2 mb-[1px] bg-slate-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 border border-slate-300 dark:border-slate-600 h-[38px] w-[38px] flex items-center justify-center"
+                                                title="Validar CNAE com IA"
+                                            >
+                                                {isValidatingCnae === newCnaeCode ? <LoadingSpinner small /> : <ShieldIcon className="w-5 h-5" />}
+                                            </button>
+                                        </div>
+                                        <div className="flex justify-end gap-2 mt-2">
+                                            <button onClick={() => setIsAddingCnae(false)} className="px-3 py-1.5 text-xs text-red-500 font-bold hover:bg-red-50 rounded">Cancelar</button>
+                                            <button onClick={handleAddNewCnae} className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded hover:bg-sky-700 shadow-sm">Confirmar</button>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                <button 
+                                    onClick={handleSaveMesVigente}
+                                    disabled={isSaving}
+                                    className="btn-press w-full mt-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSaving ? (
+                                        <>
+                                            <LoadingSpinner small />
+                                            <span>Salvando...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <SaveIcon className="w-4 h-4" />
+                                            <span>Calcular e Salvar Apuração</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
-                                <DownloadIcon className="w-5 h-5 text-sky-600" /> Importar Arquivo
-                            </h3>
-                            <p className="text-xs text-slate-500 mb-4">Importe notas fiscais ou extrato do PGDAS (PDF, XML, Excel) para preenchimento automático.</p>
-                            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 text-center relative hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer group">
-                                <input 
-                                    type="file" 
-                                    accept=".pdf, .xml, .xlsx, .xls"
-                                    onChange={handleFileUpload}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                    disabled={isImporting}
-                                    aria-label="Upload de arquivo para importação"
-                                />
-                                {isImporting ? <LoadingSpinner /> : (
-                                    <div className="flex flex-col items-center">
-                                        <DocumentTextIcon className="w-8 h-8 text-slate-400 group-hover:text-sky-500 mb-2 transition-colors" />
-                                        <p className="text-sm text-slate-600 font-bold dark:text-slate-300">Clique para enviar</p>
-                                        <p className="text-xs text-slate-400">PDF, XML ou Excel</p>
+                        {/* COLUNA DIREITA: DADOS DE REFERÊNCIA (SIDEBAR RESTAURADA) */}
+                        <div className="space-y-6">
+                            
+                            {/* 4. ANÁLISE TRIBUTÁRIA (New) */}
+                            {renderTaxAnalysisSection(true)}
+
+                            {/* 1. IMPORTAÇÃO */}
+                            <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                    <DownloadIcon className="w-4 h-4 text-sky-600" />
+                                    Importar Dados (IA)
+                                </h3>
+                                <p className="text-[10px] text-slate-500 mb-3">Arraste ou clique para enviar notas ou extrato PGDAS (PDF, XML).</p>
+                                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-6 text-center relative hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer group">
+                                    <input 
+                                        type="file" 
+                                        accept=".pdf, .xml, .xlsx, .xls"
+                                        onChange={handleFileUpload}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        disabled={isImporting}
+                                    />
+                                    {isImporting ? <LoadingSpinner /> : (
+                                        <div className="flex flex-col items-center">
+                                            <DocumentTextIcon className="w-6 h-6 text-slate-400 group-hover:text-sky-500 mb-1 transition-colors" />
+                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Selecionar Arquivo</span>
+                                        </div>
+                                    )}
+                                </div>
+                                {importResult && (
+                                    <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-900/50 rounded text-[10px]">
+                                        <p className="text-green-600 font-bold">Sucesso: {importResult.successCount}</p>
+                                        {importResult.failCount > 0 && <p className="text-red-500 font-bold">Erros: {importResult.failCount}</p>}
                                     </div>
                                 )}
                             </div>
-                            {importResult && (
-                                <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-900/50 rounded text-xs">
-                                    <p className="text-green-600 font-bold">Sucesso: {importResult.successCount} registros</p>
-                                    {importResult.failCount > 0 && <p className="text-red-500 font-bold">Falhas: {importResult.failCount}</p>}
-                                </div>
-                            )}
-                        </div>
 
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm md:col-span-2">
-                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-200 flex items-center gap-2">
-                                        <ShieldIcon className="w-5 h-5 text-sky-600" />
-                                        Análise Tributária (IA)
+                            {/* 2. RBT12 / HISTÓRICO MANUAL */}
+                            <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                                        <HistoryIcon className="w-4 h-4 text-sky-600" />
+                                        RBT12 (Histórico)
                                     </h3>
-                                    <p className="text-sm text-slate-500">Consulte a incidência de impostos para suas atividades.</p>
-                                </div>
-                                <div className="flex gap-2 items-end">
-                                    <div className="flex gap-2">
-                                        <div className="w-20">
-                                            <label className="text-[10px] uppercase font-bold text-slate-500">ICMS (%)</label>
-                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 18" value={manualTaxRates.icms} onChange={e => setManualTaxRates(p => ({...p, icms: e.target.value}))} aria-label="Alíquota ICMS manual" />
-                                        </div>
-                                        <div className="w-20">
-                                            <label className="text-[10px] uppercase font-bold text-slate-500">PIS/COF</label>
-                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 3.65" value={manualTaxRates.pisCofins} onChange={e => setManualTaxRates(p => ({...p, pisCofins: e.target.value}))} aria-label="Alíquota PIS/COFINS manual" />
-                                        </div>
-                                        <div className="w-20">
-                                            <label className="text-[10px] uppercase font-bold text-slate-500">ISS (%)</label>
-                                            <input type="text" className="w-full p-1 text-xs border rounded bg-slate-50 dark:bg-slate-700 dark:text-white" placeholder="Ex: 5" value={manualTaxRates.iss} onChange={e => setManualTaxRates(p => ({...p, iss: e.target.value}))} aria-label="Alíquota ISS manual" />
-                                        </div>
-                                    </div>
-                                    <button onClick={handleAnalyzeTax} disabled={isAnalyzingTax} className="btn-press px-4 py-1.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 text-sm h-[34px]">
-                                        {isAnalyzingTax ? <LoadingSpinner /> : 'Refinar'}
+                                    <button onClick={() => setIsHistoryModalOpen(true)} className="text-[10px] text-sky-600 hover:underline font-bold">
+                                        Editar Manual
                                     </button>
                                 </div>
-                            </div>
-                            {Object.keys(taxDetails).length > 0 && (
-                                <div className="space-y-4">
-                                    {Object.entries(taxDetails).map(([cnae, details]) => (
-                                        <div key={cnae} className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
-                                            <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700">
-                                                <span className="font-bold text-sky-700 dark:text-sky-300 text-xs">CNAE: {cnae}</span>
-                                            </div>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-xs text-left text-slate-600 dark:text-slate-300">
-                                                    <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 uppercase font-bold">
-                                                        <tr>
-                                                            <th className="px-4 py-2">Tributo</th>
-                                                            <th className="px-4 py-2">Incidência</th>
-                                                            <th className="px-4 py-2">Alíquota Média</th>
-                                                            <th className="px-4 py-2">Base Legal</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                                        {details.map((row, idx) => (
-                                                            <tr key={idx}>
-                                                                <td className="px-4 py-2 font-bold">{row.tributo}</td>
-                                                                <td className="px-4 py-2">{row.incidencia}</td>
-                                                                <td className="px-4 py-2">{row.aliquotaMedia}</td>
-                                                                <td className="px-4 py-2">
-                                                                    <a href={`https://www.google.com/search?q=${encodeURIComponent(row.baseLegal)}`} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                                                                        {row.baseLegal}
-                                                                    </a>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    ))}
+                                <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg mb-3">
+                                    <p className="text-[10px] text-slate-500 uppercase font-bold">Receita Bruta 12 Meses</p>
+                                    <p className="text-lg font-mono font-bold text-slate-900 dark:text-white">
+                                        R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </p>
                                 </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* ABA 2: FATURAMENTO DO MÊS */}
-                {activeTab === 'faturamento' && (
-                    <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-                        <div className="lg:col-span-1 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
-                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Competência</label>
-                            <input 
-                                type="date" 
-                                value={mesApuracao.toISOString().substring(0, 10)}
-                                onChange={(e) => {
-                                    if(e.target.value) setMesApuracao(new Date(e.target.value));
-                                }}
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white"
-                                aria-label="Mês de competência"
-                            />
-                            <div className="mt-6 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-100 dark:border-sky-800">
-                                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase mb-1">Faturamento Total do Mês</p>
-                                <p className="text-2xl font-mono font-bold text-sky-800 dark:text-white">
-                                    R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </p>
+                                <div className="max-h-32 overflow-y-auto custom-scrollbar text-[10px]">
+                                    <table className="w-full text-left">
+                                        <tbody>
+                                            {mesesHistorico.map(m => (
+                                                <tr key={m.iso} className="border-b border-slate-100 dark:border-slate-700 last:border-0">
+                                                    <td className="py-1 text-slate-500 dark:text-slate-400 capitalize">{m.label}</td>
+                                                    <td className="py-1 text-right font-mono text-slate-700 dark:text-slate-300">
+                                                        {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                        </div>
 
-                        <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-2 border-sky-100 dark:border-sky-900">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                    <CalculatorIcon className="w-5 h-5 text-sky-600" />
-                                    Lançamento de Receita
+                            {/* 3. FOLHA DE SALÁRIOS */}
+                            <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                    <UserIcon className="w-4 h-4 text-sky-600" />
+                                    Folha de Salários (12m)
                                 </h3>
-                            </div>
-
-                            <div className="space-y-6">
-                                {/* ATIVIDADE PRINCIPAL */}
-                                <div>
-                                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividade Principal</h4>
-                                    {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
-                                </div>
-
-                                {/* ATIVIDADES SECUNDÁRIAS */}
-                                {(Array.isArray(empresa.atividadesSecundarias) && empresa.atividadesSecundarias.length > 0) && (
-                                    <div>
-                                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 border-b border-slate-100 dark:border-slate-700 pb-1">Atividades Secundárias</h4>
-                                        <div className="space-y-3">
-                                            {(empresa.atividadesSecundarias as any[]).map((ativ, i) => 
-                                                renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i)
-                                            )}
+                                <p className="text-[10px] text-slate-500 mb-2">Para cálculo do Fator R.</p>
+                                <div className="space-y-3">
+                                    <div className="flex gap-2">
+                                        <CurrencyInput value={folha12Input} onChange={setFolha12Input} className="flex-1" />
+                                        <button onClick={() => onUpdateFolha12(empresa.id, folha12Input)} className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 p-2 rounded-lg text-slate-600 dark:text-slate-300">
+                                            <SaveIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+                                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-1 mb-1">
+                                            Fator R (Manual %)
+                                            <Tooltip content="Informe o percentual do Fator R manualmente se desejar sobrepor o cálculo automático (Folha/RBT12). Use ponto para decimais (ex: 28.5). Deixe em branco para automático.">
+                                                <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                            </Tooltip>
+                                        </label>
+                                        <div className="relative">
+                                            <input 
+                                                type="text" 
+                                                value={fatorRManual} 
+                                                onChange={(e) => setFatorRManual(e.target.value)}
+                                                className="w-full pl-2 pr-6 py-1.5 text-xs bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-normal text-right"
+                                                placeholder="Auto"
+                                            />
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">%</span>
                                         </div>
                                     </div>
-                                )}
+                                </div>
                             </div>
 
-                            {!isAddingCnae ? (
-                                <button onClick={() => setIsAddingCnae(true)} className="w-full mt-6 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 hover:border-sky-300 dark:hover:border-sky-700 transition-colors text-xs font-bold flex justify-center items-center gap-2">
-                                    <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
-                                </button>
-                            ) : (
-                                <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in">
-                                    <p className="text-xs font-bold text-sky-700 dark:text-sky-300 mb-3 uppercase tracking-wide">Nova Atividade</p>
-                                    <div className="flex gap-2 mb-3">
-                                        <input 
-                                            type="text" 
-                                            placeholder="CNAE" 
-                                            value={newCnaeCode}
-                                            onChange={e => setNewCnaeCode(e.target.value)}
-                                            className="flex-1 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-                                            aria-label="Código CNAE"
-                                        />
-                                        <select 
-                                            value={newCnaeAnexo} 
-                                            onChange={e => setNewCnaeAnexo(e.target.value)}
-                                            className="w-28 p-2 text-sm rounded border border-slate-300 dark:border-slate-600 dark:bg-slate-700 dark:text-white outline-none"
-                                            aria-label="Anexo do Simples"
-                                        >
-                                            <option value="I">Anexo I</option>
-                                            <option value="II">Anexo II</option>
-                                            <option value="III">Anexo III</option>
-                                            <option value="IV">Anexo IV</option>
-                                            <option value="V">Anexo V</option>
-                                        </select>
-                                    </div>
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => setIsAddingCnae(false)} className="px-3 py-1.5 text-xs text-red-500 font-bold hover:bg-red-50 rounded">Cancelar</button>
-                                        <button onClick={handleAddNewCnae} className="px-4 py-1.5 bg-sky-600 text-white text-xs font-bold rounded hover:bg-sky-700 shadow-sm">Confirmar</button>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            <button 
-                                onClick={handleSaveMesVigente}
-                                className="btn-press w-full mt-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors flex justify-center items-center gap-2 shadow-md"
-                            >
-                                <SaveIcon className="w-4 h-4" />
-                                Salvar Apuração do Mês
-                            </button>
                         </div>
                     </div>
                 )}
 
-                {/* ABA 3: SIMULAÇÕES & RESULTADOS */}
-                {activeTab === 'simulacoes' && (
-                    <div className="lg:col-span-3 space-y-6 animate-fade-in">
+                {/* ABA 2: ANÁLISE & RESULTADOS */}
+                {activeTab === 'analise' && (
+                    <div className="space-y-6 animate-fade-in">
                         <div className="bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-800/50 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                             <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 flex items-center gap-2">
                                 <CalculatorIcon className="w-6 h-6 text-sky-600" /> Resumo Consolidado
@@ -882,12 +1211,13 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                         <tr>
                                             <th className="px-6 py-3">Anexo</th>
                                             <th className="px-6 py-3 text-right">Base Cálculo</th>
+                                            <th className="px-6 py-3 text-center">Aliq. Nominal</th>
                                             <th className="px-6 py-3 text-center">Aliq. Efetiva</th>
                                             <th className="px-6 py-3 text-right">Valor DAS</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                        {(resumo.detalhamento_anexos || []).map((detalhe, idx) => (
+                                        {((resumo.detalhamento_anexos as DetalhamentoAnexo[]) || []).map((detalhe, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
                                                 <td className="px-6 py-4 font-bold text-slate-700 dark:text-slate-200">
                                                     Anexo {detalhe.anexo}
@@ -899,8 +1229,39 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 text-right font-mono text-slate-600 dark:text-slate-300">{detalhe.faturamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                <td className="px-6 py-4 text-center font-mono text-slate-500 dark:text-slate-400">{detalhe.aliquotaNominal ? detalhe.aliquotaNominal.toFixed(2) : '-'}%</td>
                                                 <td className="px-6 py-4 text-center font-mono text-slate-600 dark:text-slate-300">{detalhe.aliquotaEfetiva.toFixed(2)}%</td>
                                                 <td className="px-6 py-4 text-right font-mono font-bold text-sky-600 dark:text-sky-400">{detalhe.valorDas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {/* Nova Seção: Discriminação dos Impostos na Aba Análise */}
+                        {discriminacaoImpostos && Object.keys(discriminacaoImpostos).length > 0 && (
+                            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
+                                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30">
+                                    <h3 className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                        <ShieldIcon className="w-4 h-4 text-sky-600" />
+                                        Discriminação dos Tributos (Estimativa do DAS)
+                                    </h3>
+                                </div>
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 uppercase text-xs">
+                                        <tr>
+                                            <th className="px-6 py-3">Tributo</th>
+                                            <th className="px-6 py-3 text-right">Valor Estimado (R$)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                        {Object.entries(discriminacaoImpostos).map(([key, val]) => (
+                                            <tr key={key} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                                <td className="px-6 py-3 font-bold text-slate-700 dark:text-slate-200">{key}</td>
+                                                <td className="px-6 py-3 text-right font-mono text-slate-600 dark:text-slate-300">
+                                                    {(val as number).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -914,46 +1275,15 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 {resumo.historico_simulado.length > 0 ? <SimpleChart type="bar" data={chartData} /> : <div className="h-full flex flex-col items-center justify-center text-slate-400"><p>Sem dados suficientes para gráfico.</p></div>}
                             </div>
                         </div>
+
+                        {/* IA Tax Analysis embedded in Analysis Tab (Reusable Component) */}
+                        {renderTaxAnalysisSection(false)}
                     </div>
                 )}
 
-                {/* ABA 4: HISTÓRICO & AJUSTES */}
-                {activeTab === 'historico' && (
-                    <div className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm h-fit">
-                            <div className="flex justify-between items-center mb-4">
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                                        Faturamento Manual
-                                    </h3>
-                                    <p className="text-[10px] text-slate-500 font-bold">RBT12 Acumulado: <span className="text-sky-700 dark:text-sky-400 font-mono text-xs">R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></p>
-                                </div>
-                                <button 
-                                    onClick={() => setIsHistoryModalOpen(true)}
-                                    className="btn-press text-xs flex items-center gap-1 text-white bg-sky-600 hover:bg-sky-700 font-bold px-3 py-2 rounded-lg shadow-sm transition-colors"
-                                >
-                                    <PencilIcon className="w-4 h-4" /> Editar em Lote
-                                </button>
-                            </div>
-                            
-                            <div className="max-h-96 overflow-y-auto custom-scrollbar pr-1 border border-slate-100 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900/20">
-                                <table className="w-full text-sm">
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                        {mesesHistorico.map(m => (
-                                            <tr key={m.iso}>
-                                                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-bold text-xs capitalize">{m.label}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <span className="font-mono text-slate-700 dark:text-slate-200">
-                                                        {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
+                {/* ABA 3: HISTÓRICO SALVO */}
+                {activeTab === 'historico_salvo' && (
+                    <div className="space-y-6 animate-fade-in">
                         {empresa.historicoCalculos && empresa.historicoCalculos.length > 0 ? (
                             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden h-fit">
                                 <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -985,7 +1315,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                                            {filteredHistory.map((hist) => (
+                                            {(filteredHistory as SimplesHistoricoCalculo[]).map((hist) => (
                                                 <tr key={hist.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => setSelectedHistoryItem(hist)}>
                                                     <td className="px-6 py-3 font-medium text-slate-700 dark:text-slate-200 capitalize">
                                                         {hist.mesReferencia}
@@ -1051,41 +1381,88 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 </div>
             )}
 
-            {/* Modal de Lançamento de Histórico Manual em Lote */}
+            {/* Modal de Lançamento de Histórico Manual em Lote (Reformulado) */}
             {isHistoryModalOpen && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[70] animate-fade-in" onClick={() => setIsHistoryModalOpen(false)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                                 <PencilIcon className="w-6 h-6 text-sky-600" />
-                                Lançamento de Faturamento Manual (12 Meses)
+                                Lançamento de Faturamento Manual (Detalhado)
                             </h3>
                             <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                                 <CloseIcon className="w-5 h-5" />
                             </button>
                         </div>
                         
-                        <div className="p-6 overflow-y-auto bg-slate-50 dark:bg-slate-900/50">
-                            <div className="mb-4 flex justify-end">
-                                 <button 
-                                    onClick={handleReplicarUltimoValor} 
-                                    className="text-xs flex items-center gap-1 text-sky-600 hover:text-sky-800 font-bold bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-800 px-3 py-1.5 rounded shadow-sm"
-                                >
-                                    <CopyIcon className="w-4 h-4" /> Replicar 1º Valor para Todos
-                                </button>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {mesesHistorico.map(m => (
-                                    <div key={m.iso} className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 capitalize">{m.label}</label>
+                        <div className="p-6 overflow-y-auto bg-slate-50 dark:bg-slate-900/50 flex-grow">
+                            {/* Novo Campo para Valor Padrão */}
+                            <div className="mb-6 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                                <label className="block text-sm font-bold text-sky-600 dark:text-sky-400 mb-2">
+                                    Preenchimento Rápido em Lote
+                                </label>
+                                <div className="flex gap-2 items-end">
+                                    <div className="flex-grow">
                                         <CurrencyInput 
-                                            value={historicoManualEditavel[m.iso] || 0} 
-                                            onChange={(val) => handleHistoricoChange(m.iso, val)} 
+                                            label="Valor Padrão Mensal (Atividade Principal)" 
+                                            value={valorPadraoHistorico} 
+                                            onChange={setValorPadraoHistorico} 
+                                            placeholder="Digite um valor para replicar..."
                                             className="w-full"
-                                            aria-label={`Faturamento em ${m.label}`}
                                         />
                                     </div>
-                                ))}
+                                    <button 
+                                        onClick={handleAplicarValorEmLote} 
+                                        className="btn-press flex items-center gap-2 px-4 py-2.5 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold rounded-lg hover:bg-sky-200 dark:hover:bg-sky-800 border border-sky-200 dark:border-sky-800 h-[42px]"
+                                    >
+                                        <CopyIcon className="w-4 h-4" /> Aplicar a Todos
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-2">
+                                    *Isso preencherá a atividade principal de todos os 12 meses com o valor informado.
+                                </p>
+                            </div>
+
+                            {/* Tabela de Entrada Matricial */}
+                            <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100 dark:bg-slate-700 dark:text-slate-300">
+                                        <tr>
+                                            <th className="px-4 py-3 sticky left-0 bg-slate-100 dark:bg-slate-700 z-10 w-32">Competência</th>
+                                            {allActivities.map((ativ) => (
+                                                <th key={ativ.cnae} className="px-4 py-3 min-w-[150px]">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-sky-700 dark:text-sky-400">{ativ.label}</span>
+                                                        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{ativ.cnae}</span>
+                                                    </div>
+                                                </th>
+                                            ))}
+                                            <th className="px-4 py-3 text-right bg-slate-200 dark:bg-slate-600/50 min-w-[140px]">Total (R$)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                                        {(mesesHistorico as { date: Date; iso: string; label: string }[]).map(m => (
+                                            <tr key={m.iso} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                                <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200 capitalize sticky left-0 bg-white dark:bg-slate-800 z-10 border-r border-slate-100 dark:border-slate-700">
+                                                    {m.label}
+                                                </td>
+                                                {allActivities.map((ativ) => (
+                                                    <td key={`${m.iso}-${ativ.cnae}`} className="px-4 py-2">
+                                                        <CurrencyInput 
+                                                            value={historicoDetalhadoEditavel[m.iso]?.[ativ.cnae] || 0} 
+                                                            onChange={(val) => handleHistoricoDetalheChange(m.iso, ativ.cnae, val)} 
+                                                            className="w-full"
+                                                            placeholder="0,00"
+                                                        />
+                                                    </td>
+                                                ))}
+                                                <td className="px-4 py-3 text-right font-mono font-bold text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/30">
+                                                    {(historicoManualEditavel[m.iso] || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
@@ -1094,7 +1471,35 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 Cancelar
                             </button>
                             <button onClick={handleSaveHistorico} className="px-6 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 shadow-md">
-                                Salvar Faturamento Manual
+                                Salvar Histórico Detalhado
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Análise Oficial do CNAE */}
+            {cnaeAnalysis && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[100] animate-fade-in" onClick={() => setCnaeAnalysis(null)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="bg-sky-50 dark:bg-sky-900/30 p-4 rounded-t-xl flex justify-between items-center border-b border-sky-100 dark:border-sky-800">
+                            <h3 className="text-sky-800 dark:text-sky-200 font-bold text-lg flex items-center gap-2">
+                                <ShieldIcon className="w-6 h-6" />
+                                Análise Oficial do CNAE (IA)
+                            </h3>
+                            <button onClick={() => setCnaeAnalysis(null)} className="p-1 rounded-full text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700">
+                                <CloseIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto prose prose-slate dark:prose-invert max-w-none text-sm">
+                            <FormattedText text={cnaeAnalysis} />
+                        </div>
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-b-xl border-t border-slate-200 dark:border-slate-700">
+                            <button 
+                                onClick={() => setCnaeAnalysis(null)} 
+                                className="w-full py-2 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 transition-colors"
+                            >
+                                Fechar
                             </button>
                         </div>
                     </div>

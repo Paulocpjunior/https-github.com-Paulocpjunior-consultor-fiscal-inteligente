@@ -142,7 +142,7 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
     const newEmpresa: any = {
         id: generateUUID(),
         nome, cnpj, cnae, anexo: finalAnexo, atividadesSecundarias: atividadesSecundarias || [],
-        folha12: 0, faturamentoManual: {}, historicoCalculos: [], createdBy: userId
+        folha12: 0, faturamentoManual: {}, faturamentoMensalDetalhado: {}, historicoCalculos: [], createdBy: userId
     };
 
     // 1. Salva no Local Storage (Sempre, para garantir backup)
@@ -329,7 +329,15 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
 };
 
 export const updateFolha12 = async (empresaId: string, value: number) => updateEmpresa(empresaId, { folha12: value });
-export const saveFaturamentoManual = async (empresaId: string, faturamento: any) => updateEmpresa(empresaId, { faturamentoManual: faturamento });
+
+// Atualizado para suportar o detalhamento por CNAE (opcional)
+export const saveFaturamentoManual = async (empresaId: string, faturamento: any, faturamentoDetalhado?: any) => {
+    const data: Partial<SimplesNacionalEmpresa> = { faturamentoManual: faturamento };
+    if (faturamentoDetalhado) {
+        data.faturamentoMensalDetalhado = faturamentoDetalhado;
+    }
+    return updateEmpresa(empresaId, data);
+};
 
 export const saveHistoricoCalculo = async (empresaId: string, resumo: SimplesNacionalResumo, mesRefDate: Date) => {
     const mesStr = mesRefDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
@@ -366,7 +374,11 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         rbt12 += (mensal[k] || 0);
     }
 
-    const fator_r = rbt12 > 0 ? (empresa.folha12 / rbt12) : 0;
+    // Calcula Fator R padrão, mas aceita override manual se fornecido nas opções
+    let fator_r = rbt12 > 0 ? (empresa.folha12 / rbt12) : 0;
+    if (options && options.fatorRManual !== undefined && options.fatorRManual !== null && !isNaN(options.fatorRManual)) {
+        fator_r = options.fatorRManual;
+    }
 
     // Se itens de cálculo (entradas manuais do dashboard) não forem fornecidos, cria um padrão com o total do mês
     let itensCalculo: SimplesItemCalculo[] = options?.itensCalculo || [];
@@ -435,6 +447,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         detalhamentoAnexos.push({
             anexo: anexoAplicado as any,
             faturamento: item.valor,
+            aliquotaNominal: faixa.aliquota,
             aliquotaEfetiva: aliq_final,
             valorDas: valorDasItem,
             issRetido: item.issRetido,

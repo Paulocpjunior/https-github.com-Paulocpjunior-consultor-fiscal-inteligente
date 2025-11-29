@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
@@ -18,7 +19,8 @@ export const fetchFiscalData = async (
     reformaQuery?: string,
     aliquotaIcms?: string,
     aliquotaPisCofins?: string,
-    aliquotaIss?: string
+    aliquotaIss?: string,
+    userNotes?: string
 ): Promise<SearchResult> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
@@ -32,6 +34,9 @@ export const fetchFiscalData = async (
   if (aliquotaIcms) contextParts.push(`Alíquota ICMS informada pelo usuário: ${aliquotaIcms}%`);
   if (aliquotaPisCofins) contextParts.push(`Alíquota PIS/COFINS informada pelo usuário: ${aliquotaPisCofins}%`);
   if (aliquotaIss) contextParts.push(`Alíquota ISS informada pelo usuário: ${aliquotaIss}%`);
+
+  // Add user notes
+  if (userNotes) contextParts.push(`Notas/Observações do Usuário: ${userNotes}`);
 
   const contextInfo = contextParts.length > 0 ? `\nCONSIDERE OS SEGUINTES DADOS ESPECÍFICOS PARA O CÁLCULO/ANÁLISE: ${contextParts.join('; ')}.` : '';
 
@@ -61,7 +66,7 @@ export const fetchFiscalData = async (
       sources,
       query,
       timestamp: Date.now(),
-      context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss }
+      context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss, userNotes }
     };
   } catch (error: any) {
     console.error("Gemini API Error:", error);

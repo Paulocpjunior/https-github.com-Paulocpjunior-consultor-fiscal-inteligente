@@ -134,16 +134,21 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 </div>
 
                 {/* Optional Context Display */}
-                {result.context && (result.context.aliquotaIcms || result.context.aliquotaPisCofins || result.context.aliquotaIss) && (
+                {result.context && (result.context.aliquotaIcms || result.context.aliquotaPisCofins || result.context.aliquotaIss || result.context.userNotes) && (
                     <div className="mb-6 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex items-start gap-3">
                          <CalculatorIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" />
-                         <div>
+                         <div className="flex-grow">
                              <p className="text-sm font-bold text-slate-900 dark:text-slate-200">Contexto Tributário Considerado:</p>
                              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm font-bold text-slate-800 dark:text-slate-300 dark:font-normal">
                                  {result.context.aliquotaIss && <span>• ISS: <strong>{result.context.aliquotaIss}%</strong></span>}
                                  {result.context.aliquotaIcms && <span>• ICMS: <strong>{result.context.aliquotaIcms}%</strong></span>}
                                  {result.context.aliquotaPisCofins && <span>• PIS/COFINS: <strong>{result.context.aliquotaPisCofins}%</strong></span>}
                              </div>
+                             {result.context.userNotes && (
+                                <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 italic border-l-2 border-sky-300 dark:border-sky-500 pl-2">
+                                    "{result.context.userNotes}"
+                                </p>
+                             )}
                          </div>
                     </div>
                 )}

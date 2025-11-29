@@ -30,6 +30,7 @@ export const SearchResultSchema = z.object({
       aliquotaIcms: z.string().optional(),
       aliquotaPisCofins: z.string().optional(),
       aliquotaIss: z.string().optional(),
+      userNotes: z.string().optional(),
   }).optional(),
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
@@ -63,6 +64,7 @@ export interface HistoryItem {
     aliquotaIcms?: string;
     aliquotaPisCofins?: string;
     aliquotaIss?: string;
+    userNotes?: string;
 }
 
 export interface NewsAlert {
@@ -120,7 +122,8 @@ export interface SimplesNacionalEmpresa {
     anexo: SimplesNacionalAnexo; // Anexo Principal
     atividadesSecundarias?: SimplesNacionalAtividade[]; // Outros CNAEs
     folha12: number;
-    faturamentoManual?: { [key: string]: number };
+    faturamentoManual?: { [key: string]: number }; // Total YYYY-MM -> Valor
+    faturamentoMensalDetalhado?: { [mesIso: string]: { [cnae: string]: number } }; // Detalhe YYYY-MM -> { CNAE -> Valor }
     historicoCalculos?: SimplesHistoricoCalculo[];
     createdBy?: string;
 }
@@ -148,6 +151,7 @@ export interface SimplesCalculoMensal {
 export interface DetalhamentoAnexo {
     anexo: SimplesNacionalAnexo;
     faturamento: number;
+    aliquotaNominal: number; // Novo campo
     aliquotaEfetiva: number;
     valorDas: number;
     issRetido?: boolean;

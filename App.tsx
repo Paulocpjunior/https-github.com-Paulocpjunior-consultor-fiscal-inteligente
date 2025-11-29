@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -72,6 +73,7 @@ const App: React.FC = () => {
   const [aliquotaIcms, setAliquotaIcms] = useState('');
   const [aliquotaPisCofins, setAliquotaPisCofins] = useState('');
   const [aliquotaIss, setAliquotaIss] = useState('');
+  const [userNotes, setUserNotes] = useState('');
   
   const [result, setResult] = useState<SearchResult | null>(null);
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null);
@@ -169,6 +171,7 @@ const App: React.FC = () => {
       setResponsavel(item.responsavel || '');
       setRegimeTributario(item.regimeTributario || '');
       setReformaQuery(item.reformaQuery || '');
+      setUserNotes(item.userNotes || '');
       
       if (item.type === SearchType.REFORMA_TRIBUTARIA) {
           if (item.mode === 'single') {
@@ -329,7 +332,8 @@ const App: React.FC = () => {
               undefined,
               aliquotaIcms,
               aliquotaPisCofins,
-              aliquotaIss
+              aliquotaIss,
+              userNotes
           );
           setResult(data);
           addHistory({
@@ -342,7 +346,8 @@ const App: React.FC = () => {
               regimeTributario,
               aliquotaIcms,
               aliquotaPisCofins,
-              aliquotaIss
+              aliquotaIss,
+              userNotes
           });
       }
     } catch (err) {
@@ -351,7 +356,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, currentUser, aliquotaIcms, aliquotaPisCofins, aliquotaIss, isLoading]);
+  }, [searchType, mode, municipio, alias, responsavel, regimeTributario, currentUser, aliquotaIcms, aliquotaPisCofins, aliquotaIss, isLoading, userNotes]);
 
   const handleReformaSearch = useCallback(async (query: string) => {
       if (isLoading) return;
@@ -430,11 +435,15 @@ const App: React.FC = () => {
       return updated.find(e => e.id === empresaId) || null;
   };
 
-  const handleSaveFaturamentoManual = (empresaId: string, faturamento: any) => {
-      simplesService.saveFaturamentoManual(empresaId, faturamento);
-      const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, faturamentoManual: faturamento } : e);
+  const handleSaveFaturamentoManual = async (empresaId: string, faturamento: any, faturamentoDetalhado?: any) => {
+      await simplesService.saveFaturamentoManual(empresaId, faturamento, faturamentoDetalhado);
+      const updated = simplesEmpresas.map(e => e.id === empresaId ? { 
+          ...e, 
+          faturamentoManual: faturamento,
+          faturamentoMensalDetalhado: faturamentoDetalhado || e.faturamentoMensalDetalhado 
+      } : e);
       setSimplesEmpresas(updated);
-      setToastMessage("Histórico de faturamento salvo!");
+      // O feedback é tratado no componente filho
       return updated.find(e => e.id === empresaId) || null;
   };
   
@@ -494,6 +503,7 @@ const App: React.FC = () => {
                                     setQuery2(''); 
                                     setError(null);
                                     setValidationErrors({});
+                                    setUserNotes('');
                                     if (type === SearchType.SIMPLES_NACIONAL) {
                                         setSimplesView('dashboard');
                                         loadSimplesData(currentUser);
@@ -588,6 +598,24 @@ const App: React.FC = () => {
                                         )}
                                     </button>
                                 </div>
+
+                                {/* Optional User Notes for CFOP */}
+                                {searchType === SearchType.CFOP && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1">
+                                            Notas / Observações (Opcional)
+                                            <Tooltip content="Adicione contexto específico para a análise da IA.">
+                                                <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                            </Tooltip>
+                                        </label>
+                                        <textarea
+                                            value={userNotes}
+                                            onChange={(e) => setUserNotes(e.target.value)}
+                                            className="w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal resize-none h-20 focus:ring-2 focus:ring-sky-500 outline-none"
+                                            placeholder="Ex: Operação com mercadoria sujeita a ST no destino..."
+                                        />
+                                    </div>
+                                )}
 
                                 {/* Optional Context Inputs for Service Analysis */}
                                 {searchType === SearchType.SERVICO && (
