@@ -157,6 +157,7 @@ export interface DetalhamentoAnexo {
     valorDas: number;
     issRetido?: boolean;
     icmsSt?: boolean;
+    isMonofasico?: boolean;
 }
 
 export interface SimplesItemCalculo {
@@ -166,6 +167,7 @@ export interface SimplesItemCalculo {
     issRetido: boolean;
     icmsSt: boolean;
     isSup?: boolean; // Sociedade Uniprofissional (ISS Fixo)
+    isMonofasico?: boolean; // PIS/COFINS Monofásico (Revenda)
 }
 
 export interface SimplesNacionalResumo {

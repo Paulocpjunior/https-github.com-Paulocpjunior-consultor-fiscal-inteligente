@@ -407,7 +407,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 valor: faturamentoTotalMes,
                 issRetido: false,
                 icmsSt: false,
-                isSup: false // Default
+                isSup: false, // Default
+                isMonofasico: false
             });
         }
     }
@@ -444,7 +445,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             aliq_eff = tabela[0].aliquota;
         }
 
-        // 3. Aplica Retenções (ISS e ICMS ST) e SUP
+        // 3. Aplica Retenções (ISS, ICMS ST, Monofásico) e SUP
         // A lógica é: Nova Alíquota = Alíquota Efetiva * (1 - (Percentual do Tributo / 100))
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
@@ -456,6 +457,11 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             }
             if (item.icmsSt && reparticao['ICMS']) {
                 percentualReducao += reparticao['ICMS'];
+            }
+            // Produtos Monofásicos (PIS/COFINS Zero no DAS)
+            if (item.isMonofasico) {
+                if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
+                if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
             }
         }
 
@@ -471,7 +477,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             aliquotaEfetiva: aliq_final,
             valorDas: valorDasItem,
             issRetido: item.issRetido,
-            icmsSt: item.icmsSt
+            icmsSt: item.icmsSt,
+            isMonofasico: item.isMonofasico
         });
     });
 

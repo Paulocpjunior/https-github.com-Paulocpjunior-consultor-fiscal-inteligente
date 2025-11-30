@@ -27,6 +27,7 @@ interface CnaeInputState {
     issRetido: boolean;
     icmsSt: boolean;
     isSup: boolean; // Sociedade Uniprofissional (ISS Fixo)
+    isMonofasico: boolean; // PIS/COFINS Monofásico
 }
 
 type TabType = 'calculo' | 'analise' | 'historico_salvo';
@@ -198,7 +199,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 valor: val, 
                 issRetido: state.issRetido, 
                 icmsSt: state.icmsSt,
-                isSup: state.isSup
+                isSup: state.isSup,
+                isMonofasico: state.isMonofasico
             });
         });
 
@@ -317,7 +319,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     valor: formattedVal,
                     issRetido: false,
                     icmsSt: false,
-                    isSup: false
+                    isSup: false,
+                    isMonofasico: false
                 };
             };
 
@@ -372,7 +375,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }));
     };
 
-    const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt' | 'isSup') => {
+    const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt' | 'isSup' | 'isMonofasico') => {
         setFaturamentoPorCnae((prev) => ({
             ...prev,
             [key]: { ...prev[key], [field]: !prev[key][field] }
@@ -409,7 +412,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         valor: val,
                         issRetido: state.issRetido,
                         icmsSt: state.icmsSt,
-                        isSup: state.isSup
+                        isSup: state.isSup,
+                        isMonofasico: state.isMonofasico
                      });
                 }
             });
@@ -901,9 +905,10 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             ? `secundario::${index}::${cnaeCode}::${anexoCode}`
             : `principal::0::${cnaeCode}::${anexoCode}`;
             
-        const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false, isSup: false };
+        const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false, isSup: false, isMonofasico: false };
         const showIcmsSt = ['I', 'II'].includes(anexoCode);
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexoCode);
+        const showMonofasico = ['I', 'II'].includes(anexoCode);
 
         return (
             <div key={key} className="bg-slate-50 dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 relative group hover:border-sky-300 transition-colors shadow-sm">
@@ -932,6 +937,14 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
 
                     <div className="flex flex-wrap gap-4 pt-2 border-t border-slate-200 dark:border-slate-600/50">
+                        {showMonofasico && (
+                            <label className="flex items-center gap-2 cursor-pointer select-none bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded border border-transparent hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
+                                <input type="checkbox" checked={state.isMonofasico} onChange={() => handleOptionToggle(key, 'isMonofasico')} className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4" />
+                                <span className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1" title="Produtos Monofásicos (PIS/COFINS recolhido na origem)">
+                                    Monofásico (PIS/COFINS)
+                                </span>
+                            </label>
+                        )}
                         {showIcmsSt && (
                             <label className="flex items-center gap-2 cursor-pointer select-none bg-slate-100 dark:bg-slate-700/50 px-2 py-1 rounded border border-transparent hover:border-slate-300 dark:hover:border-slate-500 transition-colors">
                                 <input type="checkbox" checked={state.icmsSt} onChange={() => handleOptionToggle(key, 'icmsSt')} className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4" />
@@ -1421,7 +1434,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         {renderTaxAnalysisSection()}
 
                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                            {Array.from(new Set(allActivities.map(a => a.anexo))).map((anexo: any) => {
+                            {(Array.from(new Set(allActivities.map(a => a.anexo))) as any[]).map((anexo: any) => {
                                 let anexosToShow: string[] = [anexo];
                                 if (anexo === 'III_V') anexosToShow = ['III', 'V'];
                                 
