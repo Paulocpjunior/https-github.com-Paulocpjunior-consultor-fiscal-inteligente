@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -443,16 +442,19 @@ const App: React.FC = () => {
           faturamentoMensalDetalhado: faturamentoDetalhado || e.faturamentoMensalDetalhado 
       } : e);
       setSimplesEmpresas(updated);
-      // O feedback é tratado no componente filho
       return updated.find(e => e.id === empresaId) || null;
   };
   
-  const handleUpdateEmpresa = (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
-      simplesService.updateEmpresa(empresaId, data);
-      const updated = simplesEmpresas.map(e => e.id === empresaId ? { ...e, ...data } : e);
-      setSimplesEmpresas(updated);
-      setToastMessage("Dados da empresa atualizados!");
-      return updated.find(e => e.id === empresaId) || null;
+  const handleUpdateEmpresa = async (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
+      // Optimistic update
+      const updatedList = simplesEmpresas.map(e => e.id === empresaId ? { ...e, ...data } : e);
+      setSimplesEmpresas(updatedList);
+      
+      // Real DB Update
+      await simplesService.updateEmpresa(empresaId, data);
+      
+      setToastMessage("Dados da empresa salvos no banco de dados!");
+      return updatedList.find(e => e.id === empresaId) || null;
   }
 
   const isFavorite = useMemo(() => {
