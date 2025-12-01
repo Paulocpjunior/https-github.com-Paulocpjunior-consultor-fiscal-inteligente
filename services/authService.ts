@@ -65,11 +65,14 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
     const isMaster = cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL);
     
     // Dados base garantidos pelo Auth do Google/Firebase
+    // Força ROLE admin se for o email master, independente do que vier do banco
+    const forcedRole: UserRole = isMaster ? 'admin' : 'colaborador';
+
     const fallbackUser: User = {
         id: firebaseUser.uid,
         name: firebaseUser.displayName || cleanEmail.split('@')[0],
         email: cleanEmail,
-        role: isMaster ? 'admin' : 'colaborador',
+        role: forcedRole, 
         isVerified: true
     };
 
@@ -82,26 +85,29 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
 
         if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as User;
+            
+            // Auto-correção: Se for master mas no banco não estiver admin, atualiza
+            if (isMaster && userData.role !== 'admin') {
+                userData.role = 'admin';
+                await setDoc(doc(db, 'users', firebaseUser.uid), userData, { merge: true });
+            }
+
             createSession(userData);
             return userData;
         } else {
-            // Se não existe, tenta criar (pode falhar se sem permissão, mas não trava)
-            // Isola o setDoc para não falhar o retorno da função se a regra bloquear
+            // Se não existe, tenta criar
             try {
                 await setDoc(doc(db, 'users', firebaseUser.uid), fallbackUser);
             } catch (innerError: any) {
-                // Apenas loga, não re-lança o erro
                 if (innerError.code === 'permission-denied') {
-                    console.error("Erro de Permissão no Firestore: Verifique as Regras no Console do Firebase.");
+                    console.error("Erro de Permissão no Firestore ao criar usuário.");
                 }
-                console.warn("Não foi possível salvar o perfil do usuário no DB (permissão ou rede):", innerError);
+                console.warn("Não foi possível salvar o perfil do usuário no DB:", innerError);
             }
             createSession(fallbackUser);
             return fallbackUser;
         }
     } catch (e) {
-        // SE DER ERRO GERAL, RETORNA O USUÁRIO BÁSICO (FALLBACK)
-        // Isso garante que o login NUNCA trave por causa do Firestore
         console.info("Modo de Fallback de Auth ativado (Permissão ou Rede):", e);
         createSession(fallbackUser);
         return fallbackUser;
@@ -221,14 +227,11 @@ export const getAllUsers = async (): Promise<User[]> => {
             const snapshot = await getDocs(collection(db, 'users'));
             return snapshot.docs.map(doc => doc.data() as User);
         } catch (e: any) {
-            // Em caso de erro de permissão (regras de segurança bloqueando listagem), 
-            // faz fallback para usuários locais para não quebrar a UI.
             if (e.code === 'permission-denied') {
                 console.info("Info: Listagem global bloqueada por regras de segurança. Exibindo usuários locais.");
             } else {
                 console.warn("Erro ao listar usuários (Firebase):", e);
             }
-            // Fallback to local execution below
         }
     }
     return getUsersInternalLocal().map(({ passwordHash, ...u }) => u);
@@ -253,7 +256,6 @@ export const resetUserPassword = async (userId: string): Promise<boolean> => {
     const defaultPass = '123456';
     if (isFirebaseConfigured) {
         // Em Firebase Client SDK, não podemos resetar senha de outro usuário sem enviar email
-        // Retornamos true simbolicamente para atualizar UI
         return true; 
     }
     const users = getUsersInternalLocal();

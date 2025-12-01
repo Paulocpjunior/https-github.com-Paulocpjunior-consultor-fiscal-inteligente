@@ -30,6 +30,7 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
     if (!currentUser) return [];
     let firebaseEmpresas: LucroPresumidoEmpresa[] = [];
     
+    // Check master email case-insensitive
     const isMasterAdmin = currentUser.role === 'admin' || currentUser.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
     if (isFirebaseConfigured && db && auth?.currentUser) {

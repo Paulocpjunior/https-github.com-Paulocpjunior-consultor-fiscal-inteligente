@@ -89,6 +89,7 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     if (!user) return [];
     let firebaseEmpresas: SimplesNacionalEmpresa[] = [];
     
+    // Check master email case-insensitive
     const isMasterAdmin = user.role === 'admin' || user.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
     // 1. Tenta buscar do Firebase
@@ -153,6 +154,7 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
     // 2. Tenta salvar no Firebase (Blindado com setDoc e UID direto)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
+            // Ensure createdBy is set for the cloud doc
             newEmpresa.createdBy = auth.currentUser.uid; 
             const payload = sanitizePayload(newEmpresa);
             await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
