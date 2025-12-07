@@ -101,6 +101,9 @@ const App: React.FC = () => {
   const [simplesNotas, setSimplesNotas] = useState<Record<string, SimplesNacionalNota[]>>({});
   const [selectedSimplesEmpresaId, setSelectedSimplesEmpresaId] = useState<string | null>(null);
   
+  // Lucro Presumido/Real State (ID para navegação via histórico)
+  const [selectedLucroEmpresaId, setSelectedLucroEmpresaId] = useState<string | null>(null);
+
   const loadSimplesData = async (user?: User | null) => {
       try {
           const empresas = await simplesService.getEmpresas(user || currentUser);
@@ -163,29 +166,38 @@ const App: React.FC = () => {
   };
 
   const handleSelectHistoryItem = (item: HistoryItem) => {
-      setSearchType(item.type);
-      setMode(item.mode);
-      setMunicipio(item.municipio || '');
-      setAlias(item.alias || '');
-      setResponsavel(item.responsavel || '');
-      setRegimeTributario(item.regimeTributario || '');
-      setReformaQuery(item.reformaQuery || '');
-      setUserNotes(item.userNotes || '');
-      
-      if (item.type === SearchType.REFORMA_TRIBUTARIA) {
-          if (item.mode === 'single') {
-              setReformaQuery(item.queries[0]);
-          } else {
-              setCnae(item.queries[0]);
-              setCnae2(item.queries[1]);
-          }
+      if (item.type === SearchType.SIMPLES_NACIONAL && item.entityId) {
+          setSearchType(item.type);
+          setSimplesView('detalhe');
+          setSelectedSimplesEmpresaId(item.entityId);
+      } else if (item.type === SearchType.LUCRO_PRESUMIDO_REAL && item.entityId) {
+          setSearchType(item.type);
+          setSelectedLucroEmpresaId(item.entityId);
       } else {
-          setQuery1(item.queries[0]);
-          if (item.mode === 'compare' && item.queries[1]) {
-              setQuery2(item.queries[1]);
+          setSearchType(item.type);
+          setMode(item.mode);
+          setMunicipio(item.municipio || '');
+          setAlias(item.alias || '');
+          setResponsavel(item.responsavel || '');
+          setRegimeTributario(item.regimeTributario || '');
+          setReformaQuery(item.reformaQuery || '');
+          setUserNotes(item.userNotes || '');
+          
+          if (item.type === SearchType.REFORMA_TRIBUTARIA) {
+              if (item.mode === 'single') {
+                  setReformaQuery(item.queries[0]);
+              } else {
+                  setCnae(item.queries[0]);
+                  setCnae2(item.queries[1]);
+              }
+          } else {
+              setQuery1(item.queries[0]);
+              if (item.mode === 'compare' && item.queries[1]) {
+                  setQuery2(item.queries[1]);
+              }
           }
+          handleSearch(item.queries[0], item.queries[1]);
       }
-      handleSearch(item.queries[0], item.queries[1]);
       if(window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
@@ -409,6 +421,14 @@ const App: React.FC = () => {
       if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
       setSimplesView('dashboard');
       setToastMessage("Empresa cadastrada com sucesso!");
+      
+      // Add to History
+      addHistory({
+          queries: [nome],
+          type: SearchType.SIMPLES_NACIONAL,
+          mode: 'single',
+          entityId: newEmpresa.id
+      });
   };
 
   const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
@@ -442,7 +462,19 @@ const App: React.FC = () => {
           faturamentoMensalDetalhado: faturamentoDetalhado || e.faturamentoMensalDetalhado 
       } : e);
       setSimplesEmpresas(updated);
-      return updated.find(e => e.id === empresaId) || null;
+      
+      // Add to History (Calculation Update)
+      const emp = updated.find(e => e.id === empresaId);
+      if (emp) {
+          addHistory({
+              queries: [`Cálculo: ${emp.nome}`],
+              type: SearchType.SIMPLES_NACIONAL,
+              mode: 'single',
+              entityId: empresaId
+          });
+      }
+
+      return emp || null;
   };
   
   const handleUpdateEmpresa = async (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
@@ -510,6 +542,9 @@ const App: React.FC = () => {
                                         setSimplesView('dashboard');
                                         loadSimplesData(currentUser);
                                     }
+                                    if (type === SearchType.LUCRO_PRESUMIDO_REAL) {
+                                        setSelectedLucroEmpresaId(null);
+                                    }
                                 }}
                                 className={`
                                     flex flex-col items-center justify-center p-3 rounded-xl border transition-all duration-200
@@ -535,7 +570,7 @@ const App: React.FC = () => {
                     {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro) */}
                     {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
                         <>
-                            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in">
+                            <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in ${[SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) ? 'hidden' : ''}`}>
                                 <div className="flex items-center gap-4 mb-4">
                                     <button 
                                         onClick={() => setMode('single')}
@@ -789,7 +824,11 @@ const App: React.FC = () => {
                     {/* Lucro Presumido View */}
                     {searchType === SearchType.LUCRO_PRESUMIDO_REAL && (
                         <Suspense fallback={<LoadingSpinner />}>
-                            <LucroPresumidoRealDashboard currentUser={currentUser} />
+                            <LucroPresumidoRealDashboard 
+                                currentUser={currentUser} 
+                                externalSelectedId={selectedLucroEmpresaId}
+                                onAddToHistory={addHistory}
+                            />
                         </Suspense>
                     )}
 

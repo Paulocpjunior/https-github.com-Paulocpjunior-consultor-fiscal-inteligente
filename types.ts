@@ -65,6 +65,7 @@ export interface HistoryItem {
     aliquotaPisCofins?: string;
     aliquotaIss?: string;
     userNotes?: string;
+    entityId?: string;
 }
 
 export interface NewsAlert {
