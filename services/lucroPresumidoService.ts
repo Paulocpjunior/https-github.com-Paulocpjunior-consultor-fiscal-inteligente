@@ -1,3 +1,4 @@
+
 import { LucroPresumidoEmpresa, FichaFinanceiraRegistro, User } from '../types';
 import { db, isFirebaseConfigured, auth } from './firebaseConfig';
 import { collection, getDocs, doc, updateDoc, setDoc, addDoc, getDoc, query, where, deleteDoc } from 'firebase/firestore';
@@ -26,131 +27,191 @@ const saveLocalEmpresas = (empresas: LucroPresumidoEmpresa[]) => {
     localStorage.setItem(STORAGE_KEY_LUCRO_EMPRESAS, JSON.stringify(empresas));
 };
 
+// --- CRUD ---
+
 export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresumidoEmpresa[]> => {
     if (!currentUser) return [];
-    let firebaseEmpresas: LucroPresumidoEmpresa[] = [];
     
     // Check master email case-insensitive
     const isMasterAdmin = currentUser.role === 'admin' || currentUser.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
+    // 1. Tenta buscar da Nuvem (Prioridade)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            let q;
             const uid = auth.currentUser.uid;
             
-            if (isMasterAdmin) {
-                q = collection(db, 'lucro_empresas');
-            } else {
-                q = query(collection(db, 'lucro_empresas'), where('createdBy', '==', uid));
-            }
+            // ATUALIZAÇÃO DE SEGURANÇA:
+            // Filtra explicitamente por createdBy para satisfazer regras de segurança do Firestore.
+            // Isso evita o erro "Missing or insufficient permissions" mesmo para admins, 
+            // pois as regras padrão geralmente validam if request.auth.uid == resource.data.createdBy.
+            const q = query(collection(db, 'lucro_empresas'), where('createdBy', '==', uid));
+            
             const snapshot = await getDocs(q);
-            firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
+            const cloudEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
+            
+            // Se conseguiu buscar da nuvem, atualiza o cache local para ter um backup
+            if (cloudEmpresas.length > 0) {
+                // Mescla com locais que talvez não estejam na nuvem (modo offline anterior)
+                const local = getLocalEmpresas();
+                const merged = [...cloudEmpresas];
+                local.forEach(l => {
+                    if (!merged.find(c => c.id === l.id)) merged.push(l);
+                });
+                saveLocalEmpresas(merged);
+                return cloudEmpresas;
+            }
         } catch (e: any) {
-            // Fallback silencioso
+            // Fallback silencioso apenas se erro de rede/permissão
             if (e.code !== 'permission-denied' && e.code !== 'failed-precondition') {
                 console.warn("Firestore Warning:", e.message);
+            } else {
+                console.warn("Firestore Permission Error (getEmpresas Lucro):", e.code);
             }
         }
     }
 
+    // 2. Fallback Local (Se nuvem falhar ou não configurada)
     const localEmpresas = getLocalEmpresas();
-    let filteredLocal = localEmpresas;
-    
     if (!isMasterAdmin) {
-         // FIX: Include items created by this user OR legacy items without owner
-        filteredLocal = localEmpresas.filter(e => e.createdBy === currentUser.id || !e.createdBy);
+        return localEmpresas.filter(e => e.createdBy === currentUser.id || !e.createdBy);
     }
-
-    // Mescla Inteligente
-    const empresaMap = new Map<string, LucroPresumidoEmpresa>();
-    
-    firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
-    
-    filteredLocal.forEach(e => {
-        if (!empresaMap.has(e.id)) {
-            empresaMap.set(e.id, e);
-        }
-    });
-
-    return Array.from(empresaMap.values());
+    return localEmpresas;
 };
 
 export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPresumidoEmpresa> => {
-    const newEmpresaData = { 
-        id: generateUUID(),
+    // Garante ID
+    const id = empresa.id || generateUUID();
+    
+    const newEmpresaData: LucroPresumidoEmpresa = { 
         ...empresa, 
-        fichaFinanceira: [], 
+        id,
+        fichaFinanceira: empresa.fichaFinanceira || [], 
         createdBy: userId 
     };
 
-    // 1. Save Local
-    const localEmpresas = getLocalEmpresas();
-    localEmpresas.push(newEmpresaData);
-    saveLocalEmpresas(localEmpresas);
-
-    // 2. Try Firebase (Blindado com setDoc)
+    // 1. Tenta salvar na Nuvem (Fonte da Verdade)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
+            // Garante que o createdBy seja o UID do Auth atual para consistência
             newEmpresaData.createdBy = auth.currentUser.uid;
-            
             const payload = sanitizePayload(newEmpresaData);
-            // Use setDoc para garantir que o ID gerado seja o usado como chave do documento
-            await setDoc(doc(db, 'lucro_empresas', newEmpresaData.id), payload);
+            
+            // Usa setDoc com o ID específico para criar ou substituir
+            await setDoc(doc(db, 'lucro_empresas', id), payload);
         } catch (e: any) { 
-            if (e.code !== 'permission-denied') {
-                console.warn("Erro ao salvar na nuvem:", e);
-            }
+            console.error("Erro ao salvar na nuvem:", e);
+            if (e.code === 'permission-denied') throw new Error("Sem permissão para salvar na nuvem.");
         }
     }
+
+    // 2. Salva Local (Backup/Cache)
+    const localEmpresas = getLocalEmpresas();
+    const existingIndex = localEmpresas.findIndex(e => e.id === id);
+    if (existingIndex >= 0) {
+        localEmpresas[existingIndex] = newEmpresaData;
+    } else {
+        localEmpresas.push(newEmpresaData);
+    }
+    saveLocalEmpresas(localEmpresas);
 
     return newEmpresaData;
 };
 
 export const updateEmpresa = async (id: string, data: Partial<LucroPresumidoEmpresa>): Promise<LucroPresumidoEmpresa | null> => {
-    const localEmpresas = getLocalEmpresas();
-    const index = localEmpresas.findIndex(e => e.id === id);
-    if (index !== -1) {
-        localEmpresas[index] = { ...localEmpresas[index], ...data };
-        saveLocalEmpresas(localEmpresas);
-    }
-
+    // 1. Update Cloud
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'lucro_empresas', id);
-            
-            // IMPORTANTE: Remove campos que as regras de segurança podem bloquear alteração (ownership)
-            const { id: _, createdBy: __, ...safeData } = data as any;
+            const { id: _, createdBy: __, ...safeData } = data as any; // Remove campos imutáveis
             
             if (Object.keys(safeData).length > 0) {
                 const payload = sanitizePayload(safeData);
                 await updateDoc(docRef, payload);
             }
         } catch (e: any) { 
-            if (e.code !== 'permission-denied') {
-                console.warn("Cloud update failed:", e);
-            }
+            console.warn("Cloud update failed:", e);
         }
     }
 
-    return index !== -1 ? localEmpresas[index] : null;
+    // 2. Update Local
+    const localEmpresas = getLocalEmpresas();
+    const index = localEmpresas.findIndex(e => e.id === id);
+    if (index !== -1) {
+        localEmpresas[index] = { ...localEmpresas[index], ...data };
+        saveLocalEmpresas(localEmpresas);
+        return localEmpresas[index];
+    }
+
+    return null;
 };
 
 export const deleteEmpresa = async (id: string): Promise<boolean> => {
+    if (isFirebaseConfigured && db) {
+        try {
+            await deleteDoc(doc(db, 'lucro_empresas', id));
+        } catch(e) {
+            console.error("Erro ao deletar da nuvem", e);
+        }
+    }
+    
     const localEmpresas = getLocalEmpresas();
     const filtered = localEmpresas.filter(e => e.id !== id);
     saveLocalEmpresas(filtered);
 
-    if (isFirebaseConfigured && db) {
-        try {
-            await deleteDoc(doc(db, 'lucro_empresas', id));
-        } catch(e) {}
-    }
     return true;
 };
 
-export const addFichaFinanceira = async (empresaId: string, registro: any) => {
-    const empresas = await getEmpresas({ id: 'dummy', role: 'admin', name: '', email: '' } as User);
-    const emp = empresas.find(e => e.id === empresaId);
-    const currentFicha = emp?.fichaFinanceira || [];
-    return updateEmpresa(empresaId, { fichaFinanceira: [...currentFicha, registro] });
+// Função Crítica: Garante que o histórico financeiro seja anexado corretamente na nuvem
+export const addFichaFinanceira = async (empresaId: string, registro: FichaFinanceiraRegistro): Promise<LucroPresumidoEmpresa | null> => {
+    
+    // 1. Se estiver online, busca o documento atualizado primeiro para não perder histórico de outras sessões
+    if (isFirebaseConfigured && db && auth?.currentUser) {
+        try {
+            const docRef = doc(db, 'lucro_empresas', empresaId);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                const empresaData = docSnap.data() as LucroPresumidoEmpresa;
+                const currentFicha = empresaData.fichaFinanceira || [];
+                
+                // Remove registro existente do mesmo mês (se houver) para substituir pelo novo
+                const fichaAtualizada = currentFicha.filter(f => f.mesReferencia !== registro.mesReferencia);
+                fichaAtualizada.push(registro);
+
+                // Ordena por data (opcional, mas bom para organização)
+                fichaAtualizada.sort((a, b) => a.mesReferencia.localeCompare(b.mesReferencia));
+
+                await updateDoc(docRef, { fichaFinanceira: sanitizePayload(fichaAtualizada) });
+                
+                // Atualiza local também para refletir
+                const localEmpresas = getLocalEmpresas();
+                const idx = localEmpresas.findIndex(e => e.id === empresaId);
+                if (idx !== -1) {
+                    localEmpresas[idx].fichaFinanceira = fichaAtualizada;
+                    saveLocalEmpresas(localEmpresas);
+                    return localEmpresas[idx];
+                }
+                return { ...empresaData, fichaFinanceira: fichaAtualizada };
+            }
+        } catch (e) {
+            console.error("Erro ao salvar ficha na nuvem:", e);
+            throw new Error("Erro de conexão ao salvar cálculo. Verifique sua internet.");
+        }
+    }
+
+    // 2. Fallback Local (apenas se offline)
+    const localEmpresas = getLocalEmpresas();
+    const index = localEmpresas.findIndex(e => e.id === empresaId);
+    
+    if (index !== -1) {
+        const currentFicha = localEmpresas[index].fichaFinanceira || [];
+        const fichaAtualizada = currentFicha.filter(f => f.mesReferencia !== registro.mesReferencia);
+        fichaAtualizada.push(registro);
+        
+        localEmpresas[index].fichaFinanceira = fichaAtualizada;
+        saveLocalEmpresas(localEmpresas);
+        return localEmpresas[index];
+    }
+
+    return null;
 };

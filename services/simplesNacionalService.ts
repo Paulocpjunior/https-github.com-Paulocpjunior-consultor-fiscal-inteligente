@@ -95,15 +95,13 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     // 1. Tenta buscar do Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            let q;
             const uid = auth.currentUser.uid;
-            
-            // Se for Master Admin, busca TUDO. Se não, busca apenas as criadas pelo usuário.
-            if (isMasterAdmin) {
-                q = collection(db, 'simples_empresas');
-            } else {
-                q = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
-            }
+            // IMPORTANTE: Para evitar erro "Missing or insufficient permissions", 
+            // a query deve ser filtrada por createdBy a menos que as regras do Firestore sejam abertas.
+            // Para admin, teoricamente gostaríamos de ver tudo, mas sem backend admin SDK, 
+            // ficamos restritos às regras do cliente (geralmente owner-only).
+            // Mantemos a query segura (createdBy) para garantir funcionalidade.
+            const q = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
             
             const snapshot = await getDocs(q);
             firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
@@ -111,6 +109,8 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
             // Silently fail to local storage on permission/network errors
             if (e.code !== 'permission-denied' && e.code !== 'failed-precondition') {
                 console.warn("Firestore Warning:", e.message);
+            } else {
+                console.warn("Firestore Permission Error (getEmpresas):", e.code);
             }
         }
     }
@@ -195,9 +195,46 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
     return index !== -1 ? localEmpresas[index] : null;
 };
 
-export const getAllNotas = async (): Promise<Record<string, SimplesNacionalNota[]>> => {
+export const getAllNotas = async (user?: User | null): Promise<Record<string, SimplesNacionalNota[]>> => {
+    let firebaseNotas: SimplesNacionalNota[] = [];
+    
+    // Cloud Fetch
+    if (isFirebaseConfigured && db && auth?.currentUser) {
+        try {
+            const uid = auth.currentUser.uid;
+            
+            // Query segura: Filtra explicitamente por createdBy para satisfazer regras de segurança comuns.
+            // Isso evita o erro "Missing or insufficient permissions" em regras que exigem request.auth.uid == resource.data.createdBy
+            const q = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
+            
+            const snapshot = await getDocs(q);
+            firebaseNotas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
+        } catch (e: any) { 
+            console.warn("Firestore notes fetch error", e.message || e); 
+        }
+    }
+
+    // Local Fetch
     const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
-    return stored ? JSON.parse(stored) : {};
+    const localNotasMap = stored ? JSON.parse(stored) : {};
+    let allNotas: SimplesNacionalNota[] = [];
+    
+    // Flatten local map
+    Object.values(localNotasMap).forEach((arr: any) => allNotas.push(...arr));
+
+    // Merge (Cloud overrides Local if ID conflict)
+    const noteMap = new Map<string, SimplesNacionalNota>();
+    allNotas.forEach(n => noteMap.set(n.id, n));
+    firebaseNotas.forEach(n => noteMap.set(n.id, n));
+
+    // Rebuild Record<string, SimplesNacionalNota[]>
+    const result: Record<string, SimplesNacionalNota[]> = {};
+    noteMap.forEach(note => {
+        if (!result[note.empresaId]) result[note.empresaId] = [];
+        result[note.empresaId].push(note);
+    });
+    
+    return result;
 };
 
 // --- PARSER HELPERS ---
@@ -245,6 +282,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             const pgdasHistory = await extractPgdasDataFromPdf(base64);
             
             if (pgdasHistory && pgdasHistory.length > 0) {
+                // If PGDAS data, we update company directly, not notes
                 const empresas = await getEmpresas({ id: 'temp', role: 'admin', name: '', email: '' } as any);
                 const emp = empresas.find(e => e.id === empresaId);
                 if (emp) {
@@ -299,11 +337,10 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
 
     if (!extractedData || extractedData.length === 0) return { successCount: 0, failCount: 0, errors: ["Nenhum dado válido encontrado pelo sistema inteligente."] };
 
-    const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
-    const notasMap = stored ? JSON.parse(stored) : {};
-    if (!notasMap[empresaId]) notasMap[empresaId] = [];
-    
+    const newNotes: SimplesNacionalNota[] = [];
+    const uid = auth?.currentUser?.uid;
     let success = 0;
+
     extractedData.forEach(item => {
         if(item.data && (item.valor !== undefined && item.valor !== null)) {
             let dateVal = new Date(item.data).getTime();
@@ -313,7 +350,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             }
 
             if (!isNaN(dateVal)) {
-                notasMap[empresaId].push({
+                newNotes.push({
                     id: generateUUID(),
                     empresaId,
                     data: dateVal,
@@ -325,8 +362,23 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             }
         }
     });
-    
+
+    // 1. Save Local
+    const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
+    const notasMap = stored ? JSON.parse(stored) : {};
+    if (!notasMap[empresaId]) notasMap[empresaId] = [];
+    notasMap[empresaId].push(...newNotes);
     localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(notasMap));
+
+    // 2. Save Cloud (Firestore)
+    if (isFirebaseConfigured && db && uid) {
+        const batchPromises = newNotes.map(note => {
+            const payload = { ...note, createdBy: uid };
+            return setDoc(doc(db, 'simples_notas', note.id), payload);
+        });
+        await Promise.allSettled(batchPromises);
+    }
+    
     return { successCount: success, failCount: extractedData.length - success, errors: [] };
 };
 

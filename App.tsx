@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -105,9 +106,11 @@ const App: React.FC = () => {
   const [selectedLucroEmpresaId, setSelectedLucroEmpresaId] = useState<string | null>(null);
 
   const loadSimplesData = async (user?: User | null) => {
+      const targetUser = user || currentUser;
+      if (!targetUser) return;
       try {
-          const empresas = await simplesService.getEmpresas(user || currentUser);
-          const notas = await simplesService.getAllNotas();
+          const empresas = await simplesService.getEmpresas(targetUser);
+          const notas = await simplesService.getAllNotas(targetUser);
           setSimplesEmpresas(empresas);
           setSimplesNotas(notas);
       } catch (e) {
@@ -434,10 +437,13 @@ const App: React.FC = () => {
   const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
       try {
           const result = await simplesService.parseAndSaveNotas(empresaId, file);
-          const notas = await simplesService.getAllNotas();
-          const empresas = await simplesService.getEmpresas(currentUser);
-          setSimplesNotas(notas);
-          setSimplesEmpresas(empresas); 
+          // Refetch data after import to ensure UI consistency
+          if (currentUser) {
+              const empresas = await simplesService.getEmpresas(currentUser);
+              const notas = await simplesService.getAllNotas(currentUser);
+              setSimplesEmpresas(empresas);
+              setSimplesNotas(notas);
+          }
           if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'import_notas', empresaId);
           setToastMessage(result.successCount > 0 ? `${result.successCount} registros importados com sucesso!` : "Nenhum dado importado.");
           return result;

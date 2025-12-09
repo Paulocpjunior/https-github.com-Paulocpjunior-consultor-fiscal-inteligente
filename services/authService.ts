@@ -59,13 +59,13 @@ export const logout = async () => {
 
 // --- CORE AUTH LOGIC ---
 
-// Função BLINDADA para recuperar usuário
+// Função BLINDADA para recuperar usuário e garantir persistência no Banco Online
 export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User> => {
     const cleanEmail = normalizeEmail(firebaseUser.email || "");
     const isMaster = cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL);
     
     // Dados base garantidos pelo Auth do Google/Firebase
-    // Força ROLE admin se for o email master, independente do que vier do banco
+    // Força ROLE admin se for o email master
     const forcedRole: UserRole = isMaster ? 'admin' : 'colaborador';
 
     const fallbackUser: User = {
@@ -76,10 +76,11 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
         isVerified: true
     };
 
+    // Se não tiver DB configurado (modo local puro), retorna o fallback
     if (!db) return fallbackUser;
 
     try {
-        // Tenta ler o perfil completo do banco de dados
+        // Tenta ler o perfil completo do banco de dados (Firestore)
         const userDocRef = doc(db, 'users', firebaseUser.uid);
         const userDocSnap = await getDoc(userDocRef);
 
@@ -95,20 +96,23 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
             createSession(userData);
             return userData;
         } else {
-            // Se não existe, tenta criar
+            // CRÍTICO: Se o usuário existe no Auth mas não no Firestore, CRIA AGORA.
+            // Isso corrige contas "quebradas" onde o registro falhou na etapa do banco.
+            console.log("Perfil não encontrado no Firestore. Criando perfil de recuperação:", cleanEmail);
+            
             try {
                 await setDoc(doc(db, 'users', firebaseUser.uid), fallbackUser);
             } catch (innerError: any) {
-                if (innerError.code === 'permission-denied') {
-                    console.error("Erro de Permissão no Firestore ao criar usuário.");
-                }
-                console.warn("Não foi possível salvar o perfil do usuário no DB:", innerError);
+                console.error("Erro crítico ao salvar usuário no DB:", innerError);
+                // Se falhar a escrita, ainda permite o login com o objeto em memória para não bloquear o usuário
             }
+            
             createSession(fallbackUser);
             return fallbackUser;
         }
     } catch (e) {
-        console.info("Modo de Fallback de Auth ativado (Permissão ou Rede):", e);
+        console.error("Erro na sincronização de usuário:", e);
+        // Em caso de erro de rede (offline), permite acesso com dados básicos do Auth se já estiver autenticado
         createSession(fallbackUser);
         return fallbackUser;
     }
@@ -118,27 +122,34 @@ export const register = async (name: string, email: string, password: string): P
     const cleanEmail = normalizeEmail(email);
     const cleanPassword = preparePassword(password);
 
-    if (!cleanEmail.endsWith(REQUIRED_DOMAIN)) throw new Error(`Cadastro apenas para ${REQUIRED_DOMAIN}`);
+    if (!cleanEmail.endsWith(REQUIRED_DOMAIN)) throw new Error(`Cadastro permitido apenas para e-mails ${REQUIRED_DOMAIN}`);
     if (!cleanPassword) throw new Error('Senha vazia.');
 
     const isMaster = cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL);
     const role: UserRole = isMaster ? 'admin' : 'colaborador';
 
+    // SE O FIREBASE ESTIVER CONFIGURADO, OBRIGA O USO DA NUVEM
     if (isFirebaseConfigured && auth) {
         try {
+            // 1. Cria autenticação (Login/Senha)
             const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
             const fbUser = userCredential.user;
+            
+            // 2. Atualiza nome no perfil do Firebase Auth
             await updateProfile(fbUser, { displayName: name });
             
-            // Tenta sincronizar/criar perfil
+            // 3. Força a criação do documento no Firestore via syncUserFromAuth
+            // A função syncUserFromAuth vai detectar que o doc não existe e criá-lo
             const user = await syncUserFromAuth(fbUser);
+            
             return { user };
         } catch (error: any) {
-            if (error.code === 'auth/email-already-in-use') throw new Error('E-mail já cadastrado. Tente fazer Login.');
-            throw new Error(error.message || 'Erro no cadastro.');
+            if (error.code === 'auth/email-already-in-use') throw new Error('Este e-mail já está cadastrado no sistema online. Tente fazer Login.');
+            if (error.code === 'auth/weak-password') throw new Error('A senha deve ter pelo menos 6 caracteres.');
+            throw new Error(error.message || 'Erro no cadastro online.');
         }
     } else {
-        // MODO LOCAL
+        // MODO LOCAL (Apenas se a nuvem NÃO estiver configurada)
         const users = getUsersInternalLocal();
         if (users.some(u => normalizeEmail(u.email) === cleanEmail)) throw new Error('E-mail já existe (Local).');
         
@@ -163,26 +174,28 @@ export const login = async (email: string, password: string): Promise<{ user: Us
     const cleanEmail = normalizeEmail(email);
     const cleanPassword = preparePassword(password);
 
+    // SE O FIREBASE ESTIVER CONFIGURADO, OBRIGA O USO DA NUVEM
     if (isFirebaseConfigured && auth) {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+            // Ao logar, sincroniza/recupera o perfil do Firestore
             const user = await syncUserFromAuth(userCredential.user);
             return { user };
         } catch (error: any) {
-            // AUTO-CADASTRO MASTER ADMIN (Correção para migração)
+            // Tratamento específico para Admin Master se não existir
             if (cleanEmail === normalizeEmail(MASTER_ADMIN_EMAIL)) {
                 if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
                     try {
-                        console.log("Admin Master não encontrado na Nuvem. Tentando auto-cadastro...");
+                        console.log("Admin Master não encontrado na Nuvem. Tentando auto-cadastro de recuperação...");
                         return await register('Administrador Master', cleanEmail, cleanPassword);
                     } catch (regError) {
-                        throw new Error('Senha incorreta para o Administrador.');
+                        // Se falhar o registro (ex: senha errada mas user existe), cai no erro genérico abaixo
                     }
                 }
             }
 
             if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password'].includes(error.code)) {
-                throw new Error('Credenciais inválidas. Se mudou para NUVEM recentemente, cadastre-se novamente.');
+                throw new Error('Usuário não encontrado ou senha incorreta no Banco de Dados Online.');
             }
             throw new Error(`Falha de login: ${error.message}`);
         }
@@ -205,13 +218,12 @@ export const login = async (email: string, password: string): Promise<{ user: Us
         }
 
         const user = users.find(u => normalizeEmail(u.email) === cleanEmail);
-        if (!user) throw new Error('Usuário não encontrado (Local).');
+        if (!user) throw new Error('Usuário não encontrado na base Local.');
         
         const targetHash = hashPassword(cleanPassword);
-        // Validação flexível para senhas antigas vs novas
         const isValid = user.passwordHash === targetHash || user.passwordHash === cleanPassword;
 
-        if (!isValid) throw new Error('Senha incorreta.');
+        if (!isValid) throw new Error('Senha incorreta (Local).');
 
         const { passwordHash, ...safeUser } = user;
         createSession(safeUser);
@@ -228,7 +240,7 @@ export const getAllUsers = async (): Promise<User[]> => {
             return snapshot.docs.map(doc => doc.data() as User);
         } catch (e: any) {
             if (e.code === 'permission-denied') {
-                console.info("Info: Listagem global bloqueada por regras de segurança. Exibindo usuários locais.");
+                console.info("Info: Apenas administradores podem listar usuários.");
             } else {
                 console.warn("Erro ao listar usuários (Firebase):", e);
             }
@@ -241,6 +253,8 @@ export const deleteUser = async (userId: string): Promise<boolean> => {
     if (isFirebaseConfigured && db) {
         try {
             await deleteDoc(doc(db, 'users', userId));
+            // Nota: Isso deleta do Firestore, mas não do Auth (requer Admin SDK no backend).
+            // O usuário perderá acesso aos dados, mas o login ainda existirá até ser removido no console.
             return true;
         } catch (e) {
             console.warn("Erro ao deletar usuário:", e);
@@ -255,7 +269,8 @@ export const deleteUser = async (userId: string): Promise<boolean> => {
 export const resetUserPassword = async (userId: string): Promise<boolean> => {
     const defaultPass = '123456';
     if (isFirebaseConfigured) {
-        // Em Firebase Client SDK, não podemos resetar senha de outro usuário sem enviar email
+        // No Client SDK, não é possível resetar a senha de outro usuário diretamente sem envio de e-mail.
+        // Retornamos true apenas para feedback visual, mas a ação real requer backend ou envio de email.
         return true; 
     }
     const users = getUsersInternalLocal();

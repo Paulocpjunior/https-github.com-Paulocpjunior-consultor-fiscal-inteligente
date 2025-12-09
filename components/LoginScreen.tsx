@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Logo from './Logo';
 import { User } from '../types';
@@ -39,10 +38,17 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             }
         } catch (err: any) {
             let msg = err.message || "Ocorreu um erro.";
-            // Dica de UX para o Master Admin se a senha estiver errada
+            
+            // UX para Master Admin
             if (email.toLowerCase().includes('junior@spassessoriacontabil.com.br') && msg.includes('Senha incorreta')) {
                 msg += " (Dica: Se for o primeiro acesso, a senha padrão é 123456)";
             }
+            
+            // UX para usuários que acham que têm conta mas não têm na nuvem
+            if (msg.includes('Usuário não encontrado') && isFirebaseConfigured) {
+                msg = "Usuário não encontrado no Banco de Dados Online. Se você criou uma conta anteriormente, por favor, cadastre-se novamente para sincronizar com a nuvem.";
+            }
+
             setError(msg);
         } finally {
             setIsLoading(false);
@@ -62,7 +68,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 
                 <div className="p-8">
                     <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-6 text-center">
-                        {isRegistering ? 'Criar Nova Conta' : 'Acesso ao Sistema'}
+                        {isRegistering ? 'Criar Nova Conta Online' : 'Acesso ao Sistema'}
                     </h2>
                     
                     <form onSubmit={handleRegisterOrLogin} className="space-y-4">
@@ -118,10 +124,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                             {isLoading ? (
                                 <>
                                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                    <span>Processando...</span>
+                                    <span>{isRegistering ? 'Cadastrando na Nuvem...' : 'Conectando à Base...'}</span>
                                 </>
                             ) : (
-                                isRegistering ? 'Cadastrar' : 'Entrar'
+                                isRegistering ? 'Cadastrar (Online)' : 'Entrar'
                             )}
                         </button>
                     </form>
@@ -141,18 +147,18 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         {isFirebaseConfigured ? (
                             <>
                                 <GlobeIcon className="w-3 h-3" />
-                                Banco de Dados: NUVEM (Multi-usuário)
+                                Sistema Online (Nuvem Ativa)
                             </>
                         ) : (
                             <>
                                 <ShieldIcon className="w-3 h-3" />
-                                Banco de Dados: LOCAL (Apenas este PC)
+                                Modo Offline (Banco de Dados Local)
                             </>
                         )}
                     </div>
-                    {!isFirebaseConfigured && (
+                    {isFirebaseConfigured && (
                         <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center max-w-xs font-bold dark:font-normal">
-                            Para ativar o acesso multi-usuário entre computadores diferentes, configure as chaves do Firebase no arquivo de sistema.
+                            Acesso seguro ao Banco de Dados da SP Assessoria.
                         </p>
                     )}
                 </div>

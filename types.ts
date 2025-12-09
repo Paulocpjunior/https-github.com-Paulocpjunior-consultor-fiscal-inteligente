@@ -203,24 +203,55 @@ export interface SimplesNacionalImportResult {
 
 // --- Lucro Presumido / Real Types ---
 
+export interface IssConfig {
+    tipo: 'aliquota_municipal' | 'sup_fixo';
+    aliquota?: number; // Para alíquota municipal (ex: 2%, 5%)
+    valorPorSocio?: number; // Para SUP
+    qtdeSocios?: number; // Para SUP
+}
+
 export interface LucroInput {
+    regimeSelecionado: 'Presumido' | 'Real';
+    periodoApuracao: 'Mensal' | 'Trimestral';
     faturamentoComercio: number;
     faturamentoServico: number;
+    faturamentoMonofasico: number; 
     despesasOperacionais: number;
+    despesasDedutiveis: number; 
     folhaPagamento: number;
-    custoMercadoriaVendida: number; // CMV
+    custoMercadoriaVendida: number; 
+    issConfig: IssConfig;
+    // Campos de Retenção (Dedução do valor final)
+    retencaoPisCofins?: number;
+    retencaoIrpj?: number;
+    retencaoCsll?: number;
+    // Feature: Equiparação Hospitalar
+    isEquiparacaoHospitalar?: boolean;
+}
+
+export interface PlanoCotas {
+    disponivel: boolean;
+    numeroCotas: number;
+    valorPrimeiraCota: number;
+    valorDemaisCotas?: number;
+    vencimentos?: string[];
+}
+
+export interface DetalheImposto {
+    imposto: string;
+    baseCalculo: number;
+    aliquota: number;
+    valor: number;
+    observacao?: string; 
+    cotaInfo?: PlanoCotas; // Info de pagamento em cotas para IRPJ/CSLL
 }
 
 export interface LucroResult {
     regime: 'Presumido' | 'Real';
-    pis: number;
-    cofins: number;
-    irpj: number;
-    csll: number;
-    iss: number;
-    icms: number;
+    periodo: 'Mensal' | 'Trimestral';
+    detalhamento: DetalheImposto[];
     totalImpostos: number;
-    cargaTributaria: number; // %
+    cargaTributaria: number; 
     lucroLiquidoEstimado: number;
 }
 
@@ -228,14 +259,26 @@ export interface FichaFinanceiraRegistro {
     id: string;
     dataRegistro: number;
     mesReferencia: string; // YYYY-MM
+    regime: 'Presumido' | 'Real'; 
+    periodoApuracao?: 'Mensal' | 'Trimestral';
+    issTipo?: 'aliquota_municipal' | 'sup_fixo';
+    issValorOuAliquota?: number; // Salva o valor usado (rate ou fixo)
     acumuladoAno: number;
     faturamentoMesComercio: number;
     faturamentoMesServico: number;
+    faturamentoMonofasico?: number; 
     faturamentoMesTotal: number;
-    totalGeral: number; // Acumulado + Mes
+    totalGeral: number; 
     despesas: number;
+    despesasDedutiveis?: number; 
     folha: number;
     cmv: number;
+    // Retenções Salvas
+    retencaoPisCofins?: number;
+    retencaoIrpj?: number;
+    retencaoCsll?: number;
+    // Configurações Especiais
+    isEquiparacaoHospitalar?: boolean;
 }
 
 export interface LucroPresumidoEmpresa {
@@ -248,6 +291,9 @@ export interface LucroPresumidoEmpresa {
     cnaesSecundarios?: { codigo: string; descricao: string }[];
     fichaFinanceira?: FichaFinanceiraRegistro[];
     tiposAtividade?: { comercio: boolean; industria: boolean; servico: boolean };
+    regimePadrao?: 'Presumido' | 'Real';
+    issPadraoConfig?: IssConfig; // Configuração padrão da empresa
+    isEquiparacaoHospitalar?: boolean; // Configuração padrão da empresa
     createdBy?: string;
 }
 
