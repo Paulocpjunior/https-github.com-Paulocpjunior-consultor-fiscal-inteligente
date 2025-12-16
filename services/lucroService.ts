@@ -26,6 +26,9 @@ const PRESUNCAO_CSLL_SERVICO = 0.32; // 32%
 const PRESUNCAO_IRPJ_HOSPITALAR = 0.08; // Reduz de 32% para 8%
 const PRESUNCAO_CSLL_HOSPITALAR = 0.12; // Reduz de 32% para 12%
 
+// Formatador Helper
+const fmt = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+
 export const calcularLucro = (input: LucroInput): LucroResult => {
     if (input.regimeSelecionado === 'Real') {
         return calcularLucroReal(input);
@@ -36,7 +39,6 @@ export const calcularLucro = (input: LucroInput): LucroResult => {
 // Helper para calcular Cotas
 const calcularCotas = (valorImposto: number, periodo: 'Mensal' | 'Trimestral'): PlanoCotas | undefined => {
     // Regra geral: IRPJ/CSLL trimestral pode ser em 3 cotas se valor > R$ 2.000,00 (exemplo prático, valor min R$ 10,00)
-    // Para simulação, assumimos que trimestral sempre oferece cotas se houver valor relevante.
     if (periodo === 'Trimestral' && valorImposto > 100) {
         const valorCota = valorImposto / 3;
         return {
@@ -69,7 +71,7 @@ const calcularISS = (input: LucroInput): DetalheImposto | null => {
             baseCalculo: qtde, // Qtde Sócios
             aliquota: 0, // Fixo
             valor: total,
-            observacao: `Sociedade Uniprofissional: ${qtde} sócio(s) x ${new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(valorPorSocio)}`
+            observacao: `Sociedade Uniprofissional: ${qtde} sócio(s) x ${fmt(valorPorSocio)}`
         };
     } else {
         const aliquota = input.issConfig.aliquota || 5; // Default 5%
@@ -92,16 +94,13 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
 
-    if (receitaTotal === 0 && !issItem) return emptyResult('Presumido', input.periodoApuracao);
+    if (receitaTotal === 0 && !issItem && (!input.itensAvulsos || input.itensAvulsos.length === 0)) {
+        return emptyResult('Presumido', input.periodoApuracao);
+    }
 
-    // Valores de Retenção (se houver)
-    const retencaoPisCofinsTotal = input.retencaoPisCofins || 0;
-    // Rateio proporcional simples para PIS/COFINS (Baseado na proporção 0.65 vs 3.00)
-    // Fator PIS = 0.65 / 3.65 (~17.8%), Fator COFINS = 3.00 / 3.65 (~82.2%)
-    const fatorPis = ALIQ_PIS_CUMULATIVO / (ALIQ_PIS_CUMULATIVO + ALIQ_COFINS_CUMULATIVO);
-    const retencaoPis = retencaoPisCofinsTotal * fatorPis;
-    const retencaoCofins = retencaoPisCofinsTotal * (1 - fatorPis);
-
+    // Valores de Retenção (Garante 0 se undefined)
+    const retencaoPis = input.retencaoPis || 0;
+    const retencaoCofins = input.retencaoCofins || 0;
     const retencaoIrpj = input.retencaoIrpj || 0;
     const retencaoCsll = input.retencaoCsll || 0;
 
@@ -110,40 +109,48 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const presuncaoCsllServico = input.isEquiparacaoHospitalar ? PRESUNCAO_CSLL_HOSPITALAR : PRESUNCAO_CSLL_SERVICO;
 
     // 1. PIS/COFINS (Cumulativo)
+    // Deduz Receita Monofásica da Base
     const basePisCofins = Math.max(0, receitaTotal - (input.faturamentoMonofasico || 0));
     
-    if (basePisCofins > 0) {
+    if (basePisCofins > 0 || retencaoPis > 0 || retencaoCofins > 0) {
         // PIS
         const valorPisBruto = basePisCofins * ALIQ_PIS_CUMULATIVO;
         const valorPisLiquido = Math.max(0, valorPisBruto - retencaoPis);
         
-        detalhamento.push({
-            imposto: 'PIS (Cumulativo)',
-            baseCalculo: basePisCofins,
-            aliquota: ALIQ_PIS_CUMULATIVO * 100,
-            valor: valorPisLiquido,
-            observacao: retencaoPis > 0 
-                ? `Deduzido R$ ${retencaoPis.toFixed(2)} retenção${input.faturamentoMonofasico > 0 ? ' + Monofásico' : ''}`
-                : (input.faturamentoMonofasico > 0 ? `Deduzido Monofásico` : undefined)
-        });
+        let obsPis = [];
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsPis.push(`Base Reduzida (Monofásico)`);
+        if (retencaoPis > 0) obsPis.push(`Apuração: ${fmt(valorPisBruto)} - Retenção: ${fmt(retencaoPis)}`);
+
+        if (valorPisLiquido > 0 || retencaoPis > 0) {
+            detalhamento.push({
+                imposto: 'PIS (Cumulativo)',
+                baseCalculo: basePisCofins,
+                aliquota: ALIQ_PIS_CUMULATIVO * 100,
+                valor: valorPisLiquido,
+                observacao: obsPis.length > 0 ? obsPis.join(' | ') : undefined
+            });
+        }
 
         // COFINS
         const valorCofinsBruto = basePisCofins * ALIQ_COFINS_CUMULATIVO;
         const valorCofinsLiquido = Math.max(0, valorCofinsBruto - retencaoCofins);
 
-        detalhamento.push({
-            imposto: 'COFINS (Cumulativo)',
-            baseCalculo: basePisCofins,
-            aliquota: ALIQ_COFINS_CUMULATIVO * 100,
-            valor: valorCofinsLiquido,
-            observacao: retencaoCofins > 0 
-                ? `Deduzido R$ ${retencaoCofins.toFixed(2)} retenção${input.faturamentoMonofasico > 0 ? ' + Monofásico' : ''}`
-                : (input.faturamentoMonofasico > 0 ? `Deduzido Monofásico` : undefined)
-        });
+        let obsCofins = [];
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsCofins.push(`Base Reduzida (Monofásico)`);
+        if (retencaoCofins > 0) obsCofins.push(`Apuração: ${fmt(valorCofinsBruto)} - Retenção: ${fmt(retencaoCofins)}`);
+
+        if (valorCofinsLiquido > 0 || retencaoCofins > 0) {
+            detalhamento.push({
+                imposto: 'COFINS (Cumulativo)',
+                baseCalculo: basePisCofins,
+                aliquota: ALIQ_COFINS_CUMULATIVO * 100,
+                valor: valorCofinsLiquido,
+                observacao: obsCofins.length > 0 ? obsCofins.join(' | ') : undefined
+            });
+        }
     }
 
     // 2. IRPJ (Presumido)
-    // Aplica presunção diferenciada se for equiparação hospitalar
     const baseIrpj = (input.faturamentoComercio * PRESUNCAO_IRPJ_COMERCIO) + (input.faturamentoServico * presuncaoIrpjServico);
     let valorIrpj = baseIrpj * ALIQ_IRPJ;
     
@@ -164,13 +171,12 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         aliquota: ALIQ_IRPJ * 100,
         valor: valorIrpjLiquido,
         observacao: `Base Serviço: ${(presuncaoIrpjServico * 100)}%` + (retencaoIrpj > 0 
-            ? `. Deduzido R$ ${new Intl.NumberFormat('pt-BR', {minimumFractionDigits:2}).format(retencaoIrpj)} retenção.` 
+            ? `. Deduzido ${fmt(retencaoIrpj)} retenção.` 
             : ``) + (baseIrpj > limiteAdicional ? `. Com Adicional.` : ``),
         cotaInfo: cotasIrpj
     });
 
     // 3. CSLL (Presumido)
-    // Aplica presunção diferenciada se for equiparação hospitalar
     const baseCsll = (input.faturamentoComercio * PRESUNCAO_CSLL_COMERCIO) + (input.faturamentoServico * presuncaoCsllServico);
     const valorCsll = baseCsll * ALIQ_CSLL;
     
@@ -184,7 +190,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         aliquota: ALIQ_CSLL * 100,
         valor: valorCsllLiquido,
         cotaInfo: cotasCsll,
-        observacao: `Base Serviço: ${(presuncaoCsllServico * 100)}%` + (retencaoCsll > 0 ? `. Deduzido R$ ${new Intl.NumberFormat('pt-BR', {minimumFractionDigits:2}).format(retencaoCsll)} retenção.` : ``)
+        observacao: `Base Serviço: ${(presuncaoCsllServico * 100)}%` + (retencaoCsll > 0 ? `. Deduzido ${fmt(retencaoCsll)} retenção.` : ``)
     });
 
     // 4. ICMS (Estimativa)
@@ -200,7 +206,12 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     }
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
-    const lucroLiquido = receitaTotal - input.custoMercadoriaVendida - input.despesasOperacionais - input.folhaPagamento - totalImpostos;
+    
+    // Calcular Itens Avulsos (Receitas e Despesas Extras)
+    const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
+    const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
+
+    const lucroLiquido = (receitaTotal + extraReceitas) - input.custoMercadoriaVendida - input.despesasOperacionais - input.folhaPagamento - extraDespesas - totalImpostos;
 
     return {
         regime: 'Presumido',
@@ -219,47 +230,62 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
 
-    if (receitaTotal === 0 && !issItem) return emptyResult('Real', input.periodoApuracao);
+    if (receitaTotal === 0 && !issItem && (!input.itensAvulsos || input.itensAvulsos.length === 0)) {
+        return emptyResult('Real', input.periodoApuracao);
+    }
 
     // 1. PIS/COFINS (Não Cumulativo)
+    // Base de débito deduz monofásico
     const basePisCofins = Math.max(0, receitaTotal - (input.faturamentoMonofasico || 0));
     
     // Créditos: Sobre Insumos/Despesas Dedutíveis informadas
     const baseCredito = input.despesasDedutiveis; 
     
+    // PIS
     const debitoPis = basePisCofins * ALIQ_PIS_NAO_CUMULATIVO;
     const creditoPis = baseCredito * ALIQ_PIS_NAO_CUMULATIVO;
-    const pisFinal = Math.max(0, debitoPis - creditoPis);
+    const retencaoPis = input.retencaoPis || 0;
+    
+    // Deduz crédito e retenção
+    const pisFinal = Math.max(0, debitoPis - creditoPis - retencaoPis);
 
-    if (pisFinal > 0) {
+    if (pisFinal > 0 || retencaoPis > 0) {
+        let obs = [];
+        if (creditoPis > 0) obs.push(`Crédito Insumos: ${fmt(creditoPis)}`);
+        if (retencaoPis > 0) obs.push(`Retenção: ${fmt(retencaoPis)}`);
+        
         detalhamento.push({
             imposto: 'PIS (Não Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_NAO_CUMULATIVO * 100,
             valor: pisFinal,
-            observacao: `Crédito de R$ ${creditoPis.toFixed(2)} sobre despesas`
+            observacao: obs.length > 0 ? obs.join(' | ') : undefined
         });
     }
 
+    // COFINS
     const debitoCofins = basePisCofins * ALIQ_COFINS_NAO_CUMULATIVO;
     const creditoCofins = baseCredito * ALIQ_COFINS_NAO_CUMULATIVO;
-    const cofinsFinal = Math.max(0, debitoCofins - creditoCofins);
+    const retencaoCofins = input.retencaoCofins || 0;
+    
+    const cofinsFinal = Math.max(0, debitoCofins - creditoCofins - retencaoCofins);
 
-    if (cofinsFinal > 0) {
+    if (cofinsFinal > 0 || retencaoCofins > 0) {
+        let obs = [];
+        if (creditoCofins > 0) obs.push(`Crédito Insumos: ${fmt(creditoCofins)}`);
+        if (retencaoCofins > 0) obs.push(`Retenção: ${fmt(retencaoCofins)}`);
+
         detalhamento.push({
             imposto: 'COFINS (Não Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_NAO_CUMULATIVO * 100,
             valor: cofinsFinal,
-            observacao: `Crédito de R$ ${creditoCofins.toFixed(2)} sobre despesas`
+            observacao: obs.length > 0 ? obs.join(' | ') : undefined
         });
     }
 
     // 2. IRPJ / CSLL (Lucro Real)
     // LAIR Simplificado = Receita - Custos - Despesas Operacionais (Gerais)
-    // No Lucro Real, as despesas dedutíveis informadas aqui são usadas para ajuste do lucro tributável
-    // Assumimos que 'despesasDedutiveis' e 'despesasOperacionais' compõem o total de deduções do lucro.
-    // Lógica Simplificada: Lucro = Receita - CMV - Despesas Totais
     const despesasTotais = input.despesasOperacionais + input.despesasDedutiveis;
     const lucroContabil = receitaTotal - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotais;
     
@@ -269,19 +295,21 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     if (lucroContabil > 0) {
         let valorIrpj = lucroContabil * ALIQ_IRPJ;
         
-        // Limite Adicional (Mensal vs Trimestral)
+        // Limite Adicional
         const limiteAdicional = input.periodoApuracao === 'Trimestral' ? LIMITE_ADICIONAL_TRIMESTRAL : LIMITE_ADICIONAL_MENSAL;
 
         if (lucroContabil > limiteAdicional) {
             valorIrpj += (lucroContabil - limiteAdicional) * ADICIONAL_IRPJ;
         }
         
-        // Aplica Retenção se houver (Lucro Real também aproveita retenção)
-        irpj = Math.max(0, valorIrpj - (input.retencaoIrpj || 0));
+        // Aplica Retenção
+        const retIrpj = input.retencaoIrpj || 0;
+        irpj = Math.max(0, valorIrpj - retIrpj);
         
         // CSLL
         const valorCsll = lucroContabil * ALIQ_CSLL;
-        csll = Math.max(0, valorCsll - (input.retencaoCsll || 0));
+        const retCsll = input.retencaoCsll || 0;
+        csll = Math.max(0, valorCsll - retCsll);
 
         const cotasIrpj = calcularCotas(irpj, input.periodoApuracao);
         const cotasCsll = calcularCotas(csll, input.periodoApuracao);
@@ -291,7 +319,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
             baseCalculo: lucroContabil,
             aliquota: ALIQ_IRPJ * 100,
             valor: irpj,
-            observacao: input.retencaoIrpj ? `Deduzido R$ ${input.retencaoIrpj} retenção` : `Sobre Lucro Líquido`,
+            observacao: retIrpj > 0 ? `Bruto: ${fmt(valorIrpj)} - Retenção: ${fmt(retIrpj)}` : `Sobre Lucro Líquido`,
             cotaInfo: cotasIrpj
         });
 
@@ -300,7 +328,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
             baseCalculo: lucroContabil,
             aliquota: ALIQ_CSLL * 100,
             valor: csll,
-            observacao: input.retencaoCsll ? `Deduzido R$ ${input.retencaoCsll} retenção` : undefined,
+            observacao: retCsll > 0 ? `Bruto: ${fmt(valorCsll)} - Retenção: ${fmt(retCsll)}` : undefined,
             cotaInfo: cotasCsll
         });
     } else {
@@ -324,7 +352,12 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     }
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
-    const lucroFinal = lucroContabil - (pisFinal + cofinsFinal + irpj + csll + (issItem?.valor || 0) + (input.faturamentoComercio * 0.04));
+    
+    // Calcular Itens Avulsos (Receitas e Despesas Extras)
+    const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
+    const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
+
+    const lucroFinal = (lucroContabil + extraReceitas) - extraDespesas - (pisFinal + cofinsFinal + irpj + csll + (issItem?.valor || 0) + (input.faturamentoComercio * 0.04));
 
     return {
         regime: 'Real',

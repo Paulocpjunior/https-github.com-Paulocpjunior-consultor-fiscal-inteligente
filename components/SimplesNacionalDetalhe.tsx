@@ -734,7 +734,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
                             {!isAddingCnae ? (
                                 <button onClick={() => setIsAddingCnae(true)} className="w-full mt-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 hover:text-sky-600 font-bold flex justify-center items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                    <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade (Temporário)
+                                    <PlusIcon className="w-4 h-4" /> Adicionar Outra Atividade
                                 </button>
                             ) : (
                                 <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 relative">
@@ -1046,65 +1046,20 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                                 </td>
                                                 <td className={`px-4 py-2 ${isFaixaAtual ? 'font-bold' : ''}`}>
                                                     {index === 0 
-                                                        ? `Até ${faixa.limite.toLocaleString('pt-BR')}`
-                                                        : `De ${(faixaAnterior + 0.01).toLocaleString('pt-BR')} até ${faixa.limite.toLocaleString('pt-BR')}`
-                                                    }
+                                                        ? `Até ${faixa.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                                                        : `De ${(faixaAnterior + 0.01).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} até ${faixa.limite.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
                                                 </td>
-                                                <td className={`px-4 py-2 text-center ${isFaixaAtual ? 'font-bold' : ''}`}>
-                                                    {faixa.aliquota}%
-                                                </td>
-                                                <td className={`px-4 py-2 text-right ${isFaixaAtual ? 'font-bold' : ''}`}>
-                                                    {faixa.parcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                                </td>
+                                                <td className="px-4 py-2 text-center">{faixa.aliquota}%</td>
+                                                <td className="px-4 py-2 text-right">R$ {faixa.parcela.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                             </tr>
                                         );
                                     })}
                                 </tbody>
                             </table>
                         </div>
-                        <p className="text-xs text-slate-500 mt-2 italic">
-                            * A faixa é determinada pela Receita Bruta Acumulada nos últimos 12 meses (RBT12).
-                        </p>
                     </div>
                 )}
-
-                {/* Detalhamento dos Impostos */}
-                <div className="mb-6">
-                    <h3 className="text-lg font-bold text-sky-800 border-l-4 border-sky-600 pl-3 mb-4">Memória de Cálculo (Repartição dos Tributos)</h3>
-                    <div className="bg-white border rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-xs border-b">
-                                <tr>
-                                    <th className="px-4 py-2 text-left">Tributo</th>
-                                    <th className="px-4 py-2 text-center">% Participação</th>
-                                    <th className="px-4 py-2 text-right">Valor Calculado</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {Object.entries(discriminacaoImpostos).map(([imposto, valor], index) => {
-                                    const percentual = percentuaisImpostos[imposto] || 0;
-                                    return (
-                                        <tr key={index} className="border-b border-slate-100 last:border-0">
-                                            <td className="px-4 py-2 font-semibold text-slate-700">{imposto}</td>
-                                            <td className="px-4 py-2 text-center">{percentual.toFixed(2)}%</td>
-                                            <td className="px-4 py-2 text-right font-mono font-bold">R$ {(valor as any).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                        </tr>
-                                    );
-                                })}
-                                <tr className="bg-slate-50 font-bold">
-                                    <td className="px-4 py-2 text-right uppercase" colSpan={2}>Total Geral</td>
-                                    <td className="px-4 py-2 text-right text-sky-700">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div className="border-t-2 border-slate-200 pt-4 flex justify-between items-center text-xs text-slate-400">
-                    <p>Documento gerado automaticamente pelo Sistema Consultor Fiscal Inteligente.</p>
-                    <p className="font-bold uppercase">Desenvolvido BY - SP ASSESSORIA CONTABIL</p>
-                </div>
-             </div>
+            </div>
         </div>
     );
 };

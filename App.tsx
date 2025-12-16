@@ -177,6 +177,7 @@ const App: React.FC = () => {
           setSearchType(item.type);
           setSelectedLucroEmpresaId(item.entityId);
       } else {
+          // Atualiza o estado da UI para refletir o item selecionado
           setSearchType(item.type);
           setMode(item.mode);
           setMunicipio(item.municipio || '');
@@ -199,7 +200,23 @@ const App: React.FC = () => {
                   setQuery2(item.queries[1]);
               }
           }
-          handleSearch(item.queries[0], item.queries[1]);
+
+          // Executa a busca imediatamente passando os parâmetros do item para evitar race conditions
+          // Passamos um objeto de contexto explícito para garantir que os valores do histórico sejam usados
+          const explicitContext = {
+              type: item.type,
+              mode: item.mode,
+              municipio: item.municipio,
+              alias: item.alias,
+              responsavel: item.responsavel,
+              regimeTributario: item.regimeTributario,
+              aliquotaIcms: item.aliquotaIcms,
+              aliquotaPisCofins: item.aliquotaPisCofins,
+              aliquotaIss: item.aliquotaIss,
+              userNotes: item.userNotes
+          };
+
+          handleSearch(item.queries[0], item.queries[1], explicitContext);
       }
       if(window.innerWidth < 768) setIsSidebarOpen(false);
   };
@@ -234,7 +251,8 @@ const App: React.FC = () => {
       } else {
           setQuery1(item.code);
       }
-      handleSearch(item.code);
+      // Favoritos geralmente são buscas simples sem contexto salvo, mas podemos passar contexto vazio para limpar
+      handleSearch(item.code, undefined, { type: item.type, mode: 'single' });
       if(window.innerWidth < 768) setIsSidebarOpen(false);
   };
 
@@ -314,55 +332,72 @@ const App: React.FC = () => {
       return Object.keys(errors).length === 0;
   };
 
-  const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string) => {
+  const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string, contextOverride?: any) => {
     if (isLoading) return; // Prevent double submission
     if (!validateInputs(currentQuery1, currentQuery2)) return;
+
+    // Use overrides if provided (from history click), otherwise use current state
+    const currentSearchType = contextOverride?.type || searchType;
+    const currentMode = contextOverride?.mode || mode;
+    const currentMunicipio = contextOverride?.municipio !== undefined ? contextOverride.municipio : municipio;
+    const currentAlias = contextOverride?.alias !== undefined ? contextOverride.alias : alias;
+    const currentResponsavel = contextOverride?.responsavel !== undefined ? contextOverride.responsavel : responsavel;
+    const currentRegime = contextOverride?.regimeTributario !== undefined ? contextOverride.regimeTributario : regimeTributario;
+    const currentIcms = contextOverride?.aliquotaIcms !== undefined ? contextOverride.aliquotaIcms : aliquotaIcms;
+    const currentPisCofins = contextOverride?.aliquotaPisCofins !== undefined ? contextOverride.aliquotaPisCofins : aliquotaPisCofins;
+    const currentIss = contextOverride?.aliquotaIss !== undefined ? contextOverride.aliquotaIss : aliquotaIss;
+    const currentUserNotes = contextOverride?.userNotes !== undefined ? contextOverride.userNotes : userNotes;
 
     setIsLoading(true);
     setError(null);
     setResult(null);
     setComparisonResult(null);
     
-    if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search', `${searchType}: ${currentQuery1}`);
+    if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search', `${currentSearchType}: ${currentQuery1}`);
 
     try {
-      if (mode === 'compare' && currentQuery2) {
-          const data = await fetchComparison(searchType, currentQuery1, currentQuery2);
+      if (currentMode === 'compare' && currentQuery2) {
+          const data = await fetchComparison(currentSearchType, currentQuery1, currentQuery2);
           setComparisonResult(data);
-          addHistory({
-              queries: [currentQuery1, currentQuery2],
-              type: searchType,
-              mode: 'compare'
-          });
+          // Don't add to history if it's coming from history click (contextOverride present) to avoid duplicates at top
+          if (!contextOverride) {
+              addHistory({
+                  queries: [currentQuery1, currentQuery2],
+                  type: currentSearchType,
+                  mode: 'compare'
+              });
+          }
       } else {
           const data = await fetchFiscalData(
-              searchType, 
+              currentSearchType, 
               currentQuery1, 
-              municipio, 
-              alias, 
-              responsavel, 
+              currentMunicipio, 
+              currentAlias, 
+              currentResponsavel, 
               undefined, 
-              regimeTributario, 
+              currentRegime, 
               undefined,
-              aliquotaIcms,
-              aliquotaPisCofins,
-              aliquotaIss,
-              userNotes
+              currentIcms,
+              currentPisCofins,
+              currentIss,
+              currentUserNotes
           );
           setResult(data);
-          addHistory({
-              queries: [currentQuery1],
-              type: searchType,
-              mode: 'single',
-              municipio,
-              alias,
-              responsavel,
-              regimeTributario,
-              aliquotaIcms,
-              aliquotaPisCofins,
-              aliquotaIss,
-              userNotes
-          });
+          if (!contextOverride) {
+              addHistory({
+                  queries: [currentQuery1],
+                  type: currentSearchType,
+                  mode: 'single',
+                  municipio: currentMunicipio,
+                  alias: currentAlias,
+                  responsavel: currentResponsavel,
+                  regimeTributario: currentRegime,
+                  aliquotaIcms: currentIcms,
+                  aliquotaPisCofins: currentPisCofins,
+                  aliquotaIss: currentIss,
+                  userNotes: currentUserNotes
+              });
+          }
       }
     } catch (err) {
       const msg = getFriendlyErrorMessage(err);

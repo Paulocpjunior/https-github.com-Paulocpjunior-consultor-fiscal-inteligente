@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { FormattedText } from './FormattedText';
 import { type SearchResult, SearchType } from '../types';
 import { DownloadIcon, ExternalLinkIcon, LightBulbIcon, StarIcon, CalculatorIcon } from './Icons';
+import IbptCalculator from './IbptCalculator';
 
 interface ResultsDisplayProps {
     result: SearchResult | null;
@@ -156,6 +157,11 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 <div className="prose prose-slate dark:prose-invert max-w-none text-slate-900 font-bold dark:text-slate-300 dark:font-normal">
                     <FormattedText text={result.text} />
                 </div>
+
+                {/* IBPT Calculator Section */}
+                {[SearchType.NCM, SearchType.SERVICO, SearchType.CFOP].includes(searchType) && (
+                    <IbptCalculator initialRates={result.ibpt} queryCode={result.query} />
+                )}
 
                 {searchType === SearchType.SERVICO && (
                     <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border-l-4 border-sky-500 dark:border-sky-400">

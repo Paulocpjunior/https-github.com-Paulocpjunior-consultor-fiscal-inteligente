@@ -89,28 +89,43 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     if (!user) return [];
     let firebaseEmpresas: SimplesNacionalEmpresa[] = [];
     
-    // Check master email case-insensitive
     const isMasterAdmin = user.role === 'admin' || user.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
     // 1. Tenta buscar do Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
-            // IMPORTANTE: Para evitar erro "Missing or insufficient permissions", 
-            // a query deve ser filtrada por createdBy a menos que as regras do Firestore sejam abertas.
-            // Para admin, teoricamente gostaríamos de ver tudo, mas sem backend admin SDK, 
-            // ficamos restritos às regras do cliente (geralmente owner-only).
-            // Mantemos a query segura (createdBy) para garantir funcionalidade.
-            const q = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
-            
-            const snapshot = await getDocs(q);
-            firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
-        } catch (e: any) {
-            // Silently fail to local storage on permission/network errors
-            if (e.code !== 'permission-denied' && e.code !== 'failed-precondition') {
-                console.warn("Firestore Warning:", e.message);
+            let q;
+
+            // TENTATIVA 1: Admin tenta ver tudo. Usuário vê apenas seus.
+            if (isMasterAdmin) {
+                q = query(collection(db, 'simples_empresas'));
             } else {
-                console.warn("Firestore Permission Error (getEmpresas):", e.code);
+                q = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
+            }
+            
+            try {
+                const snapshot = await getDocs(q);
+                firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
+            } catch (err: any) {
+                // FALLBACK: Se falhar (ex: regra de segurança não permite 'list all' mesmo para admin), 
+                // tenta buscar apenas os documentos do próprio usuário para não quebrar a tela.
+                if (err.code === 'permission-denied') {
+                    console.warn("Firestore: Permissão negada para listagem completa. Tentando fallback para documentos próprios.");
+                    const qFallback = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
+                    const snapshotFallback = await getDocs(qFallback);
+                    firebaseEmpresas = snapshotFallback.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
+                } else {
+                    throw err; // Outros erros reais (rede, etc) repassa para o catch externo
+                }
+            }
+
+        } catch (e: any) {
+            if (e.code === 'permission-denied') {
+                // Se ainda der erro, loga aviso e deixa cair para o Local Storage sem travar
+                console.warn("Firestore (Simples): Permissão negada. Operando com dados Locais.");
+            } else if (e.code !== 'failed-precondition') {
+                console.warn("Firestore Warning:", e.message);
             }
         }
     }
@@ -120,11 +135,10 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     let filteredLocal = localEmpresas;
     
     if (!isMasterAdmin) {
-        // Filtro local inteligente: mostra empresas do usuário OU empresas antigas sem dono (legacy)
         filteredLocal = localEmpresas.filter(e => e.createdBy === user.id || !e.createdBy);
     }
 
-    // 3. Mescla Inteligente (Unifica listas por ID)
+    // 3. Mescla Inteligente (Nuvem vence Local se conflito, mas Local preserva não sincronizados)
     const empresaMap = new Map<string, SimplesNacionalEmpresa>();
 
     firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
@@ -140,26 +154,36 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
 
 export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: string, atividadesSecundarias: any[], userId: string): Promise<SimplesNacionalEmpresa> => {
     const finalAnexo = anexo === 'auto' ? sugerirAnexoPorCnae(cnae) : anexo;
+    
     const newEmpresa: any = {
         id: generateUUID(),
-        nome, cnpj, cnae, anexo: finalAnexo, atividadesSecundarias: atividadesSecundarias || [],
-        folha12: 0, faturamentoManual: {}, faturamentoMensalDetalhado: {}, historicoCalculos: [], createdBy: userId
+        nome, 
+        cnpj, 
+        cnae, 
+        anexo: finalAnexo, 
+        atividadesSecundarias: atividadesSecundarias || [],
+        folha12: 0, 
+        faturamentoManual: {}, 
+        faturamentoMensalDetalhado: {}, 
+        historicoCalculos: [], 
+        createdBy: userId 
     };
 
-    // 1. Salva no Local Storage (Sempre, para garantir backup)
+    // 1. Salva no Local Storage
     const localEmpresas = getLocalEmpresas();
     localEmpresas.push(newEmpresa);
     saveLocalEmpresas(localEmpresas);
 
-    // 2. Tenta salvar no Firebase (Blindado com setDoc e UID direto)
+    // 2. Tenta salvar no Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            // Ensure createdBy is set for the cloud doc
             newEmpresa.createdBy = auth.currentUser.uid; 
             const payload = sanitizePayload(newEmpresa);
             await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
         } catch (e: any) {
-            if (e.code !== 'permission-denied') {
+            if (e.code === 'permission-denied') {
+                console.warn("Firestore (Save Simples): Permissão negada. Salvo apenas localmente.");
+            } else {
                 console.warn("Firestore Save Warning:", e.message);
             }
         }
@@ -181,14 +205,14 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
             const docRef = doc(db, 'simples_empresas', id);
             const { id: _, createdBy: __, ...safeData } = data as any;
             
-            if (Object.keys(safeData).length > 0) {
-                const payload = sanitizePayload(safeData);
-                await updateDoc(docRef, payload);
-            }
+            const payload = sanitizePayload({ ...safeData, createdBy: auth.currentUser.uid });
+            await setDoc(docRef, payload, { merge: true });
         } catch (e: any) { 
-             if (e.code !== 'permission-denied') {
+             if (e.code === 'permission-denied') {
+                console.warn("Firestore (Update Simples): Permissão negada. Atualizado apenas localmente.");
+             } else {
                 console.warn("Firestore Update Warning:", e.message);
-            }
+             }
         }
     }
 
@@ -197,20 +221,33 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
 
 export const getAllNotas = async (user?: User | null): Promise<Record<string, SimplesNacionalNota[]>> => {
     let firebaseNotas: SimplesNacionalNota[] = [];
+    const isMasterAdmin = user?.role === 'admin' || user?.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
     
     // Cloud Fetch
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
-            
-            // Query segura: Filtra explicitamente por createdBy para satisfazer regras de segurança comuns.
-            // Isso evita o erro "Missing or insufficient permissions" em regras que exigem request.auth.uid == resource.data.createdBy
-            const q = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
-            
-            const snapshot = await getDocs(q);
-            firebaseNotas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
+            let q;
+            if (isMasterAdmin) {
+                q = query(collection(db, 'simples_notas'));
+            } else {
+                q = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
+            }
+
+            try {
+                const snapshot = await getDocs(q);
+                firebaseNotas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
+            } catch (err: any) {
+                if (err.code === 'permission-denied' && isMasterAdmin) {
+                    const qFallback = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
+                    const snapshotFallback = await getDocs(qFallback);
+                    firebaseNotas = snapshotFallback.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
+                } else {
+                    throw err;
+                }
+            }
         } catch (e: any) { 
-            console.warn("Firestore notes fetch error", e.message || e); 
+            if (e.code !== 'permission-denied') console.warn("Firestore notes fetch error", e.message || e); 
         }
     }
 
@@ -222,12 +259,12 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
     // Flatten local map
     Object.values(localNotasMap).forEach((arr: any) => allNotas.push(...arr));
 
-    // Merge (Cloud overrides Local if ID conflict)
+    // Merge
     const noteMap = new Map<string, SimplesNacionalNota>();
     allNotas.forEach(n => noteMap.set(n.id, n));
     firebaseNotas.forEach(n => noteMap.set(n.id, n));
 
-    // Rebuild Record<string, SimplesNacionalNota[]>
+    // Rebuild Record
     const result: Record<string, SimplesNacionalNota[]> = {};
     noteMap.forEach(note => {
         if (!result[note.empresaId]) result[note.empresaId] = [];
@@ -237,8 +274,8 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
     return result;
 };
 
-// --- PARSER HELPERS ---
-
+// ... (Restante do arquivo permanece inalterado)
+// --- PARSER HELPERS e Funções de Cálculo ---
 const parseXmlNfe = (xmlContent: string): any[] => {
     try {
         const parser = new DOMParser();
@@ -384,7 +421,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
 
 export const updateFolha12 = async (empresaId: string, value: number) => updateEmpresa(empresaId, { folha12: value });
 
-// Atualizado para suportar o detalhamento por CNAE (opcional)
 export const saveFaturamentoManual = async (empresaId: string, faturamento: any, faturamentoDetalhado?: any) => {
     const data: Partial<SimplesNacionalEmpresa> = { faturamentoManual: faturamento };
     if (faturamentoDetalhado) {

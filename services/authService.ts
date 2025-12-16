@@ -1,3 +1,4 @@
+
 import { User, UserRole, AccessLog } from '../types';
 import { auth, db, isFirebaseConfigured } from './firebaseConfig';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, User as FirebaseUser } from 'firebase/auth';
@@ -104,14 +105,20 @@ export const syncUserFromAuth = async (firebaseUser: FirebaseUser): Promise<User
                 await setDoc(doc(db, 'users', firebaseUser.uid), fallbackUser);
             } catch (innerError: any) {
                 console.error("Erro crítico ao salvar usuário no DB:", innerError);
+                if (innerError.code === 'permission-denied') {
+                    console.error("Firestore: Permissão negada na coleção 'users'. Verifique as regras de segurança.");
+                }
                 // Se falhar a escrita, ainda permite o login com o objeto em memória para não bloquear o usuário
             }
             
             createSession(fallbackUser);
             return fallbackUser;
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error("Erro na sincronização de usuário:", e);
+        if (e.code === 'permission-denied') {
+             console.error("Firestore: Permissão de leitura negada na coleção 'users'.");
+        }
         // Em caso de erro de rede (offline), permite acesso com dados básicos do Auth se já estiver autenticado
         createSession(fallbackUser);
         return fallbackUser;

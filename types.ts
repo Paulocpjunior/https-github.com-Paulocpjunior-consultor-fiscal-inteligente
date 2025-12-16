@@ -20,6 +20,13 @@ export const GroundingSourceSchema = z.object({
 });
 export type GroundingSource = z.infer<typeof GroundingSourceSchema>;
 
+export interface IbptRates {
+    nacional: number;
+    importado: number;
+    estadual: number;
+    municipal: number;
+}
+
 export const SearchResultSchema = z.object({
   text: z.string(),
   sources: z.array(GroundingSourceSchema),
@@ -31,6 +38,12 @@ export const SearchResultSchema = z.object({
       aliquotaPisCofins: z.string().optional(),
       aliquotaIss: z.string().optional(),
       userNotes: z.string().optional(),
+  }).optional(),
+  ibpt: z.object({
+      nacional: z.number(),
+      importado: z.number(),
+      estadual: z.number(),
+      municipal: z.number(),
   }).optional(),
 });
 export type SearchResult = z.infer<typeof SearchResultSchema>;
@@ -210,6 +223,13 @@ export interface IssConfig {
     qtdeSocios?: number; // Para SUP
 }
 
+export interface ItemFinanceiroAvulso {
+    id: string;
+    descricao: string;
+    valor: number;
+    tipo: 'receita' | 'despesa';
+}
+
 export interface LucroInput {
     regimeSelecionado: 'Presumido' | 'Real';
     periodoApuracao: 'Mensal' | 'Trimestral';
@@ -222,11 +242,14 @@ export interface LucroInput {
     custoMercadoriaVendida: number; 
     issConfig: IssConfig;
     // Campos de Retenção (Dedução do valor final)
-    retencaoPisCofins?: number;
+    retencaoPis?: number;
+    retencaoCofins?: number;
     retencaoIrpj?: number;
     retencaoCsll?: number;
     // Feature: Equiparação Hospitalar
     isEquiparacaoHospitalar?: boolean;
+    // Feature: Campos Dinâmicos
+    itensAvulsos?: ItemFinanceiroAvulso[];
 }
 
 export interface PlanoCotas {
@@ -274,11 +297,18 @@ export interface FichaFinanceiraRegistro {
     folha: number;
     cmv: number;
     // Retenções Salvas
-    retencaoPisCofins?: number;
+    retencaoPis?: number;
+    retencaoCofins?: number;
+    retencaoPisCofins?: number; // Legacy
     retencaoIrpj?: number;
     retencaoCsll?: number;
     // Configurações Especiais
     isEquiparacaoHospitalar?: boolean;
+    // Itens Dinâmicos
+    itensAvulsos?: ItemFinanceiroAvulso[];
+    // Analise
+    totalImpostos?: number;
+    cargaTributaria?: number;
 }
 
 export interface LucroPresumidoEmpresa {

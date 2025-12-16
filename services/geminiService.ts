@@ -40,7 +40,22 @@ export const fetchFiscalData = async (
 
   const contextInfo = contextParts.length > 0 ? `\nCONSIDERE OS SEGUINTES DADOS ESPECÍFICOS PARA O CÁLCULO/ANÁLISE: ${contextParts.join('; ')}.` : '';
 
-  const prompt = `Analise "${query}" no contexto de ${type}.${contextInfo}\nForneça detalhes tributários completos, base legal e se há retenções obrigatórias considerando os dados informados.`;
+  const prompt = `Analise "${query}" no contexto de ${type}.${contextInfo}
+  1. Forneça detalhes tributários completos, base legal e se há retenções obrigatórias considerando os dados informados.
+  2. AO FINAL DA RESPOSTA, inclua um bloco JSON ESTRITAMENTE com a estimativa de carga tributária média aproximada (IBPT/De Olho no Imposto) para este item no seguinte formato:
+  
+  \`\`\`json
+  {
+    "ibpt": {
+      "nacional": 0.00,
+      "importado": 0.00,
+      "estadual": 0.00,
+      "municipal": 0.00
+    }
+  }
+  \`\`\`
+  
+  Substitua 0.00 pelas alíquotas estimadas percentuais (ex: 13.45). Se for serviço, estadual é 0 e municipal > 0. Se for mercadoria, municipal é 0.`;
   
   let tools: any[] = [];
   if ([SearchType.REFORMA_TRIBUTARIA, SearchType.SERVICO, SearchType.CFOP, SearchType.NCM].includes(type)) {
@@ -54,6 +69,24 @@ export const fetchFiscalData = async (
       config: { tools, temperature: 0.4 }
     });
 
+    let text = response.text || 'Não foi possível gerar a análise.';
+    let ibptData = undefined;
+
+    // Extract JSON block for IBPT if exists
+    const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+        try {
+            const parsed = JSON.parse(jsonMatch[1]);
+            if (parsed.ibpt) {
+                ibptData = parsed.ibpt;
+                // Optional: Clean the JSON block from the text to avoid duplication in UI
+                text = text.replace(jsonMatch[0], '').trim();
+            }
+        } catch (e) {
+            console.warn("Failed to parse IBPT JSON", e);
+        }
+    }
+
     let sources: GroundingSource[] = [];
     if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
         sources = response.candidates[0].groundingMetadata.groundingChunks
@@ -62,15 +95,15 @@ export const fetchFiscalData = async (
     }
 
     return {
-      text: response.text || 'Não foi possível gerar a análise.',
+      text: text,
       sources,
       query,
       timestamp: Date.now(),
-      context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss, userNotes }
+      context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss, userNotes },
+      ibpt: ibptData
     };
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    // Propagar o erro original para que o App.tsx possa tratar códigos específicos (ex: 429)
     throw error;
   }
 };
