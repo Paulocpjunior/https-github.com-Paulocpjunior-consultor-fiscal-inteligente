@@ -158,7 +158,9 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 callbacks: {
                     label: function(context: any) {
                         let label = context.dataset.label || '';
-                        if (label) label += ': ';
+                        if (label) {
+                            label += ': ';
+                        }
                         if (context.parsed.y !== null) {
                             if (context.dataset.yAxisID === 'y1') {
                                 label += context.parsed.y.toFixed(2) + '%';
@@ -400,7 +402,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
     const handleAddItemAvulso = () => {
         setItensAvulsos(prev => [
             ...prev, 
-            { id: Date.now().toString(), descricao: '', valor: 0, tipo: 'receita' }
+            { id: Date.now().toString(), descricao: '', valor: 0, tipo: 'receita', dedutivelIrpj: false, geraCreditoPisCofins: false }
         ]);
     };
 
@@ -872,35 +874,59 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                         </div>
                         
                         {itensAvulsos.map((item, index) => (
-                            <div key={item.id} className="flex gap-2 items-center mb-2 bg-slate-50 dark:bg-slate-900/30 p-2 rounded border border-slate-100 dark:border-slate-700">
-                                <select 
-                                    value={item.tipo} 
-                                    onChange={(e) => handleUpdateItemAvulso(item.id, 'tipo', e.target.value)}
-                                    className="text-xs p-1 rounded border dark:bg-slate-700 dark:border-slate-600"
-                                >
-                                    <option value="receita">Receita (+)</option>
-                                    <option value="despesa">Despesa (-)</option>
-                                </select>
-                                <input 
-                                    type="text" 
-                                    placeholder="Descrição" 
-                                    value={item.descricao} 
-                                    onChange={(e) => handleUpdateItemAvulso(item.id, 'descricao', e.target.value)}
-                                    className="flex-grow text-xs p-1 rounded border dark:bg-slate-700 dark:border-slate-600"
-                                />
-                                <input 
-                                    type="text" 
-                                    placeholder="R$ 0,00" 
-                                    value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.valor)} 
-                                    onChange={(e) => {
-                                        const raw = e.target.value.replace(/\D/g, '');
-                                        handleUpdateItemAvulso(item.id, 'valor', parseFloat(raw)/100);
-                                    }}
-                                    className="w-24 text-xs p-1 rounded border text-right font-mono dark:bg-slate-700 dark:border-slate-600"
-                                />
-                                <button onClick={() => handleRemoveItemAvulso(item.id)} className="text-red-400 hover:text-red-600">
-                                    <TrashIcon className="w-4 h-4" />
-                                </button>
+                            <div key={item.id} className="flex flex-col gap-2 mb-2 bg-slate-50 dark:bg-slate-900/30 p-2 rounded border border-slate-100 dark:border-slate-700">
+                                <div className="flex gap-2 items-center">
+                                    <select 
+                                        value={item.tipo} 
+                                        onChange={(e) => handleUpdateItemAvulso(item.id, 'tipo', e.target.value)}
+                                        className="text-xs p-1 rounded border dark:bg-slate-700 dark:border-slate-600"
+                                    >
+                                        <option value="receita">Receita (+)</option>
+                                        <option value="despesa">Despesa (-)</option>
+                                    </select>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Descrição" 
+                                        value={item.descricao} 
+                                        onChange={(e) => handleUpdateItemAvulso(item.id, 'descricao', e.target.value)}
+                                        className="flex-grow text-xs p-1 rounded border dark:bg-slate-700 dark:border-slate-600"
+                                    />
+                                    <input 
+                                        type="text" 
+                                        placeholder="R$ 0,00" 
+                                        value={new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.valor)} 
+                                        onChange={(e) => {
+                                            const raw = e.target.value.replace(/\D/g, '');
+                                            handleUpdateItemAvulso(item.id, 'valor', parseFloat(raw)/100);
+                                        }}
+                                        className="w-24 text-xs p-1 rounded border text-right font-mono dark:bg-slate-700 dark:border-slate-600"
+                                    />
+                                    <button onClick={() => handleRemoveItemAvulso(item.id)} className="text-red-400 hover:text-red-600">
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                {item.tipo === 'despesa' && regimeSelecionado === 'Real' && (
+                                    <div className="flex gap-3 px-1">
+                                        <label className="flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-400 font-bold cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={!!item.dedutivelIrpj} 
+                                                onChange={(e) => handleUpdateItemAvulso(item.id, 'dedutivelIrpj', e.target.checked)}
+                                                className="rounded text-purple-600 focus:ring-purple-500 w-3 h-3"
+                                            />
+                                            Dedutível (IRPJ)
+                                        </label>
+                                        <label className="flex items-center gap-1 text-[10px] text-slate-600 dark:text-slate-400 font-bold cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={!!item.geraCreditoPisCofins} 
+                                                onChange={(e) => handleUpdateItemAvulso(item.id, 'geraCreditoPisCofins', e.target.checked)}
+                                                className="rounded text-green-600 focus:ring-green-500 w-3 h-3"
+                                            />
+                                            Crédito PIS/COFINS
+                                        </label>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

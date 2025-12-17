@@ -228,6 +228,8 @@ export interface ItemFinanceiroAvulso {
     descricao: string;
     valor: number;
     tipo: 'receita' | 'despesa';
+    dedutivelIrpj?: boolean; // Se true, abate da base de IRPJ/CSLL (Lucro Real)
+    geraCreditoPisCofins?: boolean; // Se true, soma à base de crédito de PIS/COFINS (Lucro Real)
 }
 
 export interface LucroInput {

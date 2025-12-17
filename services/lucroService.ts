@@ -116,38 +116,38 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         // PIS
         const valorPisBruto = basePisCofins * ALIQ_PIS_CUMULATIVO;
         const valorPisLiquido = Math.max(0, valorPisBruto - retencaoPis);
+        const saldoCredorPis = Math.max(0, retencaoPis - valorPisBruto);
         
         let obsPis = [];
-        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsPis.push(`Base Reduzida (Monofásico)`);
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsPis.push(`Base sem Monofásico`);
         if (retencaoPis > 0) obsPis.push(`Apuração: ${fmt(valorPisBruto)} - Retenção: ${fmt(retencaoPis)}`);
+        if (saldoCredorPis > 0) obsPis.push(`Saldo Credor: ${fmt(saldoCredorPis)}`);
 
-        if (valorPisLiquido > 0 || retencaoPis > 0) {
-            detalhamento.push({
-                imposto: 'PIS (Cumulativo)',
-                baseCalculo: basePisCofins,
-                aliquota: ALIQ_PIS_CUMULATIVO * 100,
-                valor: valorPisLiquido,
-                observacao: obsPis.length > 0 ? obsPis.join(' | ') : undefined
-            });
-        }
+        detalhamento.push({
+            imposto: 'PIS (Cumulativo)',
+            baseCalculo: basePisCofins,
+            aliquota: ALIQ_PIS_CUMULATIVO * 100,
+            valor: valorPisLiquido,
+            observacao: obsPis.length > 0 ? obsPis.join(' | ') : undefined
+        });
 
         // COFINS
         const valorCofinsBruto = basePisCofins * ALIQ_COFINS_CUMULATIVO;
         const valorCofinsLiquido = Math.max(0, valorCofinsBruto - retencaoCofins);
+        const saldoCredorCofins = Math.max(0, retencaoCofins - valorCofinsBruto);
 
         let obsCofins = [];
-        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsCofins.push(`Base Reduzida (Monofásico)`);
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obsCofins.push(`Base sem Monofásico`);
         if (retencaoCofins > 0) obsCofins.push(`Apuração: ${fmt(valorCofinsBruto)} - Retenção: ${fmt(retencaoCofins)}`);
+        if (saldoCredorCofins > 0) obsCofins.push(`Saldo Credor: ${fmt(saldoCredorCofins)}`);
 
-        if (valorCofinsLiquido > 0 || retencaoCofins > 0) {
-            detalhamento.push({
-                imposto: 'COFINS (Cumulativo)',
-                baseCalculo: basePisCofins,
-                aliquota: ALIQ_COFINS_CUMULATIVO * 100,
-                valor: valorCofinsLiquido,
-                observacao: obsCofins.length > 0 ? obsCofins.join(' | ') : undefined
-            });
-        }
+        detalhamento.push({
+            imposto: 'COFINS (Cumulativo)',
+            baseCalculo: basePisCofins,
+            aliquota: ALIQ_COFINS_CUMULATIVO * 100,
+            valor: valorCofinsLiquido,
+            observacao: obsCofins.length > 0 ? obsCofins.join(' | ') : undefined
+        });
     }
 
     // 2. IRPJ (Presumido)
@@ -234,12 +234,27 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         return emptyResult('Real', input.periodoApuracao);
     }
 
+    // Calcula Despesas Dedutíveis Extras e Créditos Extras
+    const extraDespesasDedutiveis = (input.itensAvulsos || [])
+        .filter(i => i.tipo === 'despesa' && i.dedutivelIrpj)
+        .reduce((acc, i) => acc + i.valor, 0);
+
+    const extraBaseCredito = (input.itensAvulsos || [])
+        .filter(i => i.tipo === 'despesa' && i.geraCreditoPisCofins)
+        .reduce((acc, i) => acc + i.valor, 0);
+
+    const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
+    // Despesas não dedutíveis (subtraídas apenas no lucro líquido final)
+    const extraDespesasNaoDedutiveis = (input.itensAvulsos || [])
+        .filter(i => i.tipo === 'despesa' && !i.dedutivelIrpj)
+        .reduce((acc, i) => acc + i.valor, 0);
+
     // 1. PIS/COFINS (Não Cumulativo)
     // Base de débito deduz monofásico
     const basePisCofins = Math.max(0, receitaTotal - (input.faturamentoMonofasico || 0));
     
-    // Créditos: Sobre Insumos/Despesas Dedutíveis informadas
-    const baseCredito = input.despesasDedutiveis; 
+    // Créditos: Sobre Insumos/Despesas Dedutíveis informadas + Itens Avulsos marcados
+    const baseCredito = input.despesasDedutiveis + extraBaseCredito; 
     
     // PIS
     const debitoPis = basePisCofins * ALIQ_PIS_NAO_CUMULATIVO;
@@ -248,11 +263,14 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     
     // Deduz crédito e retenção
     const pisFinal = Math.max(0, debitoPis - creditoPis - retencaoPis);
+    const saldoCredorPis = Math.max(0, (creditoPis + retencaoPis) - debitoPis);
 
-    if (pisFinal > 0 || retencaoPis > 0) {
+    if (basePisCofins > 0 || pisFinal > 0 || retencaoPis > 0) {
         let obs = [];
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obs.push(`Base Reduzida (Monofásico)`);
         if (creditoPis > 0) obs.push(`Crédito Insumos: ${fmt(creditoPis)}`);
         if (retencaoPis > 0) obs.push(`Retenção: ${fmt(retencaoPis)}`);
+        if (saldoCredorPis > 0) obs.push(`Saldo Credor: ${fmt(saldoCredorPis)}`);
         
         detalhamento.push({
             imposto: 'PIS (Não Cumulativo)',
@@ -269,11 +287,14 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     const retencaoCofins = input.retencaoCofins || 0;
     
     const cofinsFinal = Math.max(0, debitoCofins - creditoCofins - retencaoCofins);
+    const saldoCredorCofins = Math.max(0, (creditoCofins + retencaoCofins) - debitoCofins);
 
-    if (cofinsFinal > 0 || retencaoCofins > 0) {
+    if (basePisCofins > 0 || cofinsFinal > 0 || retencaoCofins > 0) {
         let obs = [];
+        if (input.faturamentoMonofasico && input.faturamentoMonofasico > 0) obs.push(`Base Reduzida (Monofásico)`);
         if (creditoCofins > 0) obs.push(`Crédito Insumos: ${fmt(creditoCofins)}`);
         if (retencaoCofins > 0) obs.push(`Retenção: ${fmt(retencaoCofins)}`);
+        if (saldoCredorCofins > 0) obs.push(`Saldo Credor: ${fmt(saldoCredorCofins)}`);
 
         detalhamento.push({
             imposto: 'COFINS (Não Cumulativo)',
@@ -286,7 +307,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
 
     // 2. IRPJ / CSLL (Lucro Real)
     // LAIR Simplificado = Receita - Custos - Despesas Operacionais (Gerais)
-    const despesasTotais = input.despesasOperacionais + input.despesasDedutiveis;
+    const despesasTotais = input.despesasOperacionais + input.despesasDedutiveis + extraDespesasDedutiveis;
     const lucroContabil = receitaTotal - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotais;
     
     let irpj = 0;
@@ -353,11 +374,12 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
     
-    // Calcular Itens Avulsos (Receitas e Despesas Extras)
-    const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
-    const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
-
-    const lucroFinal = (lucroContabil + extraReceitas) - extraDespesas - (pisFinal + cofinsFinal + irpj + csll + (issItem?.valor || 0) + (input.faturamentoComercio * 0.04));
+    // Lucro Líquido Final
+    // (Receita + Extras) - Despesas (Todas) - Impostos
+    // Note: despesasTotais already includes operational + deductible extra. We need to add non-deductible extra.
+    const despesasTotaisReais = input.despesasOperacionais + input.despesasDedutiveis + extraDespesasDedutiveis + extraDespesasNaoDedutiveis;
+    
+    const lucroFinal = (receitaTotal + extraReceitas) - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotaisReais - (pisFinal + cofinsFinal + irpj + csll + (issItem?.valor || 0) + (input.faturamentoComercio * 0.04));
 
     return {
         regime: 'Real',
