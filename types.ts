@@ -223,6 +223,8 @@ export interface IssConfig {
     qtdeSocios?: number; // Para SUP
 }
 
+export type CategoriaItemEspecial = 'padrao' | 'aplicacao_financeira' | 'importacao';
+
 export interface ItemFinanceiroAvulso {
     id: string;
     descricao: string;
@@ -230,6 +232,7 @@ export interface ItemFinanceiroAvulso {
     tipo: 'receita' | 'despesa';
     dedutivelIrpj?: boolean; // Se true, abate da base de IRPJ/CSLL (Lucro Real)
     geraCreditoPisCofins?: boolean; // Se true, soma à base de crédito de PIS/COFINS (Lucro Real)
+    categoriaEspecial?: CategoriaItemEspecial; // Novo campo para PIS/COFINS específicos
 }
 
 export interface LucroInput {
