@@ -4,10 +4,11 @@ import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, SearchType, Lucro
 import * as lucroService from '../services/lucroPresumidoService';
 import { calcularLucro } from '../services/lucroService';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
-import { CalculatorIcon, BuildingIcon, SearchIcon, DownloadIcon, DocumentTextIcon, PlusIcon, TrashIcon, EyeIcon, ArrowLeftIcon, SaveIcon, ShieldIcon, InfoIcon, UserIcon } from './Icons';
+import { CalculatorIcon, BuildingIcon, SearchIcon, DownloadIcon, DocumentTextIcon, PlusIcon, TrashIcon, EyeIcon, ArrowLeftIcon, SaveIcon, ShieldIcon, InfoIcon, UserIcon, AnimatedCheckIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 import Tooltip from './Tooltip';
 import SimpleChart from './SimpleChart';
+import Logo from './Logo';
 
 const MASTER_ADMIN_EMAIL = 'junior@spassessoriacontabil.com.br';
 
@@ -492,32 +493,44 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         setIsExporting(true);
         try {
             const { default: jsPDF } = await import('jspdf');
-            const doc = new jsPDF();
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const pageHeight = doc.internal.pageSize.getHeight();
-            
-            // --- HEADER ---
-            doc.setFillColor(10, 40, 90); 
-            doc.rect(0, 0, pageWidth, 40, 'F');
-            doc.setFontSize(22);
-            doc.setTextColor(255);
-            doc.setFont("helvetica", "bold");
-            doc.text("SP ASSESSORIA CONTÁBIL", pageWidth / 2, 20, { align: 'center' });
-            doc.setFontSize(10);
-            doc.setFont("helvetica", "normal");
-            doc.text("Desenvolvido BY SP Contábil", pageWidth / 2, 28, { align: 'center' });
+            const { default: html2canvas } = await import('html2canvas');
 
-            doc.setTextColor(0);
-            doc.setFontSize(16);
-            doc.setFont("helvetica", "bold");
-            let titleY = 55;
-            doc.text(`EXTRATO DE APURAÇÃO - ${regimeSelecionado.toUpperCase()}`, pageWidth / 2, titleY, { align: 'center' });
+            const element = document.getElementById('extrato-lucro-completo');
+            if (!element) throw new Error('Template de exportação não encontrado.');
 
-            // Note: Full PDF logic skipped for token efficiency as per instructions, assuming existing logic persists.
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                backgroundColor: '#ffffff',
+                logging: false,
+                windowWidth: 1000
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
             
-            doc.save(`extrato-${empresa.nome}-${mesReferencia}.pdf`);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+                heightLeft -= pdfHeight;
+            }
+
+            const fileName = `extrato-lucro-${empresa.nome.replace(/\s+/g, '-')}-${mesReferencia}.pdf`;
+            pdf.save(fileName);
         } catch (e) {
             console.error(e);
+            alert("Erro ao gerar PDF.");
         } finally {
             setIsExporting(false);
         }
@@ -616,7 +629,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 </h2>
             </div>
 
-            {/* NEW: Gráfico de Performance - Só aparece se houver dados históricos */}
+            {/* Gráfico de Performance */}
             {chartData && (
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 animate-fade-in">
                     <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
@@ -874,7 +887,6 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                 </div>
                                 
                                 <div className="flex flex-wrap gap-2 items-center px-1">
-                                    {/* Seletor de Categoria Especial */}
                                     <select 
                                         value={item.categoriaEspecial || 'padrao'}
                                         onChange={(e) => handleUpdateItemAvulso(item.id, 'categoriaEspecial', e.target.value)}
@@ -978,6 +990,124 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* TEMPLATE OCULTO PARA EXPORTAÇÃO PDF */}
+            <div id="extrato-lucro-completo" className="fixed left-[-9999px] top-0 w-[900px] bg-white text-slate-900 p-10 font-sans">
+                <div className="flex justify-between items-start border-b-2 border-sky-800 pb-6 mb-8">
+                    <div className="flex items-center gap-4">
+                        <Logo className="h-16 w-auto text-sky-800" />
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-sky-800 uppercase tracking-tight">Extrato de Apuração</h1>
+                            <p className="text-sm font-bold text-slate-500">SP ASSESSORIA CONTÁBIL</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div className="mb-2">
+                            <p className="text-xs font-bold text-slate-400 uppercase">Regime Tributário</p>
+                            <p className="text-lg font-bold text-sky-700">Lucro {regimeSelecionado}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-slate-400 uppercase">Emissão</p>
+                            <p className="text-sm font-bold text-slate-700">{new Date().toLocaleDateString('pt-BR')}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8 mb-8">
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Dados da Empresa</p>
+                        <p className="text-lg font-bold text-slate-800">{empresa.nome}</p>
+                        <p className="text-sm font-mono text-slate-600">{empresa.cnpj}</p>
+                        <p className="text-xs text-slate-500 mt-2">{empresa.endereco}</p>
+                    </div>
+                    <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex flex-col justify-center">
+                        <p className="text-xs font-bold text-sky-600 uppercase mb-1">Competência de Referência</p>
+                        <p className="text-2xl font-black text-sky-900 capitalize">
+                            {new Date(mesReferencia + '-02').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-sky-700 font-bold mt-1">Fechamento {periodoApuracao}</p>
+                    </div>
+                </div>
+
+                <div className="mb-8">
+                    <h3 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2">
+                        <CalculatorIcon className="w-5 h-5 text-sky-600" /> Detalhamento Tributário
+                    </h3>
+                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px]">
+                                <tr>
+                                    <th className="px-6 py-4">Tributo</th>
+                                    <th className="px-6 py-4 text-right">Base de Cálculo</th>
+                                    <th className="px-6 py-4 text-center">Alíquota</th>
+                                    <th className="px-6 py-4 text-right">Valor Apurado</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {resultadoCalculado?.detalhamento.map((item, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-50">
+                                        <td className="px-6 py-4">
+                                            <p className="font-bold text-slate-800">{item.imposto}</p>
+                                            {item.observacao && <p className="text-[10px] text-slate-400 italic font-medium">{item.observacao}</p>}
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-mono font-medium">
+                                            R$ {item.baseCalculo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-6 py-4 text-center font-bold text-slate-600">
+                                            {item.aliquota.toFixed(2)}%
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-900">
+                                            R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                    </tr>
+                                ))}
+                                <tr className="bg-sky-50 border-t-2 border-sky-200">
+                                    <td colSpan={3} className="px-6 py-5 text-right font-extrabold text-sky-900 uppercase">Total de Impostos a Pagar:</td>
+                                    <td className="px-6 py-5 text-right font-mono font-black text-sky-900 text-lg">
+                                        R$ {resultadoCalculado?.totalImpostos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                </tr>
+                                <tr className="bg-green-50">
+                                    <td colSpan={3} className="px-6 py-4 text-right font-extrabold text-green-900 uppercase">Lucro Líquido Estimado:</td>
+                                    <td className="px-6 py-4 text-right font-mono font-black text-green-900">
+                                        R$ {resultadoCalculado?.lucroLiquidoEstimado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-6 mb-10">
+                    <div className="p-3 border rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Carga Tributária</p>
+                        <p className="text-xl font-black text-slate-800">{resultadoCalculado?.cargaTributaria.toFixed(2)}%</p>
+                    </div>
+                    <div className="p-3 border rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Faturamento Bruto</p>
+                        <p className="text-xl font-black text-slate-800">R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="p-3 border rounded-lg text-center">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Despesas</p>
+                        <p className="text-xl font-black text-slate-800">R$ {(financeiro.despesas + financeiro.folha + financeiro.cmv).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                </div>
+
+                <div className="bg-slate-900 text-white p-6 rounded-2xl flex justify-between items-center">
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Relatório Gerencial</p>
+                        <p className="text-sm font-medium">Desenvolvido pela equipe técnica da SP Assessoria Contábil.</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs font-bold text-slate-400">Verificado em</p>
+                        <p className="text-sm font-bold">{new Date().toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+                
+                <p className="text-[9px] text-slate-400 text-center mt-6 uppercase font-bold tracking-widest">
+                    Este documento é uma simulação gerada por software. Valores sujeitos a conferência contábil final.
+                </p>
             </div>
         </div>
     );
