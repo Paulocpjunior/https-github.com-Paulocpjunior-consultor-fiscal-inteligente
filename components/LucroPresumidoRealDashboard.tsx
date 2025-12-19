@@ -72,40 +72,51 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
     const [periodoApuracao, setPeriodoApuracao] = useState<'Mensal' | 'Trimestral'>('Mensal');
     const [isEquiparacaoHospitalar, setIsEquiparacaoHospitalar] = useState(false);
 
-    // Dynamic Items Modal State
     const [isItemModalOpen, setIsItemModalOpen] = useState(false);
     const [itensAvulsos, setItensAvulsos] = useState<ItemFinanceiroAvulso[]>([]);
     const [editingItem, setEditingItem] = useState<Partial<ItemFinanceiroAvulso> | null>(null);
 
     const [issConfig, setIssConfig] = useState<IssConfig>({
-        tipo: 'aliquota_municipal',
-        aliquota: 5,
-        qtdeSocios: 1,
-        valorPorSocio: 0
+        tipo: 'aliquota_municipal', aliquota: 5, qtdeSocios: 1, valorPorSocio: 0
     });
 
     const [financeiro, setFinanceiro] = useState({
-        acumuladoAno: 0,
-        faturamentoMesComercio: 0,
-        faturamentoMesServico: 0,
-        faturamentoMonofasico: 0, 
-        despesas: 0,
-        despesasDedutiveis: 0, 
-        folha: 0,
-        cmv: 0,
-        retencaoPis: 0,
-        retencaoCofins: 0,
-        retencaoIrpj: 0,
-        retencaoCsll: 0
+        acumuladoAno: 0, faturamentoMesComercio: 0, faturamentoMesServico: 0, faturamentoMonofasico: 0, 
+        despesas: 0, despesasDedutiveis: 0, folha: 0, cmv: 0,
+        retencaoPis: 0, retencaoCofins: 0, retencaoIrpj: 0, retencaoCsll: 0
     });
 
-    const [resultadoCalculado, setResultadoCalculado] = useState<LucroResult | null>(null);
-    const isMasterAdmin = currentUser?.email === MASTER_ADMIN_EMAIL || currentUser?.role === 'admin';
+    /**
+     * Define whether the current user is a master admin.
+     * Fixed error: "Cannot find name 'isMasterAdmin'."
+     */
+    const isMasterAdmin = useMemo(() => {
+        return currentUser?.role === 'admin' || currentUser?.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+    }, [currentUser]);
+
+    const resultadoCalculado = useMemo(() => {
+        const input: LucroInput = {
+            regimeSelecionado, periodoApuracao,
+            faturamentoComercio: financeiro.faturamentoMesComercio,
+            faturamentoServico: financeiro.faturamentoMesServico,
+            faturamentoMonofasico: financeiro.faturamentoMonofasico,
+            despesasOperacionais: financeiro.despesas,
+            despesasDedutiveis: financeiro.despesasDedutiveis,
+            folhaPagamento: financeiro.folha,
+            custoMercadoriaVendida: financeiro.cmv,
+            issConfig,
+            retencaoPis: financeiro.retencaoPis,
+            retencaoCofins: financeiro.retencaoCofins,
+            retencaoIrpj: financeiro.retencaoIrpj,
+            retencaoCsll: financeiro.retencaoCsll,
+            isEquiparacaoHospitalar,
+            itensAvulsos
+        };
+        return calcularLucro(input);
+    }, [financeiro, regimeSelecionado, periodoApuracao, issConfig, isEquiparacaoHospitalar, itensAvulsos]);
 
     useEffect(() => {
-        if (currentUser) {
-            lucroService.getEmpresas(currentUser).then(setCompanies);
-        }
+        if (currentUser) lucroService.getEmpresas(currentUser).then(setCompanies);
     }, [currentUser]);
 
     useEffect(() => {
@@ -133,70 +144,50 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         }
     }, [mesReferencia, selectedEmpresaId, empresa.fichaFinanceira]);
 
-    useEffect(() => {
-        const input: LucroInput = {
-            regimeSelecionado,
-            periodoApuracao,
-            faturamentoComercio: financeiro.faturamentoMesComercio,
-            faturamentoServico: financeiro.faturamentoMesServico,
-            faturamentoMonofasico: financeiro.faturamentoMonofasico,
-            despesasOperacionais: financeiro.despesas,
-            despesasDedutiveis: financeiro.despesasDedutiveis,
-            folhaPagamento: financeiro.folha,
-            custoMercadoriaVendida: financeiro.cmv,
-            issConfig,
-            retencaoPis: financeiro.retencaoPis,
-            retencaoCofins: financeiro.retencaoCofins,
-            retencaoIrpj: financeiro.retencaoIrpj,
-            retencaoCsll: financeiro.retencaoCsll,
-            isEquiparacaoHospitalar,
-            itensAvulsos
-        };
-        const result = calcularLucro(input);
-        setResultadoCalculado(result);
-    }, [financeiro, regimeSelecionado, periodoApuracao, issConfig, isEquiparacaoHospitalar, itensAvulsos]);
-
-    const handleOpenItemModal = (item?: ItemFinanceiroAvulso) => {
-        setEditingItem(item || {
-            id: Date.now().toString(),
-            descricao: '',
-            valor: 0,
-            tipo: 'receita',
-            categoriaEspecial: 'padrao',
-            dedutivelIrpj: false,
-            geraCreditoPisCofins: false
-        });
-        setIsItemModalOpen(true);
-    };
-
-    const handleSaveItem = () => {
-        if (!editingItem || !editingItem.descricao) return;
-        setItensAvulsos(prev => {
-            const exists = prev.find(i => i.id === editingItem.id);
-            if (exists) return prev.map(i => i.id === editingItem.id ? editingItem as ItemFinanceiroAvulso : i);
-            return [...prev, editingItem as ItemFinanceiroAvulso];
-        });
-        setIsItemModalOpen(false);
-    };
-
-    const handleRemoveItem = (id: string) => {
-        setItensAvulsos(prev => prev.filter(i => i.id !== id));
-    };
-
-    const handleCnpjVerification = async () => {
-        const cleanCnpj = (empresa.cnpj || '').replace(/\D/g, '');
-        if (cleanCnpj.length !== 14) { setCnpjError('CNPJ inválido.'); return; }
-        setIsCnpjLoading(true); setCnpjError('');
+    const handleExportPDF = async () => {
+        if (!empresa.nome || !resultadoCalculado || !currentUser) return;
+        setIsExporting(true);
         try {
-            const data = await fetchCnpjFromBrasilAPI(cleanCnpj);
-            setEmpresa(prev => ({
-                ...prev,
-                nome: data.razaoSocial,
-                nomeFantasia: data.nomeFantasia,
-                cnaePrincipal: data.cnaePrincipal,
-                endereco: `${data.logradouro}, ${data.numero} - ${data.municipio}/${data.uf}`
-            }));
-        } catch (e: any) { setCnpjError(e.message || 'Erro ao buscar CNPJ.'); } finally { setIsCnpjLoading(false); }
+            const { default: jsPDF } = await import('jspdf');
+            const { default: html2canvas } = await import('html2canvas');
+
+            const element = document.getElementById('extrato-lucro-completo');
+            if (!element) throw new Error('Template não encontrado.');
+
+            await new Promise(r => setTimeout(r, 200));
+
+            const canvas = await html2canvas(element, {
+                scale: 2.5,
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                windowWidth: 1050
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+                heightLeft -= pdfHeight;
+            }
+
+            pdf.save(`extrato-lucro-${empresa.nome.replace(/\s+/g, '-')}-${mesReferencia}.pdf`);
+        } catch (e) {
+            console.error(e);
+            alert("Erro ao gerar PDF.");
+        } finally { setIsExporting(false); }
     };
 
     const handleSaveEmpresa = async () => {
@@ -217,11 +208,68 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         } finally { setIsSaving(false); }
     };
 
+    const handleSaveCalculo = async () => {
+        if (!selectedEmpresaId) return;
+        setIsSaving(true);
+        /**
+         * Creating the calculation record.
+         * Fixed error: "Property 'acumuladoAno' is missing in type ... but required in type 'FichaFinanceiraRegistro'."
+         */
+        const registro: FichaFinanceiraRegistro = {
+            id: Date.now().toString(),
+            dataRegistro: Date.now(),
+            mesReferencia,
+            regime: regimeSelecionado,
+            periodoApuracao,
+            acumuladoAno: financeiro.acumuladoAno,
+            faturamentoMesComercio: financeiro.faturamentoMesComercio,
+            faturamentoMesServico: financeiro.faturamentoMesServico,
+            faturamentoMonofasico: financeiro.faturamentoMonofasico,
+            faturamentoMesTotal: financeiro.faturamentoMesComercio + financeiro.faturamentoMesServico,
+            totalGeral: financeiro.acumuladoAno + financeiro.faturamentoMesComercio + financeiro.faturamentoMesServico,
+            despesas: financeiro.despesas,
+            despesasDedutiveis: financeiro.despesasDedutiveis,
+            folha: financeiro.folha,
+            cmv: financeiro.cmv,
+            retencaoPis: financeiro.retencaoPis,
+            retencaoCofins: financeiro.retencaoCofins,
+            retencaoIrpj: financeiro.retencaoIrpj,
+            retencaoCsll: financeiro.retencaoCsll,
+            isEquiparacaoHospitalar,
+            itensAvulsos,
+            totalImpostos: resultadoCalculado.totalImpostos,
+            cargaTributaria: resultadoCalculado.cargaTributaria
+        };
+        try {
+            const updated = await lucroService.addFichaFinanceira(selectedEmpresaId, registro);
+            if (updated) {
+                setEmpresa(updated);
+                setSaveSuccess('Cálculo salvo!');
+                setTimeout(() => setSaveSuccess(''), 3000);
+            }
+        } finally { setIsSaving(false); }
+    };
+
+    const handleCnpjVerification = async () => {
+        const cleanCnpj = (empresa.cnpj || '').replace(/\D/g, '');
+        if (cleanCnpj.length !== 14) { setCnpjError('CNPJ inválido.'); return; }
+        setIsCnpjLoading(true); setCnpjError('');
+        try {
+            const data = await fetchCnpjFromBrasilAPI(cleanCnpj);
+            setEmpresa(prev => ({
+                ...prev,
+                nome: data.razaoSocial,
+                nomeFantasia: data.nomeFantasia,
+                endereco: `${data.logradouro}, ${data.numero} - ${data.municipio}/${data.uf}`
+            }));
+        } catch (e: any) { setCnpjError(e.message || 'Erro ao buscar CNPJ.'); } finally { setIsCnpjLoading(false); }
+    };
+
     if (view === 'list') {
         return (
             <div className="space-y-6 animate-fade-in">
                 <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Lucro Presumido / Real</h2>
+                    <h2 className="text-2xl font-bold">Lucro Presumido / Real</h2>
                     <button onClick={() => { setView('form'); setSelectedEmpresaId(null); setEmpresa({nome:'', cnpj:''}); }} className="btn-press bg-sky-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-sky-700 font-bold shadow-md">
                         <PlusIcon className="w-5 h-5" /> Nova Empresa
                     </button>
@@ -229,11 +277,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
-                            <tr>
-                                <th className="px-6 py-3">Empresa</th>
-                                <th className="px-6 py-3">CNPJ</th>
-                                <th className="px-6 py-3 text-center">Ações</th>
-                            </tr>
+                            <tr><th className="px-6 py-3">Empresa</th><th className="px-6 py-3">CNPJ</th><th className="px-6 py-3 text-center">Ações</th></tr>
                         </thead>
                         <tbody>
                             {companies.map(c => (
@@ -273,8 +317,8 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase">CNPJ</label>
                                 <div className="flex gap-2">
-                                    <input type="text" value={empresa.cnpj} onChange={e => setEmpresa(prev => ({...prev, cnpj: e.target.value}))} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border rounded-lg font-mono font-bold" placeholder="00.000.000/0000-00" />
-                                    <button onClick={handleCnpjVerification} disabled={isCnpjLoading} className="bg-slate-100 dark:bg-slate-600 px-3 rounded-lg hover:bg-sky-100 dark:hover:bg-sky-900 transition-colors">{isCnpjLoading ? <LoadingSpinner small /> : <SearchIcon className="w-4 h-4" />}</button>
+                                    <input type="text" value={empresa.cnpj} onChange={e => setEmpresa(prev => ({...prev, cnpj: e.target.value}))} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border rounded-lg font-mono font-bold" />
+                                    <button onClick={handleCnpjVerification} className="bg-slate-100 px-3 rounded-lg"><SearchIcon className="w-4 h-4" /></button>
                                 </div>
                             </div>
                             <div>
@@ -285,30 +329,27 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     </div>
 
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2"><CalculatorIcon className="w-5 h-5 text-sky-600" /> Apuração Financeira</h3>
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2"><CalculatorIcon className="w-5 h-5 text-sky-600" /> Movimentação</h3>
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase">Regime</label>
                                 <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                                    <button onClick={() => setRegimeSelecionado('Presumido')} className={`flex-1 py-1 text-xs font-bold rounded-md ${regimeSelecionado === 'Presumido' ? 'bg-white dark:bg-slate-600 shadow text-sky-700' : 'text-slate-500'}`}>Presumido</button>
-                                    <button onClick={() => setRegimeSelecionado('Real')} className={`flex-1 py-1 text-xs font-bold rounded-md ${regimeSelecionado === 'Real' ? 'bg-white dark:bg-slate-600 shadow text-purple-700' : 'text-slate-500'}`}>Real</button>
+                                    <button onClick={() => setRegimeSelecionado('Presumido')} className={`flex-1 py-1 text-xs font-bold rounded-md ${regimeSelecionado === 'Presumido' ? 'bg-white shadow text-sky-700' : 'text-slate-500'}`}>Presumido</button>
+                                    <button onClick={() => setRegimeSelecionado('Real')} className={`flex-1 py-1 text-xs font-bold rounded-md ${regimeSelecionado === 'Real' ? 'bg-white shadow text-purple-700' : 'text-slate-500'}`}>Real</button>
                                 </div>
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase">Período</label>
-                                <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
-                                    <button onClick={() => setPeriodoApuracao('Mensal')} className={`flex-1 py-1 text-xs font-bold rounded-md ${periodoApuracao === 'Mensal' ? 'bg-white dark:bg-slate-600 shadow text-sky-700' : 'text-slate-500'}`}>Mensal</button>
-                                    <button onClick={() => setPeriodoApuracao('Trimestral')} className={`flex-1 py-1 text-xs font-bold rounded-md ${periodoApuracao === 'Trimestral' ? 'bg-white dark:bg-slate-600 shadow text-sky-700' : 'text-slate-500'}`}>Trimestral</button>
-                                </div>
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Competência</label>
+                                <input type="month" value={mesReferencia} onChange={e => setMesReferencia(e.target.value)} className="w-full px-3 py-1.5 bg-white dark:bg-slate-700 border rounded-lg font-bold text-xs" />
                             </div>
                         </div>
                         <div className="space-y-4">
                             <CurrencyInput label="Faturamento Comércio" value={financeiro.faturamentoMesComercio} onChange={v => setFinanceiro(p => ({...p, faturamentoMesComercio: v}))} />
                             <CurrencyInput label="Faturamento Serviços" value={financeiro.faturamentoMesServico} onChange={v => setFinanceiro(p => ({...p, faturamentoMesServico: v}))} />
-                            <CurrencyInput label="Monofásicos (Isenção PIS/COF)" value={financeiro.faturamentoMonofasico} onChange={v => setFinanceiro(p => ({...p, faturamentoMonofasico: v}))} className="bg-green-50/30 p-2 rounded" />
+                            <CurrencyInput label="Monofásicos (Exclusão PIS/COF)" value={financeiro.faturamentoMonofasico} onChange={v => setFinanceiro(p => ({...p, faturamentoMonofasico: v}))} className="bg-green-50/20 p-2 rounded border border-green-100" />
                             <div className="grid grid-cols-2 gap-4">
-                                <CurrencyInput label="Retenção PIS" value={financeiro.retencaoPis} onChange={v => setFinanceiro(p => ({...p, retencaoPis: v}))} />
-                                <CurrencyInput label="Retenção COFINS" value={financeiro.retencaoCofins} onChange={v => setFinanceiro(p => ({...p, retencaoCofins: v}))} />
+                                <CurrencyInput label="CMV" value={financeiro.cmv} onChange={v => setFinanceiro(p => ({...p, cmv: v}))} />
+                                <CurrencyInput label="Folha" value={financeiro.folha} onChange={v => setFinanceiro(p => ({...p, folha: v}))} />
                             </div>
                         </div>
                     </div>
@@ -317,149 +358,215 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 <div className="space-y-6">
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold flex items-center gap-2"><PlusIcon className="w-5 h-5 text-sky-600" /> Outras Receitas / Despesas</h3>
-                            <button onClick={() => handleOpenItemModal()} className="text-xs bg-sky-600 text-white font-bold px-3 py-1.5 rounded-lg hover:bg-sky-700 flex items-center gap-1 shadow">
-                                <PlusIcon className="w-4 h-4" /> Adicionar Item
-                            </button>
+                            <h3 className="text-lg font-bold flex items-center gap-2"><PlusIcon className="w-5 h-5 text-sky-600" /> Itens Extra-Operacionais</h3>
+                            <button onClick={() => setIsItemModalOpen(true)} className="text-xs bg-sky-600 text-white px-3 py-1.5 rounded-lg hover:bg-sky-700 font-bold">+ Adicionar</button>
                         </div>
-                        
-                        <div className="space-y-3">
-                            {itensAvulsos.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic text-center py-4">Nenhum item extra adicionado.</p>
-                            ) : (
-                                itensAvulsos.map(item => (
-                                    <div key={item.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${item.tipo === 'receita' ? 'bg-green-50/50 border-green-100 dark:bg-green-900/10 dark:border-green-800' : 'bg-red-50/50 border-red-100 dark:bg-red-900/10 dark:border-red-800'}`}>
-                                        <div className="flex-grow">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`w-2 h-2 rounded-full ${item.tipo === 'receita' ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{item.descricao}</p>
-                                                {item.dedutivelIrpj && <Tooltip content="Dedutível IRPJ/CSLL"><ShieldIcon className="w-3 h-3 text-sky-600" /></Tooltip>}
-                                                {item.geraCreditoPisCofins && <Tooltip content="Gera Crédito PIS/COFINS"><CalculatorIcon className="w-3 h-3 text-green-600" /></Tooltip>}
-                                            </div>
-                                            <p className="text-[10px] text-slate-500 uppercase font-bold mt-0.5">{item.categoriaEspecial?.replace('_', ' ')}</p>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <p className="text-sm font-mono font-bold text-slate-900 dark:text-white">
-                                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
-                                            </p>
-                                            <div className="flex gap-1">
-                                                <button onClick={() => handleOpenItemModal(item)} className="p-1.5 text-slate-400 hover:text-sky-600 bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-100 dark:border-slate-600"><PencilIcon className="w-4 h-4" /></button>
-                                                <button onClick={() => handleRemoveItem(item.id)} className="p-1.5 text-slate-400 hover:text-red-600 bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-100 dark:border-slate-600"><TrashIcon className="w-4 h-4" /></button>
-                                            </div>
-                                        </div>
+                        <div className="space-y-2">
+                            {itensAvulsos.length === 0 ? <p className="text-center text-slate-400 text-xs py-4 italic">Nenhum item adicionado.</p> : itensAvulsos.map(item => (
+                                <div key={item.id} className={`p-2 rounded-lg border flex justify-between items-center ${item.tipo === 'receita' ? 'bg-green-50/30 border-green-100' : 'bg-red-50/30 border-red-100'}`}>
+                                    <div>
+                                        <p className="text-xs font-bold">{item.descricao}</p>
+                                        <p className="text-[10px] text-slate-500 uppercase">{item.categoriaEspecial}</p>
                                     </div>
-                                ))
-                            )}
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-sm font-mono font-bold">R$ {item.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                        <button onClick={() => setItensAvulsos(prev => prev.filter(i => i.id !== item.id))} className="text-red-400 hover:text-red-600"><TrashIcon className="w-4 h-4" /></button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
 
-                    {resultadoCalculado && (
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 animate-fade-in">
-                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2"><InfoIcon className="w-5 h-5 text-sky-600" /> Resumo da Guia</h3>
-                            <div className="space-y-4">
-                                <div className="grid grid-cols-1 gap-3">
-                                    {resultadoCalculado.detalhamento.map((det, idx) => (
-                                        <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{det.imposto}</p>
-                                                    <p className="text-[10px] font-bold text-slate-500 uppercase">Base: {new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(det.baseCalculo)} ({det.aliquota.toFixed(2)}%)</p>
-                                                </div>
-                                                <p className="text-lg font-mono font-bold text-slate-900 dark:text-white">{new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(det.valor)}</p>
-                                            </div>
-                                            {det.cotaInfo && det.cotaInfo.disponivel && (
-                                                <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
-                                                    <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400 text-xs font-bold mb-2">
-                                                        <CalculatorIcon className="w-4 h-4" /> Plano de Cotas Disponível
-                                                    </div>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {det.cotaInfo.vencimentos?.map((v, i) => (
-                                                            <div key={i} className="text-center p-2 bg-sky-50 dark:bg-sky-900/30 rounded border border-sky-100 dark:border-sky-800">
-                                                                <p className="text-[9px] font-black text-sky-800 dark:text-sky-300 uppercase">{v}</p>
-                                                                <p className="text-[11px] font-bold text-sky-900 dark:text-white">{new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(det.cotaInfo!.valorPrimeiraCota)}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2"><InfoIcon className="w-5 h-5 text-sky-600" /> Resultado da Apuração</h3>
+                        <div className="space-y-3">
+                            {resultadoCalculado.detalhamento.map((det, idx) => (
+                                <div key={idx} className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="text-sm font-bold">{det.imposto}</p>
+                                            <p className="text-[10px] text-slate-500">Base: R$ {det.baseCalculo.toLocaleString('pt-BR')} ({det.aliquota.toFixed(2)}%)</p>
                                         </div>
-                                    ))}
+                                        <p className="text-lg font-mono font-bold text-sky-900">R$ {det.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                    </div>
+                                    {det.cotaInfo && det.cotaInfo.disponivel && (
+                                        <div className="mt-2 pt-2 border-t border-dashed flex justify-between items-center text-[10px] text-sky-600 font-bold uppercase">
+                                            <span>Opção de Cotas: {det.cotaInfo.numeroCotas}x</span>
+                                            <span>R$ {det.cotaInfo.valorPrimeiraCota.toLocaleString('pt-BR')} cada</span>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="p-4 bg-sky-600 text-white rounded-xl shadow-lg flex justify-between items-center">
-                                    <span className="font-bold uppercase text-xs">Total de Impostos</span>
-                                    <span className="text-2xl font-black">{new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(resultadoCalculado.totalImpostos)}</span>
-                                </div>
+                            ))}
+                            <div className="p-4 bg-sky-600 text-white rounded-xl shadow-lg flex justify-between items-center">
+                                <span className="font-bold uppercase text-xs">Total de Impostos</span>
+                                <span className="text-2xl font-black">R$ {resultadoCalculado.totalImpostos.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
                             </div>
                         </div>
-                    )}
+                        <div className="flex gap-3 mt-6">
+                            <button onClick={handleSaveCalculo} disabled={isSaving} className="flex-1 bg-teal-600 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2"><SaveIcon className="w-5 h-5" /> Salvar</button>
+                            <button onClick={handleExportPDF} disabled={isExporting} className="flex-1 bg-sky-600 text-white py-3 rounded-xl font-bold flex justify-center items-center gap-2"><DownloadIcon className="w-5 h-5" /> PDF</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* MODAL PARA ITENS AVULSOS */}
-            {isItemModalOpen && editingItem && (
-                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[100] animate-fade-in" onClick={() => setIsItemModalOpen(false)}>
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
-                        <div className="bg-sky-600 p-4 flex justify-between items-center text-white">
-                            <h3 className="font-bold text-lg flex items-center gap-2"><PlusIcon className="w-6 h-6" /> Adicionar Receita/Despesa</h3>
-                            <button onClick={() => setIsItemModalOpen(false)} className="p-1 hover:bg-white/20 rounded-full transition-colors"><CloseIcon className="w-6 h-6" /></button>
+            {/* MODAL ITENS AVULSOS */}
+            {isItemModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-6 animate-pop-in">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold">Adicionar Item Financeiro</h3>
+                            <button onClick={() => setIsItemModalOpen(false)}><CloseIcon className="w-6 h-6 text-slate-400" /></button>
                         </div>
-                        
-                        <div className="p-6 space-y-6">
-                            <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
-                                <button onClick={() => setEditingItem({...editingItem, tipo: 'receita'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${editingItem.tipo === 'receita' ? 'bg-white dark:bg-slate-600 shadow text-green-600' : 'text-slate-500'}`}>Receita (+)</button>
-                                <button onClick={() => setEditingItem({...editingItem, tipo: 'despesa'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${editingItem.tipo === 'despesa' ? 'bg-white dark:bg-slate-600 shadow text-red-600' : 'text-slate-500'}`}>Despesa (-)</button>
+                        <div className="space-y-4">
+                            <div className="flex bg-slate-100 p-1 rounded-lg">
+                                <button onClick={() => setEditingItem({...editingItem, tipo: 'receita'})} className={`flex-1 py-1.5 text-xs font-bold rounded ${editingItem?.tipo === 'receita' ? 'bg-white text-green-600' : 'text-slate-500'}`}>Receita</button>
+                                <button onClick={() => setEditingItem({...editingItem, tipo: 'despesa'})} className={`flex-1 py-1.5 text-xs font-bold rounded ${editingItem?.tipo === 'despesa' ? 'bg-white text-red-600' : 'text-slate-500'}`}>Despesa</button>
                             </div>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Descrição</label>
-                                    <input type="text" value={editingItem.descricao} onChange={e => setEditingItem({...editingItem, descricao: e.target.value})} className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 dark:text-white font-bold" placeholder="Ex: Rendimentos de Aplicação, Manutenção..." />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <CurrencyInput label="Valor do Item" value={editingItem.valor || 0} onChange={v => setEditingItem({...editingItem, valor: v})} />
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase ml-1">Categoria</label>
-                                        <select value={editingItem.categoriaEspecial} onChange={e => setEditingItem({...editingItem, categoriaEspecial: e.target.value as CategoriaItemEspecial})} className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-bold outline-none focus:ring-2 focus:ring-sky-500">
-                                            <option value="padrao">Padrão</option>
-                                            {editingItem.tipo === 'receita' && <option value="aplicacao_financeira">Aplicação Financeira</option>}
-                                            {editingItem.tipo === 'despesa' && <option value="importacao">Importação</option>}
-                                        </select>
-                                    </div>
-                                </div>
-                                
-                                {regimeSelecionado === 'Real' && editingItem.tipo === 'despesa' && (
-                                    <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-2xl border border-purple-100 dark:border-purple-800 space-y-3">
-                                        <p className="text-[10px] font-black text-purple-700 dark:text-purple-400 uppercase tracking-widest mb-1">Configurações Fiscais (Lucro Real)</p>
-                                        <div className="flex gap-4">
-                                            <label className="flex items-center gap-2 cursor-pointer group">
-                                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${editingItem.dedutivelIrpj ? 'bg-purple-600 border-purple-600' : 'bg-white border-slate-300'}`}>
-                                                    {editingItem.dedutivelIrpj && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4"><path d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <input type="checkbox" className="hidden" checked={editingItem.dedutivelIrpj} onChange={e => setEditingItem({...editingItem, dedutivelIrpj: e.target.checked})} />
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Dedutível IRPJ/CSLL</span>
-                                            </label>
-                                            <label className="flex items-center gap-2 cursor-pointer group">
-                                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${editingItem.geraCreditoPisCofins ? 'bg-green-600 border-green-600' : 'bg-white border-slate-300'}`}>
-                                                    {editingItem.geraCreditoPisCofins && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="4"><path d="M5 13l4 4L19 7" /></svg>}
-                                                </div>
-                                                <input type="checkbox" className="hidden" checked={editingItem.geraCreditoPisCofins} onChange={e => setEditingItem({...editingItem, geraCreditoPisCofins: e.target.checked})} />
-                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Gerar Crédito PIS/COF</span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t flex gap-3">
-                            <button onClick={() => setIsItemModalOpen(false)} className="flex-1 py-3 text-sm font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">Cancelar</button>
-                            <button onClick={handleSaveItem} className="flex-[2] py-3 text-sm font-bold bg-sky-600 text-white hover:bg-sky-700 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
-                                <AnimatedCheckIcon size="w-5 h-5" className="text-white" /> Confirmar Item
-                            </button>
+                            <input type="text" placeholder="Descrição" value={editingItem?.descricao || ''} onChange={e => setEditingItem({...editingItem, descricao: e.target.value})} className="w-full p-3 bg-slate-50 border rounded-xl font-bold text-sm" />
+                            <CurrencyInput label="Valor" value={editingItem?.valor || 0} onChange={v => setEditingItem({...editingItem, valor: v})} />
+                            <select value={editingItem?.categoriaEspecial || 'padrao'} onChange={e => setEditingItem({...editingItem, categoriaEspecial: e.target.value as any})} className="w-full p-3 bg-slate-50 border rounded-xl font-bold text-sm">
+                                <option value="padrao">Geral</option>
+                                <option value="aplicacao_financeira">Aplicação Financeira</option>
+                                <option value="importacao">Importação</option>
+                            </select>
+                            <button onClick={() => { if(editingItem?.descricao) { setItensAvulsos(prev => [...prev, { ...editingItem as ItemFinanceiroAvulso, id: Date.now().toString() }]); setIsItemModalOpen(false); setEditingItem(null); } }} className="w-full bg-sky-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-sky-700 transition-colors">Confirmar</button>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* TEMPLATE OCULTO PARA PDF - EXTRATO COMPLETO */}
+            <div id="extrato-lucro-completo" className="fixed left-[-9999px] top-0 w-[1000px] bg-white text-slate-900 p-12 font-sans">
+                <div className="flex justify-between items-start border-b-4 border-sky-800 pb-8 mb-10">
+                    <div className="flex items-center gap-5">
+                        <Logo className="h-20 w-auto text-sky-800" />
+                        <div>
+                            <h1 className="text-3xl font-black text-sky-800 uppercase tracking-tighter">Extrato Detalhado de Apuração</h1>
+                            <p className="text-sm font-bold text-slate-500 tracking-wider">SP ASSESSORIA CONTÁBIL - DOCUMENTO GERENCIAL</p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] font-black text-slate-400 uppercase">Regime e Competência</p>
+                        <p className="text-xl font-black text-sky-700">Lucro {regimeSelecionado} - {new Date(mesReferencia + '-02').toLocaleDateString('pt-BR', {month:'long', year:'numeric'})}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 uppercase font-bold tracking-widest">Emissão: {new Date().toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-8 mb-10">
+                    <div className="p-6 bg-slate-50 rounded-3xl border-2 border-slate-100 shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Contribuinte / Razão Social</p>
+                        <p className="text-xl font-bold text-slate-800 leading-tight">{empresa.nome}</p>
+                        <p className="text-md font-mono text-slate-600 mt-1">{empresa.cnpj}</p>
+                        <p className="text-[11px] text-slate-400 mt-4 leading-relaxed italic">{empresa.endereco}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-sky-50 rounded-2xl border border-sky-100 text-center flex flex-col justify-center">
+                            <p className="text-[10px] font-black text-sky-600 uppercase mb-1">Carga Tributária Efetiva</p>
+                            <p className="text-3xl font-black text-sky-900">{resultadoCalculado?.cargaTributaria.toFixed(2)}%</p>
+                        </div>
+                        <div className="p-4 bg-green-50 rounded-2xl border border-green-100 text-center flex flex-col justify-center">
+                            <p className="text-[10px] font-black text-green-600 uppercase mb-1">Lucro Líquido Estimado</p>
+                            <p className="text-2xl font-black text-green-900">R$ {resultadoCalculado?.lucroLiquidoEstimado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="mb-10">
+                    <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-8 border-sky-600 pl-4">1. Memória de Receitas e Custos</h3>
+                    <div className="grid grid-cols-2 gap-8">
+                        <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-3 border-b text-[11px] font-black text-slate-600 uppercase">Receitas Brutas</div>
+                            <div className="p-6 space-y-3">
+                                <div className="flex justify-between text-sm"><span>Comércio:</span><span className="font-bold">R$ {financeiro.faturamentoMesComercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm"><span>Serviços:</span><span className="font-bold">R$ {financeiro.faturamentoMesServico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm text-orange-600 font-bold border-t pt-2"><span>(-) Monofásicos:</span><span>R$ {financeiro.faturamentoMonofasico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                            </div>
+                        </div>
+                        <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+                            <div className="bg-slate-50 px-6 py-3 border-b text-[11px] font-black text-slate-600 uppercase">Custos Informados</div>
+                            <div className="p-6 space-y-3">
+                                <div className="flex justify-between text-sm"><span>CMV:</span><span className="font-bold">R$ {financeiro.cmv.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm"><span>Folha de Salários:</span><span className="font-bold">R$ {financeiro.folha.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm text-purple-700 font-bold border-t pt-2"><span>Operacional Geral:</span><span>R$ {financeiro.despesas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {itensAvulsos.length > 0 && (
+                    <div className="mb-10">
+                        <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-8 border-amber-500 pl-4">2. Quadro de Itens Extra-Operacionais</h3>
+                        <div className="border-2 border-slate-100 rounded-3xl overflow-hidden">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[10px]">
+                                    <tr><th className="px-6 py-4">Tipo</th><th className="px-6 py-4">Descrição</th><th className="px-6 py-4 text-center">Categoria</th><th className="px-6 py-4 text-right">Valor</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {itensAvulsos.map((item, idx) => (
+                                        <tr key={idx}>
+                                            <td className="px-6 py-4 uppercase font-bold text-[9px]">{item.tipo}</td>
+                                            <td className="px-6 py-4 font-bold">{item.descricao}</td>
+                                            <td className="px-6 py-4 text-center text-[10px]">{item.categoriaEspecial}</td>
+                                            <td className="px-6 py-4 text-right font-mono font-black">R$ {item.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                <div className="mb-10">
+                    <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-8 border-sky-800 pl-4">3. Quadro de Apuração Tributária Final</h3>
+                    <div className="border-4 border-sky-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+                        <table className="w-full text-left text-md">
+                            <thead className="bg-sky-800 text-white font-black uppercase text-xs">
+                                <tr><th className="px-10 py-6">Imposto</th><th className="px-10 py-6 text-right">Base de Cálculo</th><th className="px-10 py-6 text-center">Alíquota</th><th className="px-10 py-6 text-right">Valor Líquido</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                                {resultadoCalculado?.detalhamento.map((item, idx) => (
+                                    <tr key={idx}>
+                                        <td className="px-10 py-5 font-black">{item.imposto}</td>
+                                        <td className="px-10 py-5 text-right font-mono text-slate-600">R$ {item.baseCalculo.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                                        <td className="px-10 py-5 text-center font-black">{item.aliquota.toFixed(2)}%</td>
+                                        <td className="px-10 py-5 text-right font-mono font-black text-sky-900">R$ {item.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                                    </tr>
+                                ))}
+                                <tr className="bg-sky-50">
+                                    <td colSpan={3} className="px-10 py-8 text-right font-black text-sky-900 uppercase text-xl">Total a Recolher:</td>
+                                    <td className="px-10 py-8 text-right font-mono font-black text-sky-900 text-3xl">R$ {resultadoCalculado?.totalImpostos.toLocaleString('pt-BR', {minimumFractionDigits:2})}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {resultadoCalculado.detalhamento.some(d => d.cotaInfo?.disponivel) && (
+                    <div className="mb-10 p-8 border-2 border-dashed border-sky-300 rounded-[2rem] bg-sky-50/20">
+                        <h3 className="text-sm font-black text-sky-800 uppercase mb-4 flex items-center gap-2">OPÇÃO DE PARCELAMENTO EM COTAS (IRPJ/CSLL)</h3>
+                        <div className="grid grid-cols-3 gap-6">
+                            {resultadoCalculado.detalhamento.filter(d => d.cotaInfo?.disponivel).map((d, idx) => (
+                                <div key={idx} className="bg-white p-4 rounded-2xl border border-sky-100 shadow-sm">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{d.imposto}</p>
+                                    <p className="text-lg font-black text-sky-900">{d.cotaInfo?.numeroCotas}x de R$ {d.cotaInfo?.valorPrimeiraCota.toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <div className="bg-slate-900 text-white p-8 rounded-[2rem] flex justify-between items-center">
+                    <div>
+                        <p className="text-[11px] font-black text-sky-400 uppercase mb-2">SP Assessoria Contábil</p>
+                        <p className="text-sm text-slate-400">Software de Gestão Tributária • Uso Interno e Planejamento</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase mb-1">Código de Controle</p>
+                        <p className="text-md font-mono font-bold">LRP-{Date.now().toString(36).toUpperCase()}</p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
