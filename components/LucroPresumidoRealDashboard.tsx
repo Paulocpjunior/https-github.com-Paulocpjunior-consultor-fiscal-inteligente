@@ -992,14 +992,15 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 </div>
             </div>
 
-            {/* TEMPLATE OCULTO PARA EXPORTAÇÃO PDF */}
-            <div id="extrato-lucro-completo" className="fixed left-[-9999px] top-0 w-[900px] bg-white text-slate-900 p-10 font-sans">
+            {/* TEMPLATE OCULTO PARA EXPORTAÇÃO PDF - TOTALMENTE ATUALIZADO COM MEMÓRIA DE CÁLCULO */}
+            <div id="extrato-lucro-completo" className="fixed left-[-9999px] top-0 w-[950px] bg-white text-slate-900 p-10 font-sans">
+                {/* CABEÇALHO */}
                 <div className="flex justify-between items-start border-b-2 border-sky-800 pb-6 mb-8">
                     <div className="flex items-center gap-4">
                         <Logo className="h-16 w-auto text-sky-800" />
                         <div>
-                            <h1 className="text-3xl font-extrabold text-sky-800 uppercase tracking-tight">Extrato de Apuração</h1>
-                            <p className="text-sm font-bold text-slate-500">SP ASSESSORIA CONTÁBIL</p>
+                            <h1 className="text-3xl font-extrabold text-sky-800 uppercase tracking-tight">Extrato Detalhado de Apuração</h1>
+                            <p className="text-sm font-bold text-slate-500 tracking-widest">SP ASSESSORIA CONTÁBIL</p>
                         </div>
                     </div>
                     <div className="text-right">
@@ -1008,69 +1009,168 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                             <p className="text-lg font-bold text-sky-700">Lucro {regimeSelecionado}</p>
                         </div>
                         <div>
-                            <p className="text-xs font-bold text-slate-400 uppercase">Emissão</p>
-                            <p className="text-sm font-bold text-slate-700">{new Date().toLocaleDateString('pt-BR')}</p>
+                            <p className="text-xs font-bold text-slate-400 uppercase">Emissão do Relatório</p>
+                            <p className="text-sm font-bold text-slate-700">{new Date().toLocaleString('pt-BR')}</p>
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-8 mb-8">
-                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Dados da Empresa</p>
-                        <p className="text-lg font-bold text-slate-800">{empresa.nome}</p>
-                        <p className="text-sm font-mono text-slate-600">{empresa.cnpj}</p>
-                        <p className="text-xs text-slate-500 mt-2">{empresa.endereco}</p>
+                {/* DADOS EMPRESA E COMPETÊNCIA */}
+                <div className="grid grid-cols-2 gap-6 mb-8">
+                    <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200">
+                        <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Dados da Empresa</p>
+                        <p className="text-xl font-bold text-slate-800 leading-tight">{empresa.nome}</p>
+                        <p className="text-sm font-mono text-slate-600 mt-1">{empresa.cnpj}</p>
+                        <p className="text-[11px] text-slate-500 mt-3 italic line-clamp-2">{empresa.endereco}</p>
                     </div>
-                    <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex flex-col justify-center">
-                        <p className="text-xs font-bold text-sky-600 uppercase mb-1">Competência de Referência</p>
+                    <div className="p-5 bg-sky-50 rounded-2xl border border-sky-100 flex flex-col justify-center">
+                        <p className="text-[10px] font-black text-sky-600 uppercase mb-2">Período de Referência</p>
                         <p className="text-2xl font-black text-sky-900 capitalize">
                             {new Date(mesReferencia + '-02').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
                         </p>
-                        <p className="text-xs text-sky-700 font-bold mt-1">Fechamento {periodoApuracao}</p>
+                        <div className="flex gap-4 mt-2">
+                             <span className="text-[11px] font-bold bg-sky-100 text-sky-700 px-2 py-0.5 rounded">Fechamento {periodoApuracao}</span>
+                             {isEquiparacaoHospitalar && <span className="text-[11px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Equiparação Hospitalar</span>}
+                        </div>
                     </div>
                 </div>
 
+                {/* MEMÓRIA DE CÁLCULO - ENTRADAS FINANCEIRAS */}
                 <div className="mb-8">
-                    <h3 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2">
-                        <CalculatorIcon className="w-5 h-5 text-sky-600" /> Detalhamento Tributário
+                    <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-4 border-sky-600 pl-3">
+                        1. Base de Cálculo e Insumos (Memória de Cálculo)
                     </h3>
-                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="grid grid-cols-2 gap-4">
+                        {/* Coluna 1: Receitas e Faturamentos */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                            <p className="bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-600 uppercase border-b">Receitas Brutas</p>
+                            <div className="p-4 space-y-2">
+                                <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Faturamento Comércio:</span><span className="font-bold">R$ {financeiro.faturamentoMesComercio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Faturamento Serviços:</span><span className="font-bold">R$ {financeiro.faturamentoMesServico.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium border-t pt-1 mt-1 text-sky-700 uppercase font-bold"><span className="text-[9px]">Total Bruto do Período:</span><span>R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium text-orange-600"><span className="text-[10px]">(-) Dedução Monofásico:</span><span className="font-bold">R$ {financeiro.faturamentoMonofasico.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                            </div>
+                        </div>
+                        {/* Coluna 2: Custos e Despesas */}
+                        <div className="border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+                            <p className="bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-600 uppercase border-b">Custos e Operacional</p>
+                            <div className="p-4 space-y-2">
+                                <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">CMV (Mercadorias):</span><span className="font-bold">R$ {financeiro.cmv.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Folha de Pagamento:</span><span className="font-bold">R$ {financeiro.folha.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium"><span className="text-slate-500">Despesas Operacionais:</span><span className="font-bold">R$ {financeiro.despesas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                                <div className="flex justify-between text-xs font-medium text-purple-600 bg-purple-50/50 px-1 rounded"><span className="text-[9px]">Despesas Dedutíveis/Crédito:</span><span className="font-bold">R$ {financeiro.despesasDedutiveis.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* RETENÇÕES E CRÉDITOS NA FONTE */}
+                <div className="mb-8">
+                    <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-4 border-red-500 pl-3">
+                        2. Retenções na Fonte e Créditos de Insumo
+                    </h3>
+                    <div className="grid grid-cols-4 gap-4">
+                        <div className="p-3 border border-slate-100 rounded-xl">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">PIS Retido</p>
+                            <p className="text-sm font-bold text-slate-800">R$ {financeiro.retencaoPis.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="p-3 border border-slate-100 rounded-xl">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">COFINS Retido</p>
+                            <p className="text-sm font-bold text-slate-800">R$ {financeiro.retencaoCofins.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="p-3 border border-slate-100 rounded-xl">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">IRPJ Retido</p>
+                            <p className="text-sm font-bold text-slate-800">R$ {financeiro.retencaoIrpj.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                        <div className="p-3 border border-slate-100 rounded-xl">
+                            <p className="text-[9px] font-bold text-slate-400 uppercase">CSLL Retido</p>
+                            <p className="text-sm font-bold text-slate-800">R$ {financeiro.retencaoCsll.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* OUTRAS RECEITAS E DESPESAS (LISTAGEM ITEM A ITEM) */}
+                {itensAvulsos.length > 0 && (
+                    <div className="mb-8">
+                        <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-4 border-purple-600 pl-3">
+                            3. Detalhamento de Itens Extras (Aplicações, Importações, etc)
+                        </h3>
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-black uppercase text-[9px]">
+                                    <tr>
+                                        <th className="px-4 py-3">Tipo</th>
+                                        <th className="px-4 py-3">Descrição / Classificação</th>
+                                        <th className="px-4 py-3 text-center">Cat. Especial</th>
+                                        <th className="px-4 py-3 text-right">Valor Financeiro</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {itensAvulsos.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50">
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${item.tipo === 'receita' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                                    {item.tipo}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 font-medium text-slate-700">{item.descricao || '(Sem descrição)'}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`text-[9px] font-bold ${item.categoriaEspecial !== 'padrao' ? 'text-sky-700 bg-sky-50 px-2 py-0.5 rounded' : 'text-slate-400'}`}>
+                                                    {item.categoriaEspecial === 'aplicacao_financeira' ? 'Aplicação Fin.' : item.categoriaEspecial === 'importacao' ? 'Importação' : 'Geral'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* DETALHAMENTO DE TRIBUTOS APURADOS */}
+                <div className="mb-10">
+                    <h3 className="text-sm font-black text-slate-800 uppercase mb-4 flex items-center gap-2 border-l-4 border-sky-800 pl-3">
+                        4. Apuração Final de Impostos
+                    </h3>
+                    <div className="border-2 border-sky-800 rounded-2xl overflow-hidden shadow-md">
                         <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[10px]">
+                            <thead className="bg-sky-800 text-white font-black uppercase text-[10px]">
                                 <tr>
-                                    <th className="px-6 py-4">Tributo</th>
+                                    <th className="px-6 py-4">Imposto Apurado</th>
                                     <th className="px-6 py-4 text-right">Base de Cálculo</th>
                                     <th className="px-6 py-4 text-center">Alíquota</th>
-                                    <th className="px-6 py-4 text-right">Valor Apurado</th>
+                                    <th className="px-6 py-4 text-right">Valor Líquido</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {resultadoCalculado?.detalhamento.map((item, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50">
+                                    <tr key={idx} className="hover:bg-slate-50/50">
                                         <td className="px-6 py-4">
-                                            <p className="font-bold text-slate-800">{item.imposto}</p>
-                                            {item.observacao && <p className="text-[10px] text-slate-400 italic font-medium">{item.observacao}</p>}
+                                            <p className="font-black text-slate-800">{item.imposto}</p>
+                                            {item.observacao && <p className="text-[10px] text-slate-400 italic font-medium leading-tight">{item.observacao}</p>}
                                         </td>
-                                        <td className="px-6 py-4 text-right font-mono font-medium">
+                                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-600 text-xs">
                                             R$ {item.baseCalculo.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </td>
-                                        <td className="px-6 py-4 text-center font-bold text-slate-600">
+                                        <td className="px-6 py-4 text-center font-black text-slate-700">
                                             {item.aliquota.toFixed(2)}%
                                         </td>
-                                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-900">
+                                        <td className="px-6 py-4 text-right font-mono font-black text-slate-900">
                                             R$ {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                         </td>
                                     </tr>
                                 ))}
+                                {/* TOTALIZAÇÃO */}
                                 <tr className="bg-sky-50 border-t-2 border-sky-200">
-                                    <td colSpan={3} className="px-6 py-5 text-right font-extrabold text-sky-900 uppercase">Total de Impostos a Pagar:</td>
-                                    <td className="px-6 py-5 text-right font-mono font-black text-sky-900 text-lg">
+                                    <td colSpan={3} className="px-6 py-5 text-right font-black text-sky-900 uppercase tracking-tighter">Total de Impostos a Recolher no Período:</td>
+                                    <td className="px-6 py-5 text-right font-mono font-black text-sky-900 text-xl">
                                         R$ {resultadoCalculado?.totalImpostos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </td>
                                 </tr>
-                                <tr className="bg-green-50">
-                                    <td colSpan={3} className="px-6 py-4 text-right font-extrabold text-green-900 uppercase">Lucro Líquido Estimado:</td>
-                                    <td className="px-6 py-4 text-right font-mono font-black text-green-900">
+                                <tr className="bg-green-50 border-t border-green-100">
+                                    <td colSpan={3} className="px-6 py-4 text-right font-black text-green-900 uppercase tracking-tighter">Lucro Líquido Estimado do Período (DRE Simulado):</td>
+                                    <td className="px-6 py-4 text-right font-mono font-black text-green-900 text-lg">
                                         R$ {resultadoCalculado?.lucroLiquidoEstimado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </td>
                                 </tr>
@@ -1079,34 +1179,35 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-6 mb-10">
-                    <div className="p-3 border rounded-lg text-center">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Carga Tributária</p>
-                        <p className="text-xl font-black text-slate-800">{resultadoCalculado?.cargaTributaria.toFixed(2)}%</p>
+                {/* INDICADORES E RODAPÉ */}
+                <div className="grid grid-cols-3 gap-6 mb-12">
+                    <div className="p-4 border-2 border-slate-100 rounded-2xl text-center shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Carga Tributária Efetiva</p>
+                        <p className="text-2xl font-black text-slate-800">{resultadoCalculado?.cargaTributaria.toFixed(2)}%</p>
                     </div>
-                    <div className="p-3 border rounded-lg text-center">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Faturamento Bruto</p>
-                        <p className="text-xl font-black text-slate-800">R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <div className="p-4 border-2 border-slate-100 rounded-2xl text-center shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Faturamento Total Bruto</p>
+                        <p className="text-2xl font-black text-slate-800">R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                     </div>
-                    <div className="p-3 border rounded-lg text-center">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Total Despesas</p>
-                        <p className="text-xl font-black text-slate-800">R$ {(financeiro.despesas + financeiro.folha + financeiro.cmv).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <div className="p-4 border-2 border-slate-100 rounded-2xl text-center shadow-sm">
+                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Total Custos/Despesas</p>
+                        <p className="text-2xl font-black text-slate-800">R$ {(financeiro.despesas + financeiro.folha + financeiro.cmv + (itensAvulsos.filter(i => i.tipo === 'despesa').reduce((acc,i)=>acc+i.valor,0))).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                     </div>
                 </div>
 
                 <div className="bg-slate-900 text-white p-6 rounded-2xl flex justify-between items-center">
                     <div>
-                        <p className="text-xs font-bold text-slate-400 uppercase mb-1">Relatório Gerencial</p>
-                        <p className="text-sm font-medium">Desenvolvido pela equipe técnica da SP Assessoria Contábil.</p>
+                        <p className="text-xs font-black text-sky-400 uppercase mb-1">Relatório Gerencial de Apoio à Gestão</p>
+                        <p className="text-sm font-medium text-slate-300">Desenvolvido pela equipe técnica da SP Assessoria Contábil para apoio na tomada de decisão.</p>
                     </div>
                     <div className="text-right">
-                        <p className="text-xs font-bold text-slate-400">Verificado em</p>
-                        <p className="text-sm font-bold">{new Date().toLocaleString('pt-BR')}</p>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Documento ID</p>
+                        <p className="text-sm font-mono font-bold">LRP-{Date.now().toString(36).toUpperCase()}</p>
                     </div>
                 </div>
                 
-                <p className="text-[9px] text-slate-400 text-center mt-6 uppercase font-bold tracking-widest">
-                    Este documento é uma simulação gerada por software. Valores sujeitos a conferência contábil final.
+                <p className="text-[9px] text-slate-400 text-center mt-8 uppercase font-black tracking-widest">
+                    Atenção: Este extrato é uma simulação gerada por software. Valores sujeitos a conferência contábil final e validação via DCTF/ECF.
                 </p>
             </div>
         </div>
