@@ -32,16 +32,15 @@ const saveLocalEmpresas = (empresas: LucroPresumidoEmpresa[]) => {
 export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresumidoEmpresa[]> => {
     if (!currentUser) return [];
     
-    // Check master email case-insensitive
     const isMasterAdmin = currentUser.role === 'admin' || currentUser.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
     // 1. Tenta buscar da Nuvem (Prioridade)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
+            
             let q;
-
-            // Tentativa Inteligente de Query: Admin tenta tudo, outros tentam apenas seus
+            // Se for Admin/Junior, busca TUDO. Se for colaborador, busca apenas os seus.
             if (isMasterAdmin) {
                 q = query(collection(db, 'lucro_empresas'));
             } else {
@@ -52,7 +51,9 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
                 const snapshot = await getDocs(q);
                 const cloudEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
                 
-                // Se conseguiu buscar da nuvem, atualiza o cache local
+                // Se conseguiu buscar da nuvem, atualiza o cache local (apenas para modo offline)
+                // Nota: O cache local não filtra por usuário da mesma forma que a nuvem, cuidado com dados sensíveis em máquinas compartilhadas.
+                // Aqui mantemos simples: salva o que veio da nuvem.
                 if (cloudEmpresas.length > 0) {
                     const local = getLocalEmpresas();
                     const merged = [...cloudEmpresas];
@@ -63,29 +64,19 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
                     return cloudEmpresas;
                 }
             } catch (err: any) {
-                // Fallback para admin se "listar tudo" for negado pelas regras
-                if (err.code === 'permission-denied' && isMasterAdmin) {
-                    console.warn("Firestore: Admin negado em listagem global. Tentando fallback para documentos próprios.");
-                    const qFallback = query(collection(db, 'lucro_empresas'), where('createdBy', '==', uid));
-                    const snapshotFallback = await getDocs(qFallback);
-                    const cloudEmpresas = snapshotFallback.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
-                    if (cloudEmpresas.length > 0) return cloudEmpresas;
-                } else {
-                    throw err;
+                // Silently fallback if permission denied or network error
+                if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
+                    console.debug("Firebase fetch warning (Lucro):", err.message);
                 }
             }
         } catch (e: any) {
-            // Log apenas como aviso para permissão negada, permitindo fallback local
-            if (e.code === 'permission-denied') {
-                console.warn("Firestore (Lucro): Permissão negada. Operando com dados Locais.");
-            } else if (e.code !== 'failed-precondition') {
-                console.warn("Firestore Warning (Lucro):", e.message);
-            }
+            // Silently ignore main query errors
         }
     }
 
     // 2. Fallback Local (Se nuvem falhar ou não configurada)
     const localEmpresas = getLocalEmpresas();
+
     if (!isMasterAdmin) {
         return localEmpresas.filter(e => e.createdBy === currentUser.id || !e.createdBy);
     }
@@ -101,7 +92,9 @@ export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPr
         ...empresa, 
         id,
         fichaFinanceira: empresa.fichaFinanceira || [], 
-        createdBy: userId 
+        createdBy: userId,
+        // Tenta pegar o email do Auth atual se disponível
+        createdByEmail: auth?.currentUser?.email || undefined
     };
 
     // 1. Tenta salvar na Nuvem (Fonte da Verdade)
@@ -109,16 +102,14 @@ export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPr
         try {
             // Garante que o createdBy seja o UID do Auth atual para consistência
             newEmpresaData.createdBy = auth.currentUser.uid;
+            newEmpresaData.createdByEmail = auth.currentUser.email || undefined;
+
             const payload = sanitizePayload(newEmpresaData);
             
             // Usa setDoc com o ID específico para criar ou substituir
             await setDoc(doc(db, 'lucro_empresas', id), payload);
         } catch (e: any) { 
-            if (e.code === 'permission-denied') {
-                console.warn("Firestore (Save Lucro): Permissão negada. Salvo apenas localmente.");
-            } else {
-                console.warn("Erro ao salvar na nuvem:", e);
-            }
+            // Silent fallback
         }
     }
 
@@ -140,19 +131,19 @@ export const updateEmpresa = async (id: string, data: Partial<LucroPresumidoEmpr
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'lucro_empresas', id);
-            const { id: _, createdBy: __, ...safeData } = data as any; // Remove campos imutáveis
+            const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any; // Remove campos imutáveis
             
-            // Reinsere createdBy para satisfazer regras de segurança
-            const payload = sanitizePayload({ ...safeData, createdBy: auth.currentUser.uid });
+            // Reinsere createdBy para satisfazer regras de segurança E garante que o email esteja atualizado caso falte
+            const payload = sanitizePayload({ 
+                ...safeData, 
+                createdBy: auth.currentUser.uid,
+                createdByEmail: auth.currentUser.email // Atualiza o email caso não exista ou tenha mudado (opcional)
+            });
             
             // Use setDoc with merge: true to avoid issues with non-existent docs (or create them if permitted)
             await setDoc(docRef, payload, { merge: true });
         } catch (e: any) { 
-            if (e.code === 'permission-denied') {
-                console.warn("Firestore (Update Lucro): Permissão negada. Atualizado apenas localmente.");
-            } else {
-                console.warn("Cloud update failed:", e);
-            }
+            // Silent fallback
         }
     }
 
@@ -206,7 +197,8 @@ export const addFichaFinanceira = async (empresaId: string, registro: FichaFinan
 
                 await updateDoc(docRef, { 
                     fichaFinanceira: sanitizePayload(fichaAtualizada),
-                    createdBy: auth.currentUser.uid // Re-assert ownership
+                    createdBy: auth.currentUser.uid, // Re-assert ownership
+                    createdByEmail: auth.currentUser.email // Ensure email is present
                 });
                 
                 // Atualiza local também para refletir
@@ -220,11 +212,9 @@ export const addFichaFinanceira = async (empresaId: string, registro: FichaFinan
                 return { ...empresaData, fichaFinanceira: fichaAtualizada };
             }
         } catch (e: any) {
-            if (e.code === 'permission-denied') {
-                console.warn("Firestore: Permissão negada ao salvar ficha financeira. Salvo apenas localmente.");
-            } else {
-                console.error("Erro ao salvar ficha na nuvem:", e);
-                // Não lança erro, cai para fallback local
+            // Silent fallback for permission or network errors
+            if (e.code !== 'permission-denied') {
+                console.debug("Firestore: Falha ao salvar ficha na nuvem:", e.message);
             }
         }
     }

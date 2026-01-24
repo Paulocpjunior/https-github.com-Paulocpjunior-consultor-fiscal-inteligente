@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, SimplesNacionalResumo, CnaeSuggestion, SimplesItemCalculo, User, SimplesNacionalAtividade } from '../types';
+import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, CnaeTaxDetail, SimplesHistoricoCalculo, SimplesNacionalResumo, CnaeSuggestion, SimplesItemCalculo, User, SimplesNacionalAtividade, SimplesDetalheItem } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
 import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS, calcularDiscriminacaoImpostos } from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails, fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
@@ -100,7 +100,10 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     
     // Estados para Histórico
     const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
-    const [historicoDetalhadoEditavel, setHistoricoDetalhadoEditavel] = useState<Record<string, Record<string, number>>>({});
+    
+    // Agora o histórico detalhado suporta objeto complexo ou número
+    const [historicoDetalhadoEditavel, setHistoricoDetalhadoEditavel] = useState<Record<string, Record<string, number | SimplesDetalheItem>>>({});
+    
     const [isSavingHistory, setIsSavingHistory] = useState(false);
     
     const [valorPadraoHistorico, setValorPadraoHistorico] = useState<number>(0); 
@@ -239,59 +242,87 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     // --- EFFECTS ---
 
+    // Load Data - Smart Fallback to previous month for configuration
     useEffect(() => {
         const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
         const totalMes = empresa.faturamentoManual?.[mesChave] || 0;
         const detalheMes = empresa.faturamentoMensalDetalhado?.[mesChave] || {};
         const hasDetalhe = Object.keys(detalheMes).length > 0;
 
+        // Tenta encontrar uma configuração anterior se o mês atual estiver vazio
+        let previousConfig: Record<string, SimplesDetalheItem | number> = {};
+        if (!hasDetalhe && totalMes === 0 && empresa.faturamentoMensalDetalhado) {
+            // Procura o último mês com dados
+            const sortedKeys = Object.keys(empresa.faturamentoMensalDetalhado).sort().reverse();
+            const lastKey = sortedKeys.find(k => k < mesChave); // Find closest past month
+            if (lastKey) {
+                previousConfig = empresa.faturamentoMensalDetalhado[lastKey];
+            }
+        }
+
         setFaturamentoPorCnae(prev => {
             const novoFaturamentoPorCnae: Record<string, CnaeInputState> = { ...prev };
             
-            const getOrCreateState = (key: string, val: number): CnaeInputState => {
-                const existing = prev[key];
-                const formattedVal = val > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) : '0,00';
+            const getOrCreateState = (key: string, storedItem: number | SimplesDetalheItem | undefined, fallbackTotal: number, cnae: string): CnaeInputState => {
                 
-                if (existing) {
-                    return { ...existing, valor: formattedVal };
+                let val = 0;
+                let flags = { issRetido: false, icmsSt: false, isSup: false, isMonofasico: false };
+
+                if (storedItem !== undefined) {
+                    // Caso 1: Existe dado exato para este mês (prioridade máxima)
+                    if (typeof storedItem === 'number') {
+                        val = storedItem;
+                    } else {
+                        val = storedItem.valor;
+                        flags = { issRetido: storedItem.issRetido, icmsSt: storedItem.icmsSt, isSup: storedItem.isSup, isMonofasico: storedItem.isMonofasico };
+                    }
+                } else if (!hasDetalhe && previousConfig) {
+                    // Caso 2: Não existe dado no mês, tenta copiar FLAGS do mês anterior (mantendo valor 0)
+                    // Busca na config anterior por chave completa ou parcial (CNAE)
+                    let prevItem = previousConfig[key]; 
+                    if (!prevItem) {
+                        // Tenta encontrar pela chave parcial (algumas versões salvavam só o CNAE)
+                        const partialKeyEntry = Object.entries(previousConfig).find(([k, v]) => k.includes(cnae));
+                        if(partialKeyEntry) prevItem = partialKeyEntry[1];
+                    }
+
+                    if (prevItem && typeof prevItem === 'object') {
+                        // Copia apenas as flags, valor inicia zerado para novo mês
+                        flags = { 
+                            issRetido: prevItem.issRetido, 
+                            icmsSt: prevItem.icmsSt, 
+                            isSup: prevItem.isSup, 
+                            isMonofasico: prevItem.isMonofasico 
+                        };
+                    }
+                    val = fallbackTotal; // Geralmente 0 se for novo mês
+                } else if (!hasDetalhe) {
+                    val = fallbackTotal;
                 }
+
+                const formattedVal = val > 0 ? new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val) : '0,00';
                 
                 return {
                     valor: formattedVal,
-                    issRetido: false,
-                    icmsSt: false,
-                    isSup: false,
-                    isMonofasico: false
+                    ...flags
                 };
             };
 
             // 1. Principal
             const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
-            let valorPrincipal = 0;
+            let storedPrincipal = detalheMes[keyPrincipal] || detalheMes[empresa.cnae];
             
-            if (detalheMes[keyPrincipal] !== undefined) {
-                valorPrincipal = detalheMes[keyPrincipal];
-            } else if (detalheMes[empresa.cnae] !== undefined) {
-                valorPrincipal = detalheMes[empresa.cnae];
-            } else if (!hasDetalhe) {
-                valorPrincipal = totalMes;
-            }
-            
-            novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, valorPrincipal);
+            novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, storedPrincipal, totalMes, empresa.cnae);
             
             // 2. Secundários
             if (empresa.atividadesSecundarias) {
                 empresa.atividadesSecundarias.forEach((ativ, index) => {
                     const keySec = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
-                    let valorSec = 0;
+                    let storedSec = detalheMes[keySec] || detalheMes[ativ.cnae];
                     
-                    if (detalheMes[keySec] !== undefined) {
-                        valorSec = detalheMes[keySec];
-                    } else if (detalheMes[ativ.cnae] !== undefined && detalheMes[ativ.cnae] !== valorPrincipal) {
-                        valorSec = detalheMes[ativ.cnae];
-                    }
+                    if (ativ.cnae === empresa.cnae && storedSec === storedPrincipal) storedSec = undefined;
 
-                    novoFaturamentoPorCnae[keySec] = getOrCreateState(keySec, valorSec);
+                    novoFaturamentoPorCnae[keySec] = getOrCreateState(keySec, storedSec, 0, ativ.cnae);
                 });
             }
             
@@ -301,7 +332,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         setHistoricoManualEditavel(empresa.faturamentoManual || {});
         setHistoricoDetalhadoEditavel(empresa.faturamentoMensalDetalhado || {});
 
-    }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.faturamentoMensalDetalhado, empresa.atividadesSecundarias]);
+    }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.faturamentoMensalDetalhado, empresa.atividadesSecundarias, empresa.cnae, empresa.anexo]);
 
     // --- HANDLERS ---
 
@@ -327,7 +358,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         setIsSaving(true);
         try {
             let totalCalculado = 0;
-            const detalheMes: Record<string, number> = {};
+            const detalheMes: Record<string, SimplesDetalheItem> = {}; // Agora salva objeto completo
             const itensCalculoParaSalvar: SimplesItemCalculo[] = [];
 
             Object.entries(faturamentoPorCnae).forEach(([key, state]: [string, CnaeInputState]) => {
@@ -343,8 +374,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
                 totalCalculado += val;
 
-                if(val >= 0) {
-                     detalheMes[key] = val; 
+                // Salva SEMPRE o objeto completo com flags para persistência, mesmo que valor seja 0
+                // Isso permite carregar as flags no futuro (mês seguinte)
+                detalheMes[key] = {
+                     valor: val,
+                     issRetido: state.issRetido,
+                     icmsSt: state.icmsSt,
+                     isSup: state.isSup,
+                     isMonofasico: state.isMonofasico
+                };
+
+                if(val >= 0) { // Add to calc list
                      itensCalculoParaSalvar.push({
                         cnae: cnaeCode, anexo: anexoCode as any, valor: val,
                         issRetido: state.issRetido, icmsSt: state.icmsSt, isSup: state.isSup, isMonofasico: state.isMonofasico
@@ -354,6 +394,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
             const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
             const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
+            
+            // Atualiza o histórico detalhado preservando outros meses
             const updatedDetalhado = { ...historicoDetalhadoEditavel, [mesChave]: detalheMes };
 
             setHistoricoManualEditavel(updatedManual);

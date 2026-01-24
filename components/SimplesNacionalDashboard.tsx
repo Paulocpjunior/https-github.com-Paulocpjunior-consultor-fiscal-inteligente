@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, User } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
@@ -58,6 +59,7 @@ const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ emp
                             <thead className="text-xs text-slate-700 uppercase bg-slate-50 dark:bg-slate-700 dark:text-slate-300">
                                 <tr>
                                     <th scope="col" className="px-6 py-3">Empresa</th>
+                                    {isAdminView && <th scope="col" className="px-6 py-3">Usuário</th>}
                                     <th scope="col" className="px-6 py-3">Anexo Efetivo</th>
                                     <th scope="col" className="px-6 py-3 text-right">RBT12 (R$)</th>
                                     <th scope="col" className="px-6 py-3 text-center">Aliq. Efetiva</th>
@@ -73,6 +75,13 @@ const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ emp
                                             {e.nome}
                                             <p className="font-normal text-slate-500 dark:text-slate-400">{e.cnpj}</p>
                                         </td>
+                                        {isAdminView && (
+                                            <td className="px-6 py-4">
+                                                <span className="text-xs font-mono bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">
+                                                    {e.createdByEmail || 'Desconhecido'}
+                                                </span>
+                                            </td>
+                                        )}
                                         <td className="px-6 py-4">
                                             <span className="px-2 py-1 text-xs font-semibold rounded-full bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-300">
                                                 Anexo {e.resumo.anexo_efetivo}

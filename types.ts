@@ -128,6 +128,15 @@ export interface SimplesNacionalAtividade {
     anexo: SimplesNacionalAnexo;
 }
 
+// Interface para salvar configurações detalhadas por item (não apenas o valor)
+export interface SimplesDetalheItem {
+    valor: number;
+    issRetido: boolean;
+    icmsSt: boolean;
+    isSup: boolean;
+    isMonofasico: boolean;
+}
+
 export interface SimplesNacionalEmpresa {
     id: string;
     nome: string;
@@ -137,9 +146,11 @@ export interface SimplesNacionalEmpresa {
     atividadesSecundarias?: SimplesNacionalAtividade[]; // Outros CNAEs
     folha12: number;
     faturamentoManual?: { [key: string]: number }; // Total YYYY-MM -> Valor
-    faturamentoMensalDetalhado?: { [mesIso: string]: { [cnae: string]: number } }; // Detalhe YYYY-MM -> { CNAE -> Valor }
+    // Atualizado para suportar objeto complexo ou número (legado)
+    faturamentoMensalDetalhado?: { [mesIso: string]: { [cnaeKey: string]: number | SimplesDetalheItem } }; 
     historicoCalculos?: SimplesHistoricoCalculo[];
     createdBy?: string;
+    createdByEmail?: string; // NOVO: Para identificar quem fez o cálculo no painel do admin
 }
 
 export interface SimplesNacionalNota {
@@ -149,6 +160,7 @@ export interface SimplesNacionalNota {
     valor: number;
     origem: string;
     descricao: string;
+    createdBy?: string;
 }
 
 export interface SimplesCalculoMensal {
@@ -238,7 +250,9 @@ export interface ItemFinanceiroAvulso {
 export interface LucroInput {
     regimeSelecionado: 'Presumido' | 'Real';
     periodoApuracao: 'Mensal' | 'Trimestral';
+    mesReferencia?: string; // YYYY-MM (Necessário para regra LC 224/2025)
     faturamentoComercio: number;
+    faturamentoIndustria: number; // Novo
     faturamentoServico: number;
     faturamentoMonofasico: number; 
     despesasOperacionais: number;
@@ -255,6 +269,8 @@ export interface LucroInput {
     isEquiparacaoHospitalar?: boolean;
     // Feature: Campos Dinâmicos
     itensAvulsos?: ItemFinanceiroAvulso[];
+    // Feature: LC 224/2025
+    acumuladoAno?: number; // Para verificação do limite de R$ 5M
 }
 
 export interface PlanoCotas {
@@ -281,6 +297,7 @@ export interface LucroResult {
     totalImpostos: number;
     cargaTributaria: number; 
     lucroLiquidoEstimado: number;
+    alertaLc224?: boolean; // Indica se houve aumento de 10% na presunção
 }
 
 export interface FichaFinanceiraRegistro {
@@ -293,6 +310,7 @@ export interface FichaFinanceiraRegistro {
     issValorOuAliquota?: number; // Salva o valor usado (rate ou fixo)
     acumuladoAno: number;
     faturamentoMesComercio: number;
+    faturamentoMesIndustria: number; // Novo
     faturamentoMesServico: number;
     faturamentoMonofasico?: number; 
     faturamentoMesTotal: number;
@@ -314,6 +332,7 @@ export interface FichaFinanceiraRegistro {
     // Analise
     totalImpostos?: number;
     cargaTributaria?: number;
+    aplicouLc224?: boolean; // Persistência do cálculo
 }
 
 export interface LucroPresumidoEmpresa {
@@ -329,7 +348,9 @@ export interface LucroPresumidoEmpresa {
     regimePadrao?: 'Presumido' | 'Real';
     issPadraoConfig?: IssConfig; // Configuração padrão da empresa
     isEquiparacaoHospitalar?: boolean; // Configuração padrão da empresa
+    retencoesPadrao?: { pis: number; cofins: number; irpj: number; csll: number }; // Retenções padrão salvas no perfil
     createdBy?: string;
+    createdByEmail?: string; // NOVO: Para identificar quem fez o cálculo no painel do admin
 }
 
 // --- Auth Types ---

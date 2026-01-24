@@ -1,5 +1,5 @@
 
-import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo, User } from '../types';
+import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo, User, SimplesDetalheItem } from '../types';
 import { extractDocumentData, extractPgdasDataFromPdf } from './geminiService';
 import { db, isFirebaseConfigured, auth } from './firebaseConfig';
 import { collection, getDocs, doc, updateDoc, setDoc, addDoc, getDoc, query, where } from 'firebase/firestore';
@@ -95,9 +95,9 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
+            
             let q;
-
-            // TENTATIVA 1: Admin tenta ver tudo. Usuário vê apenas seus.
+            // Se for Admin, busca TUDO. Se não, apenas os dele.
             if (isMasterAdmin) {
                 q = query(collection(db, 'simples_empresas'));
             } else {
@@ -108,32 +108,21 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
                 const snapshot = await getDocs(q);
                 firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
             } catch (err: any) {
-                // FALLBACK: Se falhar (ex: regra de segurança não permite 'list all' mesmo para admin), 
-                // tenta buscar apenas os documentos do próprio usuário para não quebrar a tela.
-                if (err.code === 'permission-denied') {
-                    console.warn("Firestore: Permissão negada para listagem completa. Tentando fallback para documentos próprios.");
-                    const qFallback = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
-                    const snapshotFallback = await getDocs(qFallback);
-                    firebaseEmpresas = snapshotFallback.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
-                } else {
-                    throw err; // Outros erros reais (rede, etc) repassa para o catch externo
+                // Silently fail to local mode if permission denied or network error
+                if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
+                    console.debug("Firebase fetch error (Simples):", err.message);
                 }
             }
 
         } catch (e: any) {
-            if (e.code === 'permission-denied') {
-                // Se ainda der erro, loga aviso e deixa cair para o Local Storage sem travar
-                console.warn("Firestore (Simples): Permissão negada. Operando com dados Locais.");
-            } else if (e.code !== 'failed-precondition') {
-                console.warn("Firestore Warning:", e.message);
-            }
+            // Silently ignore main query errors
         }
     }
 
     // 2. Busca do Local Storage (Fallback ou modo Offline)
     const localEmpresas = getLocalEmpresas();
-    let filteredLocal = localEmpresas;
     
+    let filteredLocal = localEmpresas;
     if (!isMasterAdmin) {
         filteredLocal = localEmpresas.filter(e => e.createdBy === user.id || !e.createdBy);
     }
@@ -166,7 +155,8 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
         faturamentoManual: {}, 
         faturamentoMensalDetalhado: {}, 
         historicoCalculos: [], 
-        createdBy: userId 
+        createdBy: userId,
+        createdByEmail: auth?.currentUser?.email || undefined
     };
 
     // 1. Salva no Local Storage
@@ -177,15 +167,12 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
     // 2. Tenta salvar no Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            newEmpresa.createdBy = auth.currentUser.uid; 
+            newEmpresa.createdBy = auth.currentUser.uid;
+            newEmpresa.createdByEmail = auth.currentUser.email || undefined;
             const payload = sanitizePayload(newEmpresa);
             await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
         } catch (e: any) {
-            if (e.code === 'permission-denied') {
-                console.warn("Firestore (Save Simples): Permissão negada. Salvo apenas localmente.");
-            } else {
-                console.warn("Firestore Save Warning:", e.message);
-            }
+            // Silent fallback
         }
     }
 
@@ -203,16 +190,16 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'simples_empresas', id);
-            const { id: _, createdBy: __, ...safeData } = data as any;
+            const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any;
             
-            const payload = sanitizePayload({ ...safeData, createdBy: auth.currentUser.uid });
+            const payload = sanitizePayload({ 
+                ...safeData, 
+                createdBy: auth.currentUser.uid,
+                createdByEmail: auth.currentUser.email // Atualiza email se necessário
+            });
             await setDoc(docRef, payload, { merge: true });
         } catch (e: any) { 
-             if (e.code === 'permission-denied') {
-                console.warn("Firestore (Update Simples): Permissão negada. Atualizado apenas localmente.");
-             } else {
-                console.warn("Firestore Update Warning:", e.message);
-             }
+             // Silent fallback
         }
     }
 
@@ -222,11 +209,12 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
 export const getAllNotas = async (user?: User | null): Promise<Record<string, SimplesNacionalNota[]>> => {
     let firebaseNotas: SimplesNacionalNota[] = [];
     const isMasterAdmin = user?.role === 'admin' || user?.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
-    
+
     // Cloud Fetch
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
+            
             let q;
             if (isMasterAdmin) {
                 q = query(collection(db, 'simples_notas'));
@@ -238,20 +226,14 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
                 const snapshot = await getDocs(q);
                 firebaseNotas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
             } catch (err: any) {
-                if (err.code === 'permission-denied' && isMasterAdmin) {
-                    const qFallback = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
-                    const snapshotFallback = await getDocs(qFallback);
-                    firebaseNotas = snapshotFallback.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
-                } else {
-                    throw err;
-                }
+                // Silent fallback
             }
         } catch (e: any) { 
-            if (e.code !== 'permission-denied') console.warn("Firestore notes fetch error", e.message || e); 
+            // Silent fallback
         }
     }
 
-    // Local Fetch
+    // Local Fetch (apenas para fallback, não filtra com segurança aqui)
     const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
     const localNotasMap = stored ? JSON.parse(stored) : {};
     let allNotas: SimplesNacionalNota[] = [];
@@ -275,7 +257,6 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
 };
 
 // ... (Restante do arquivo permanece inalterado)
-// --- PARSER HELPERS e Funções de Cálculo ---
 const parseXmlNfe = (xmlContent: string): any[] => {
     try {
         const parser = new DOMParser();
@@ -485,21 +466,72 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         fator_r = options.fatorRManual;
     }
 
-    // Se itens de cálculo (entradas manuais do dashboard) não forem fornecidos, cria um padrão com o total do mês
+    // Se itens de cálculo (entradas manuais do dashboard) não forem fornecidos,
+    // Tenta reconstruir a partir do faturamentoDetalhado salvo (se contiver configurações de flags)
     let itensCalculo: SimplesItemCalculo[] = options?.itensCalculo || [];
     
     if (itensCalculo.length === 0) {
-        const faturamentoTotalMes = mensal[mesChave] || 0;
-        if (faturamentoTotalMes > 0) {
-            itensCalculo.push({
-                cnae: empresa.cnae,
-                anexo: empresa.anexo,
-                valor: faturamentoTotalMes,
-                issRetido: false,
-                icmsSt: false,
-                isSup: false, // Default
-                isMonofasico: false
+        // Tenta buscar do detalhamento salvo (Visão Cliente)
+        const detalheSalvo = empresa.faturamentoMensalDetalhado?.[mesChave] || {};
+        const entries = Object.entries(detalheSalvo);
+        
+        if (entries.length > 0) {
+            // Se existir detalhamento, usa ele
+            entries.forEach(([key, value]) => {
+                const parts = key.split('::');
+                let cnaeCode = '', anexoCode = '';
+                
+                // Suporta chaves novas e antigas
+                if (parts.length >= 4) {
+                    cnaeCode = parts[2];
+                    anexoCode = parts[3];
+                } else {
+                    const splitKey = key.split('_');
+                    if (splitKey.length >= 2) {
+                        cnaeCode = splitKey[0];
+                        anexoCode = splitKey[1];
+                    }
+                }
+
+                // Verifica se é um objeto complexo (novo padrão) ou número (legado)
+                if (typeof value === 'object' && value !== null) {
+                    const item = value as SimplesDetalheItem;
+                    itensCalculo.push({
+                        cnae: cnaeCode,
+                        anexo: anexoCode as SimplesNacionalAnexo,
+                        valor: item.valor,
+                        issRetido: item.issRetido,
+                        icmsSt: item.icmsSt,
+                        isSup: item.isSup,
+                        isMonofasico: item.isMonofasico
+                    });
+                } else if (typeof value === 'number') {
+                    // Legado: apenas valor
+                    itensCalculo.push({
+                        cnae: cnaeCode,
+                        anexo: anexoCode as SimplesNacionalAnexo,
+                        valor: value,
+                        issRetido: false,
+                        icmsSt: false,
+                        isSup: false,
+                        isMonofasico: false
+                    });
+                }
             });
+        } else {
+            // Fallback total (sem detalhamento)
+            const faturamentoTotalMes = mensal[mesChave] || 0;
+            if (faturamentoTotalMes > 0) {
+                itensCalculo.push({
+                    cnae: empresa.cnae,
+                    anexo: empresa.anexo,
+                    valor: faturamentoTotalMes,
+                    issRetido: false,
+                    icmsSt: false,
+                    isSup: false, // Default
+                    isMonofasico: false
+                });
+            }
         }
     }
 

@@ -18,14 +18,17 @@ const ALIQ_COFINS_APLICACAO = 0.04;
 const ALIQ_PIS_IMPORTACAO = 0.021; 
 const ALIQ_COFINS_IMPORTACAO = 0.0965; 
 
-// Limites Adicional IRPJ
+// Limites Adicional IRPJ (Conforme Legislação)
 const LIMITE_ADICIONAL_MENSAL = 20000;
 const LIMITE_ADICIONAL_TRIMESTRAL = 60000;
 
 // Presunção Lucro Presumido
 const PRESUNCAO_IRPJ_COMERCIO = 0.08; 
+const PRESUNCAO_IRPJ_INDUSTRIA = 0.08; 
 const PRESUNCAO_IRPJ_SERVICO = 0.32; 
+
 const PRESUNCAO_CSLL_COMERCIO = 0.12; 
+const PRESUNCAO_CSLL_INDUSTRIA = 0.12; 
 const PRESUNCAO_CSLL_SERVICO = 0.32; 
 
 // Presunção Equiparação Hospitalar
@@ -34,26 +37,62 @@ const PRESUNCAO_CSLL_HOSPITALAR = 0.12;
 
 const fmt = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-// Lógica de Cotas atualizada para os limites solicitados
+/**
+ * Calcula se o imposto pode ser parcelado em quotas
+ * Regra Solicitada: > 10k (Mensal) ou > 30k (Trimestral)
+ * Regra Legal Mínima: Parcela > R$ 1.000,00
+ */
 export const calcularCotasDisponiveis = (valorImposto: number, periodo: 'Mensal' | 'Trimestral'): PlanoCotas | undefined => {
-    const limite = periodo === 'Trimestral' ? 30000 : 10000;
-    
-    if (valorImposto >= limite) {
-        const valorCota = valorImposto / 3;
-        // Pela lei, a cota não pode ser inferior a R$ 1.000,00
-        const numCotasPossiveis = valorCota < 1000 ? Math.floor(valorImposto / 1000) : 3;
-        
-        if (numCotasPossiveis < 1) return undefined;
+    const limiteDisponibilidade = periodo === 'Trimestral' ? 30000 : 10000;
+
+    if (valorImposto > limiteDisponibilidade) {
+        const numCotas = 3;
+        const valorCota = valorImposto / numCotas;
+
+        // Lei exige parcela mínima de 1000 reais
+        if (valorCota < 1000) return undefined;
 
         return {
             disponivel: true,
-            numeroCotas: numCotasPossiveis,
-            valorPrimeiraCota: valorImposto / numCotasPossiveis,
-            valorDemaisCotas: valorImposto / numCotasPossiveis,
-            vencimentos: Array.from({ length: numCotasPossiveis }, (_, i) => `Cota ${i + 1}`)
+            numeroCotas: numCotas,
+            valorPrimeiraCota: valorCota,
+            valorDemaisCotas: valorCota,
+            vencimentos: [
+                'Quota Única ou 1ª Quota (Sem Juros)',
+                '2ª Quota (Juros 1%)',
+                '3ª Quota (Juros 1% + SELIC)'
+            ]
         };
     }
     return undefined;
+};
+
+const calcularISS = (input: LucroInput): DetalheImposto | null => {
+    if (input.issConfig.tipo === 'sup_fixo') {
+        const qtde = input.issConfig.qtdeSocios || 0;
+        const valorPorSocio = input.issConfig.valorPorSocio || 0;
+        const valorTotal = qtde * valorPorSocio;
+        
+        if (valorTotal <= 0) return null;
+
+        return {
+            imposto: 'ISS-SUP (Fixo por Sócio)',
+            baseCalculo: qtde,
+            aliquota: 0,
+            valor: valorTotal,
+            observacao: `${qtde} sócio(s) x ${fmt(valorPorSocio)}`
+        };
+    } else {
+        const aliquota = input.issConfig.aliquota || 0;
+        if (input.faturamentoServico <= 0 || aliquota <= 0) return null;
+
+        return {
+            imposto: `ISS (${aliquota}%)`,
+            baseCalculo: input.faturamentoServico,
+            aliquota: aliquota,
+            valor: input.faturamentoServico * (aliquota / 100)
+        };
+    }
 };
 
 export const calcularLucro = (input: LucroInput): LucroResult => {
@@ -64,7 +103,7 @@ export const calcularLucro = (input: LucroInput): LucroResult => {
         result = calcularLucroPresumido(input);
     }
 
-    // Aplica lógica de cotas nos impostos federais de renda
+    // Aplica lógica de cotas nos impostos federais (IRPJ/CSLL)
     result.detalhamento = result.detalhamento.map(det => {
         if (det.imposto.includes('IRPJ') || det.imposto.includes('CSLL')) {
             return {
@@ -79,9 +118,22 @@ export const calcularLucro = (input: LucroInput): LucroResult => {
 };
 
 const calcularLucroPresumido = (input: LucroInput): LucroResult => {
-    const receitaTotal = input.faturamentoComercio + input.faturamentoServico;
+    const faturamentoBruto = input.faturamentoComercio + input.faturamentoIndustria + input.faturamentoServico;
     const detalhamento: DetalheImposto[] = [];
     
+    // Análise da Lei Complementar 224/2025
+    // Regra: A partir de 2026, empresas com faturamento > 5.000.000,00 tem majoração de 10% na presunção
+    const ano = parseInt(input.mesReferencia?.split('-')[0] || '0');
+    // Considera o faturamento acumulado + o faturamento do mês atual para projeção
+    const receitaTotalAno = (input.acumuladoAno || 0) + faturamentoBruto;
+    let fatorAumentoPresuncao = 1.0;
+    let aplicouLc224 = false;
+
+    if (ano >= 2026 && receitaTotalAno > 5000000) {
+        fatorAumentoPresuncao = 1.10; // Aumento de 10% nos percentuais de presunção
+        aplicouLc224 = true;
+    }
+
     // ISS
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
@@ -94,69 +146,92 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const presuncaoIrpjServico = input.isEquiparacaoHospitalar ? PRESUNCAO_IRPJ_HOSPITALAR : PRESUNCAO_IRPJ_SERVICO;
     const presuncaoCsllServico = input.isEquiparacaoHospitalar ? PRESUNCAO_CSLL_HOSPITALAR : PRESUNCAO_CSLL_SERVICO;
 
-    // PIS/COFINS
-    const basePisCofins = Math.max(0, receitaTotal - (input.faturamentoMonofasico || 0));
-    if (basePisCofins > 0 || retencaoPis > 0 || retencaoCofins > 0) {
+    // PIS/COFINS (Sempre Mensal)
+    const basePisCofins = Math.max(0, faturamentoBruto - (input.faturamentoMonofasico || 0));
+    if (basePisCofins > 0) {
         detalhamento.push({
             imposto: 'PIS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_PIS_CUMULATIVO) - retencaoPis),
-            observacao: retencaoPis > 0 ? `Retenção de ${fmt(retencaoPis)} deduzida` : undefined
+            observacao: `Mensal - Alíquota 0,65% sobre faturamento`
         });
         detalhamento.push({
             imposto: 'COFINS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_COFINS_CUMULATIVO) - retencaoCofins),
-            observacao: retencaoCofins > 0 ? `Retenção de ${fmt(retencaoCofins)} deduzida` : undefined
+            observacao: `Mensal - Alíquota 3,00% sobre faturamento`
         });
     }
 
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
-    // IRPJ
-    const baseIrpj = (input.faturamentoComercio * PRESUNCAO_IRPJ_COMERCIO) + (input.faturamentoServico * presuncaoIrpjServico);
-    let valorIrpj = baseIrpj * ALIQ_IRPJ;
-    const limiteAdicional = input.periodoApuracao === 'Trimestral' ? LIMITE_ADICIONAL_TRIMESTRAL : LIMITE_ADICIONAL_MENSAL;
-    if (baseIrpj > limiteAdicional) valorIrpj += (baseIrpj - limiteAdicional) * ADICIONAL_IRPJ;
+    // IRPJ - Base de Presunção (Aplicando Fator de Aumento se necessário)
+    const baseIrpjComercio = input.faturamentoComercio * PRESUNCAO_IRPJ_COMERCIO * fatorAumentoPresuncao;
+    const baseIrpjIndustria = input.faturamentoIndustria * PRESUNCAO_IRPJ_INDUSTRIA * fatorAumentoPresuncao;
+    const baseIrpjServico = input.faturamentoServico * presuncaoIrpjServico * fatorAumentoPresuncao;
+    const baseIrpjTotal = baseIrpjComercio + baseIrpjIndustria + baseIrpjServico;
 
-    detalhamento.push({
-        imposto: 'IRPJ (Presumido)',
-        baseCalculo: baseIrpj,
-        aliquota: ALIQ_IRPJ * 100,
-        valor: Math.max(0, valorIrpj - retencaoIrpj),
-        observacao: `Base Serviço: ${(presuncaoIrpjServico * 100)}%`
-    });
+    if (baseIrpjTotal > 0) {
+        let valorIrpj = baseIrpjTotal * ALIQ_IRPJ;
+        const limiteAdicional = input.periodoApuracao === 'Trimestral' ? LIMITE_ADICIONAL_TRIMESTRAL : LIMITE_ADICIONAL_MENSAL;
+        
+        if (baseIrpjTotal > limiteAdicional) {
+            valorIrpj += (baseIrpjTotal - limiteAdicional) * ADICIONAL_IRPJ;
+        }
 
-    // CSLL
-    const baseCsll = (input.faturamentoComercio * PRESUNCAO_CSLL_COMERCIO) + (input.faturamentoServico * presuncaoCsllServico);
-    detalhamento.push({
-        imposto: 'CSLL (Presumido)',
-        baseCalculo: baseCsll,
-        aliquota: ALIQ_CSLL * 100,
-        valor: Math.max(0, (baseCsll * ALIQ_CSLL) - retencaoCsll)
-    });
+        detalhamento.push({
+            imposto: `IRPJ (${input.periodoApuracao})`,
+            baseCalculo: baseIrpjTotal,
+            aliquota: ALIQ_IRPJ * 100,
+            valor: Math.max(0, valorIrpj - retencaoIrpj),
+            observacao: aplicouLc224 
+                ? `LC 224/25: Base majorada em 10% (> R$ 5M). Isenção: ${fmt(limiteAdicional)}` 
+                : `Base Presumida Total. Isenção Adicional: ${fmt(limiteAdicional)}`
+        });
+    }
+
+    // CSLL - Base de Presunção (Aplicando Fator de Aumento se necessário)
+    const baseCsllComercio = input.faturamentoComercio * PRESUNCAO_CSLL_COMERCIO * fatorAumentoPresuncao;
+    const baseCsllIndustria = input.faturamentoIndustria * PRESUNCAO_CSLL_INDUSTRIA * fatorAumentoPresuncao;
+    const baseCsllServico = input.faturamentoServico * presuncaoCsllServico * fatorAumentoPresuncao;
+    const baseCsllTotal = baseCsllComercio + baseCsllIndustria + baseCsllServico;
+
+    if (baseCsllTotal > 0) {
+        detalhamento.push({
+            imposto: `CSLL (${input.periodoApuracao})`,
+            baseCalculo: baseCsllTotal,
+            aliquota: ALIQ_CSLL * 100,
+            valor: Math.max(0, (baseCsllTotal * ALIQ_CSLL) - retencaoCsll),
+            observacao: aplicouLc224
+                ? `LC 224/25: Base majorada em 10% devido faturamento > R$ 5M`
+                : `Base Presumida Total (Serviço 32%, Com/Ind 12%)`
+        });
+    }
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
     const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
     const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
-    const lucroLiquido = (receitaTotal + extraReceitas) - input.custoMercadoriaVendida - input.despesasOperacionais - input.folhaPagamento - extraDespesas - totalImpostos;
+    
+    const lucroLiquido = (faturamentoBruto + extraReceitas) - input.custoMercadoriaVendida - input.despesasOperacionais - input.folhaPagamento - extraDespesas - totalImpostos;
 
     return {
         regime: 'Presumido',
         periodo: input.periodoApuracao,
         detalhamento,
         totalImpostos,
-        cargaTributaria: receitaTotal > 0 ? (totalImpostos / receitaTotal) * 100 : 0,
-        lucroLiquidoEstimado: lucroLiquido
+        cargaTributaria: faturamentoBruto > 0 ? (totalImpostos / faturamentoBruto) * 100 : 0,
+        lucroLiquidoEstimado: lucroLiquido,
+        alertaLc224: aplicouLc224
     };
 };
 
 const calcularLucroReal = (input: LucroInput): LucroResult => {
-    const receitaTotal = input.faturamentoComercio + input.faturamentoServico;
+    const faturamentoBruto = input.faturamentoComercio + input.faturamentoIndustria + input.faturamentoServico;
     const detalhamento: DetalheImposto[] = [];
     
+    // ISS
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
 
@@ -168,29 +243,31 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         .filter(i => i.tipo === 'despesa' && i.geraCreditoPisCofins)
         .reduce((acc, i) => acc + i.valor, 0);
 
-    const totalReceitas = receitaTotal + (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
+    const totalReceitas = faturamentoBruto + (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
 
-    // PIS/COFINS (Não Cumulativo)
-    const basePisCofins = Math.max(0, receitaTotal - (input.faturamentoMonofasico || 0));
+    // PIS/COFINS (Não Cumulativo - Mensal)
+    const basePisCofins = Math.max(0, faturamentoBruto - (input.faturamentoMonofasico || 0));
     const baseCredito = input.despesasDedutiveis + extraBaseCredito; 
     
     detalhamento.push({
-        imposto: 'PIS (Não Cumulativo)',
+        imposto: 'PIS (Lucro Real)',
         baseCalculo: basePisCofins,
         aliquota: ALIQ_PIS_NAO_CUMULATIVO * 100,
-        valor: Math.max(0, (basePisCofins * ALIQ_PIS_NAO_CUMULATIVO) - (baseCredito * ALIQ_PIS_NAO_CUMULATIVO) - (input.retencaoPis || 0))
+        valor: Math.max(0, (basePisCofins * ALIQ_PIS_NAO_CUMULATIVO) - (baseCredito * ALIQ_PIS_NAO_CUMULATIVO) - (input.retencaoPis || 0)),
+        observacao: `Mensal - Crédito sobre despesas dedutíveis`
     });
 
     detalhamento.push({
-        imposto: 'COFINS (Não Cumulativo)',
+        imposto: 'COFINS (Lucro Real)',
         baseCalculo: basePisCofins,
         aliquota: ALIQ_COFINS_NAO_CUMULATIVO * 100,
-        valor: Math.max(0, (basePisCofins * ALIQ_COFINS_NAO_CUMULATIVO) - (baseCredito * ALIQ_COFINS_NAO_CUMULATIVO) - (input.retencaoCofins || 0))
+        valor: Math.max(0, (basePisCofins * ALIQ_COFINS_NAO_CUMULATIVO) - (baseCredito * ALIQ_COFINS_NAO_CUMULATIVO) - (input.retencaoCofins || 0)),
+        observacao: `Mensal - Crédito sobre despesas dedutíveis`
     });
 
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
-    // IRPJ / CSLL (Lucro Real)
+    // IRPJ / CSLL (Lucro Real - Ajustado por Período)
     const despesasTotaisDedutiveis = input.despesasOperacionais + input.despesasDedutiveis + extraDespesasDedutiveis;
     const lucroContabil = totalReceitas - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotaisDedutiveis;
     
@@ -200,25 +277,26 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         if (lucroContabil > limiteAdicional) valorIrpj += (lucroContabil - limiteAdicional) * ADICIONAL_IRPJ;
         
         detalhamento.push({
-            imposto: 'IRPJ (Lucro Real)',
+            imposto: `IRPJ (Lucro Real ${input.periodoApuracao})`,
             baseCalculo: lucroContabil,
             aliquota: ALIQ_IRPJ * 100,
-            valor: Math.max(0, valorIrpj - (input.retencaoIrpj || 0))
+            valor: Math.max(0, valorIrpj - (input.retencaoIrpj || 0)),
+            observacao: `Lucro Tributável Real. Isenção Adicional: ${fmt(limiteAdicional)}`
         });
 
         detalhamento.push({
-            imposto: 'CSLL (Lucro Real)',
+            imposto: `CSLL (Lucro Real ${input.periodoApuracao})`,
             baseCalculo: lucroContabil,
             aliquota: ALIQ_CSLL * 100,
             valor: Math.max(0, (lucroContabil * ALIQ_CSLL) - (input.retencaoCsll || 0))
         });
     } else {
         detalhamento.push({
-            imposto: 'IRPJ/CSLL',
+            imposto: 'IRPJ/CSLL (Lucro Real)',
             baseCalculo: lucroContabil,
             aliquota: 0,
             valor: 0,
-            observacao: 'Prejuízo Fiscal'
+            observacao: 'Prejuízo Fiscal no Período'
         });
     }
 
@@ -234,29 +312,6 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         cargaTributaria: totalReceitas > 0 ? (totalImpostos / totalReceitas) * 100 : 0,
         lucroLiquidoEstimado: lucroFinal
     };
-};
-
-const calcularISS = (input: LucroInput): DetalheImposto | null => {
-    if (input.faturamentoServico <= 0 && input.issConfig.tipo !== 'sup_fixo') return null;
-
-    if (input.issConfig.tipo === 'sup_fixo') {
-        const total = (input.issConfig.qtdeSocios || 1) * (input.issConfig.valorPorSocio || 0);
-        return {
-            imposto: 'ISS-SUP (Fixo)',
-            baseCalculo: input.issConfig.qtdeSocios || 1, 
-            aliquota: 0, 
-            valor: total,
-            observacao: `${input.issConfig.qtdeSocios} sócios`
-        };
-    } else {
-        const aliq = input.issConfig.aliquota || 5; 
-        return {
-            imposto: `ISS (${aliq}%)`,
-            baseCalculo: input.faturamentoServico,
-            aliquota: aliq,
-            valor: input.faturamentoServico * (aliq / 100)
-        };
-    }
 };
 
 const processarItensEspeciais = (itens: ItemFinanceiroAvulso[] | undefined, detalhamento: DetalheImposto[]) => {
