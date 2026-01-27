@@ -254,7 +254,8 @@ export interface LucroInput {
     faturamentoComercio: number;
     faturamentoIndustria: number; // Novo
     faturamentoServico: number;
-    faturamentoMonofasico: number; 
+    faturamentoMonofasico: number;
+    receitaFinanceira: number; // Novo campo explícito
     despesasOperacionais: number;
     despesasDedutiveis: number; 
     folhaPagamento: number;
@@ -312,7 +313,8 @@ export interface FichaFinanceiraRegistro {
     faturamentoMesComercio: number;
     faturamentoMesIndustria: number; // Novo
     faturamentoMesServico: number;
-    faturamentoMonofasico?: number; 
+    faturamentoMonofasico?: number;
+    receitaFinanceira?: number; // Novo
     faturamentoMesTotal: number;
     totalGeral: number; 
     despesas: number;

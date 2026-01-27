@@ -6,25 +6,96 @@ interface LogoProps {
 }
 
 const Logo: React.FC<LogoProps> = ({ className }) => {
-    // Se nenhuma classe for passada, usa o padrão (texto escuro no claro, claro no escuro)
-    const finalClassName = className || "h-14 sm:h-16 w-auto text-slate-800 dark:text-slate-100";
+    const finalClassName = className || "h-14 w-auto";
 
     return (
         <svg
-            className={finalClassName}
-            viewBox="0 0 200 200"
-            fill="currentColor"
             xmlns="http://www.w3.org/2000/svg"
-            aria-label="Logo da SP Assessoria Contábil"
+            viewBox="0 0 320 80"
+            className={finalClassName}
+            aria-label="Logo SP Assessoria Contábil"
+            fill="none"
         >
-            {/* Anel externo do logotipo */}
-            <path 
-                d="M100 180C144.183 180 180 144.183 180 100C180 55.8172 144.183 20 100 20C55.8172 20 20 55.8172 20 100C20 144.183 55.8172 180 100 180ZM100 164C135.346 164 164 135.346 164 100C164 64.6538 135.346 36 100 36C64.6538 36 36 64.6538 36 100C36 135.346 64.6538 164 100 164Z"
-            />
-            {/* Letras 'SP' estilizadas */}
-            <path
-                d="M136 126.342C126.953 133.58 116.328 138 104.5 138C82.721 138 65 120.279 65 98.5C65 76.721 82.721 59 104.5 59C119.52 59 132.387 66.845 139 78H118V92H153V65H139V71.49C130.25 61.161 118.176 54 104.5 54C79.419 54 59 74.198 59 98.5C59 122.802 79.419 143 104.5 143C118.847 143 131.595 136.52 140.174 126.342H136Z"
-            />
+            <defs>
+                <linearGradient id="logo_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#0ea5e9" /> {/* sky-500 */}
+                    <stop offset="100%" stopColor="#0284c7" /> {/* sky-600 */}
+                </linearGradient>
+            </defs>
+
+            {/* Ícone Gráfico: Box com Gráfico de Evolução (Identidade Visual Moderna) */}
+            <g transform="translate(5, 10)">
+                {/* Fundo do Ícone */}
+                <rect x="0" y="0" width="60" height="60" rx="14" fill="url(#logo_grad)" />
+                
+                {/* Elementos Internos (Gráfico de Barras e Linha de Tendência) */}
+                <path 
+                    d="M12 45 L12 45" 
+                    stroke="white" 
+                    strokeWidth="4" 
+                    strokeLinecap="round" 
+                />
+                {/* Barras */}
+                <rect x="14" y="38" width="8" height="12" rx="2" fill="white" fillOpacity="0.6" />
+                <rect x="26" y="28" width="8" height="22" rx="2" fill="white" fillOpacity="0.8" />
+                <rect x="38" y="18" width="8" height="32" rx="2" fill="white" />
+                
+                {/* Seta de Crescimento */}
+                <path 
+                    d="M14 30 L26 20 L38 10 L50 10" 
+                    stroke="white" 
+                    strokeWidth="3" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    fill="none"
+                />
+                <path d="M46 10 L50 10 L50 14" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </g>
+
+            {/* Tipografia da Marca */}
+            <g transform="translate(75, 0)">
+                {/* SP - Destaque */}
+                <text 
+                    x="0" 
+                    y="50" 
+                    fontFamily="Arial, sans-serif" 
+                    fontWeight="900" 
+                    fontSize="52" 
+                    className="fill-slate-800 dark:fill-white"
+                    letterSpacing="-3"
+                >
+                    SP
+                </text>
+
+                {/* Divisor */}
+                <rect x="74" y="18" width="1.5" height="44" className="fill-slate-300 dark:fill-slate-600" />
+
+                {/* Nome Extenso */}
+                <g transform="translate(88, 0)">
+                    <text 
+                        x="0" 
+                        y="34" 
+                        fontFamily="Arial, sans-serif" 
+                        fontWeight="700" 
+                        fontSize="15" 
+                        className="fill-slate-600 dark:fill-slate-300"
+                        letterSpacing="0.5"
+                    >
+                        ASSESSORIA
+                    </text>
+                    <text 
+                        x="0" 
+                        y="53" 
+                        fontFamily="Arial, sans-serif" 
+                        fontWeight="800" 
+                        fontSize="15" 
+                        className="fill-sky-600 dark:fill-sky-400"
+                        letterSpacing="0.5"
+                    >
+                        CONTÁBIL
+                    </text>
+                </g>
+            </g>
         </svg>
     );
 };

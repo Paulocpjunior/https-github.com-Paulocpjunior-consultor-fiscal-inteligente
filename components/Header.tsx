@@ -2,6 +2,7 @@
 import React from 'react';
 import ThemeSwitcher from './ThemeSwitcher';
 import Logo from './Logo';
+import Tooltip from './Tooltip';
 import { MenuIcon, UserIcon, ShieldIcon, UserGroupIcon } from './Icons';
 import { User } from '../types';
 
@@ -22,7 +23,9 @@ const Header: React.FC<HeaderProps> = ({ theme, toggleTheme, onMenuClick, descri
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         {/* Left side: Logo & Title */}
         <div className="flex items-center gap-4 w-full md:w-auto justify-start">
-          <Logo />
+          <Tooltip content="Consultor Fiscal Inteligente" position="bottom">
+            <Logo />
+          </Tooltip>
           <div>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-slate-800 dark:text-slate-100 leading-tight">
               Consultor Fiscal

@@ -96,6 +96,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         faturamentoMesIndustria: 0, 
         faturamentoMesServico: 0, 
         faturamentoMonofasico: 0, 
+        receitaFinanceira: 0, // Novo
         despesas: 0, 
         despesasDedutiveis: 0, 
         folha: 0, 
@@ -118,6 +119,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             faturamentoIndustria: financeiro.faturamentoMesIndustria,
             faturamentoServico: financeiro.faturamentoMesServico,
             faturamentoMonofasico: financeiro.faturamentoMonofasico,
+            receitaFinanceira: financeiro.receitaFinanceira, // Passado ao cálculo
             despesasOperacionais: financeiro.despesas,
             despesasDedutiveis: financeiro.despesasDedutiveis,
             folhaPagamento: financeiro.folha,
@@ -180,6 +182,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     faturamentoMesIndustria: registro.faturamentoMesIndustria || 0,
                     faturamentoMesServico: registro.faturamentoMesServico,
                     faturamentoMonofasico: registro.faturamentoMonofasico || 0,
+                    receitaFinanceira: registro.receitaFinanceira || 0,
                     despesas: registro.despesas,
                     despesasDedutiveis: registro.despesasDedutiveis || 0,
                     folha: registro.folha,
@@ -291,6 +294,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             faturamentoMesIndustria: financeiro.faturamentoMesIndustria,
             faturamentoMesServico: financeiro.faturamentoMesServico,
             faturamentoMonofasico: financeiro.faturamentoMonofasico,
+            receitaFinanceira: financeiro.receitaFinanceira,
             faturamentoMesTotal: financeiro.faturamentoMesComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoMesServico,
             totalGeral: financeiro.acumuladoAno + financeiro.faturamentoMesComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoMesServico,
             despesas: financeiro.despesas,
@@ -518,6 +522,17 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                             <CurrencyInput label="Faturamento Comércio" value={financeiro.faturamentoMesComercio} onChange={v => setFinanceiro(p => ({...p, faturamentoMesComercio: v}))} />
                             <CurrencyInput label="Faturamento Indústria" value={financeiro.faturamentoMesIndustria} onChange={v => setFinanceiro(p => ({...p, faturamentoMesIndustria: v}))} />
                             <CurrencyInput label="Faturamento Serviços" value={financeiro.faturamentoMesServico} onChange={v => setFinanceiro(p => ({...p, faturamentoMesServico: v}))} />
+                            
+                            {/* NOVO CAMPO: RECEITA FINANCEIRA */}
+                            <div className="p-3 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg border border-amber-100 dark:border-amber-800">
+                                <CurrencyInput 
+                                    label="Receita Financeira" 
+                                    value={financeiro.receitaFinanceira} 
+                                    onChange={v => setFinanceiro(p => ({...p, receitaFinanceira: v}))}
+                                    tooltip={regimeSelecionado === 'Presumido' ? "Entra 100% na base de IRPJ/CSLL (não sofre presunção). Geralmente PIS/COFINS Zero." : "Sofre incidência de PIS (0,65%) e COFINS (4%) no Regime Real."} 
+                                />
+                            </div>
+
                             <CurrencyInput label="Monofásicos (Exclusão PIS/COF)" value={financeiro.faturamentoMonofasico} onChange={v => setFinanceiro(p => ({...p, faturamentoMonofasico: v}))} className="bg-green-50/20 dark:bg-green-900/10 p-2 rounded border border-green-100 dark:border-green-800" />
                             <div className="grid grid-cols-2 gap-4">
                                 <CurrencyInput label="CMV" value={financeiro.cmv} onChange={v => setFinanceiro(p => ({...p, cmv: v}))} />
@@ -851,6 +866,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                 <div className="flex justify-between text-sm font-bold"><span>Comércio:</span><span className="text-slate-800">R$ {financeiro.faturamentoMesComercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-sm font-bold"><span>Indústria:</span><span className="text-slate-800">R$ {financeiro.faturamentoMesIndustria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-sm font-bold"><span>Prestação de Serviços:</span><span className="text-slate-800">R$ {financeiro.faturamentoMesServico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-amber-700"><span>(+) Receita Financeira:</span><span className="text-amber-800">R$ {financeiro.receitaFinanceira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 {itensAvulsos.filter(i => i.tipo === 'receita').length > 0 && (
                                     <div className="flex justify-between text-sm font-bold text-green-600">
                                         <span>(+) Outras Receitas:</span>
@@ -858,7 +874,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                     </div>
                                 )}
                                 <div className="flex justify-between text-xs text-red-500 font-bold border-t pt-4 italic"><span>(-) Exclusão Monofásicos PIS/COFINS:</span><span>R$ {financeiro.faturamentoMonofasico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
-                                <div className="flex justify-between text-lg text-sky-900 font-black border-t-2 border-sky-50 pt-4"><span>Base para Cálculo:</span><span>R$ {(financeiro.faturamentoMesComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoMesServico + itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0) - financeiro.faturamentoMonofasico).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-lg text-sky-900 font-black border-t-2 border-sky-50 pt-4"><span>Base para Cálculo:</span><span>R$ {(financeiro.faturamentoMesComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoMesServico + financeiro.receitaFinanceira + itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0) - financeiro.faturamentoMonofasico).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                             </div>
                         </div>
                         <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
