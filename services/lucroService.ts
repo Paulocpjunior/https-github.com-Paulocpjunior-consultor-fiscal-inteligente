@@ -118,8 +118,27 @@ export const calcularLucro = (input: LucroInput): LucroResult => {
 };
 
 const calcularLucroPresumido = (input: LucroInput): LucroResult => {
-    const faturamentoBruto = input.faturamentoComercio + input.faturamentoIndustria + input.faturamentoServico;
-    const receitaTotal = faturamentoBruto + (input.receitaFinanceira || 0);
+    // 1. Definição das Bases de Cálculo
+    // PIS/COFINS usam SEMPRE o faturamento do MÊS (input direto)
+    const faturamentoBrutoMensal = input.faturamentoComercio + input.faturamentoIndustria + input.faturamentoServico;
+    
+    // IRPJ/CSLL usam o acumulado se for Trimestral e tiver dados anteriores disponíveis
+    let baseComercioIrpj = input.faturamentoComercio;
+    let baseIndustriaIrpj = input.faturamentoIndustria;
+    let baseServicoIrpj = input.faturamentoServico;
+    let baseFinanceiraIrpj = input.receitaFinanceira || 0;
+    
+    const isTrimestralComAcumulado = input.periodoApuracao === 'Trimestral' && input.acumuladoTrimestre;
+
+    if (isTrimestralComAcumulado && input.acumuladoTrimestre) {
+        // Soma o mês atual com o acumulado dos meses anteriores do trimestre
+        baseComercioIrpj += input.acumuladoTrimestre.comercio;
+        baseIndustriaIrpj += input.acumuladoTrimestre.industria;
+        baseServicoIrpj += input.acumuladoTrimestre.servico;
+        baseFinanceiraIrpj += input.acumuladoTrimestre.financeira;
+    }
+
+    const receitaTotal = faturamentoBrutoMensal + (input.receitaFinanceira || 0);
     const detalhamento: DetalheImposto[] = [];
     
     // Análise da Lei Complementar 224/2025
@@ -135,7 +154,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         aplicouLc224 = true;
     }
 
-    // ISS
+    // ISS (Base Mensal)
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
 
@@ -147,36 +166,34 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const presuncaoIrpjServico = input.isEquiparacaoHospitalar ? PRESUNCAO_IRPJ_HOSPITALAR : PRESUNCAO_IRPJ_SERVICO;
     const presuncaoCsllServico = input.isEquiparacaoHospitalar ? PRESUNCAO_CSLL_HOSPITALAR : PRESUNCAO_CSLL_SERVICO;
 
-    // PIS/COFINS (Sempre Mensal) - Receita Financeira geralmente tem alíquota ZERO no regime cumulativo
-    const basePisCofins = Math.max(0, faturamentoBruto - (input.faturamentoMonofasico || 0));
+    // PIS/COFINS (Sempre Mensal - Cumulativo no Presumido)
+    const basePisCofins = Math.max(0, faturamentoBrutoMensal - (input.faturamentoMonofasico || 0));
     if (basePisCofins > 0) {
         detalhamento.push({
             imposto: 'PIS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_PIS_CUMULATIVO) - retencaoPis),
-            observacao: `Mensal - Alíquota 0,65% sobre faturamento`
+            observacao: `Base Mensal - Alíquota 0,65%`
         });
         detalhamento.push({
             imposto: 'COFINS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_COFINS_CUMULATIVO) - retencaoCofins),
-            observacao: `Mensal - Alíquota 3,00% sobre faturamento`
+            observacao: `Base Mensal - Alíquota 3,00%`
         });
     }
 
-    // Nota: Receita Financeira no Presumido normalmente não paga PIS/COFINS (Alíquota Zero), 
-    // exceto casos específicos. Mantemos zerado por padrão aqui.
-
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
-    // IRPJ - Base de Presunção (Aplicando Fator de Aumento se necessário)
+    // IRPJ - Base de Presunção (Pode ser Trimestral Acumulada)
+    const basePresumidaComercio = baseComercioIrpj * PRESUNCAO_IRPJ_COMERCIO * fatorAumentoPresuncao;
+    const basePresumidaIndustria = baseIndustriaIrpj * PRESUNCAO_IRPJ_INDUSTRIA * fatorAumentoPresuncao;
+    const basePresumidaServico = baseServicoIrpj * presuncaoIrpjServico * fatorAumentoPresuncao;
+    
     // RECEITA FINANCEIRA ENTRA 100% NA BASE (SEM PRESUNÇÃO)
-    const baseIrpjComercio = input.faturamentoComercio * PRESUNCAO_IRPJ_COMERCIO * fatorAumentoPresuncao;
-    const baseIrpjIndustria = input.faturamentoIndustria * PRESUNCAO_IRPJ_INDUSTRIA * fatorAumentoPresuncao;
-    const baseIrpjServico = input.faturamentoServico * presuncaoIrpjServico * fatorAumentoPresuncao;
-    const baseIrpjTotal = baseIrpjComercio + baseIrpjIndustria + baseIrpjServico + (input.receitaFinanceira || 0);
+    const baseIrpjTotal = basePresumidaComercio + basePresumidaIndustria + basePresumidaServico + baseFinanceiraIrpj;
 
     if (baseIrpjTotal > 0) {
         let valorIrpj = baseIrpjTotal * ALIQ_IRPJ;
@@ -186,33 +203,42 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             valorIrpj += (baseIrpjTotal - limiteAdicional) * ADICIONAL_IRPJ;
         }
 
+        let obsIrpj = isTrimestralComAcumulado 
+            ? `Fechamento Trimestral (Soma ${input.acumuladoTrimestre?.mesesConsiderados.length ? 'Mês Atual + Anteriores' : 'Mês Atual'}).`
+            : `Base Presumida do Período.`;
+
+        if (aplicouLc224) obsIrpj += ` LC 224/25: Base majorada 10%.`;
+        obsIrpj += ` Isenção Adicional: ${fmt(limiteAdicional)}`;
+
         detalhamento.push({
             imposto: `IRPJ (${input.periodoApuracao})`,
             baseCalculo: baseIrpjTotal,
             aliquota: ALIQ_IRPJ * 100,
             valor: Math.max(0, valorIrpj - retencaoIrpj),
-            observacao: aplicouLc224 
-                ? `LC 224/25: Base majorada (exceto Financeira). Isenção: ${fmt(limiteAdicional)}` 
-                : `Base Presumida + 100% Rec. Financeira. Isenção: ${fmt(limiteAdicional)}`
+            observacao: obsIrpj
         });
     }
 
-    // CSLL - Base de Presunção (Aplicando Fator de Aumento se necessário)
-    // RECEITA FINANCEIRA ENTRA 100% NA BASE (SEM PRESUNÇÃO)
-    const baseCsllComercio = input.faturamentoComercio * PRESUNCAO_CSLL_COMERCIO * fatorAumentoPresuncao;
-    const baseCsllIndustria = input.faturamentoIndustria * PRESUNCAO_CSLL_INDUSTRIA * fatorAumentoPresuncao;
-    const baseCsllServico = input.faturamentoServico * presuncaoCsllServico * fatorAumentoPresuncao;
-    const baseCsllTotal = baseCsllComercio + baseCsllIndustria + baseCsllServico + (input.receitaFinanceira || 0);
+    // CSLL - Base de Presunção (Pode ser Trimestral Acumulada)
+    const basePresumidaCsllComercio = baseComercioIrpj * PRESUNCAO_CSLL_COMERCIO * fatorAumentoPresuncao;
+    const basePresumidaCsllIndustria = baseIndustriaIrpj * PRESUNCAO_CSLL_INDUSTRIA * fatorAumentoPresuncao;
+    const basePresumidaCsllServico = baseServicoIrpj * presuncaoCsllServico * fatorAumentoPresuncao;
+    
+    const baseCsllTotal = basePresumidaCsllComercio + basePresumidaCsllIndustria + basePresumidaCsllServico + baseFinanceiraIrpj;
 
     if (baseCsllTotal > 0) {
+        let obsCsll = isTrimestralComAcumulado 
+            ? `Fechamento Trimestral. Base Acumulada.` 
+            : `Base Presumida do Período.`;
+            
+        if (aplicouLc224) obsCsll += ` LC 224/25: Base majorada.`;
+
         detalhamento.push({
             imposto: `CSLL (${input.periodoApuracao})`,
             baseCalculo: baseCsllTotal,
             aliquota: ALIQ_CSLL * 100,
             valor: Math.max(0, (baseCsllTotal * ALIQ_CSLL) - retencaoCsll),
-            observacao: aplicouLc224
-                ? `LC 224/25: Base majorada (exceto Financeira) devido faturamento > R$ 5M`
-                : `Base Presumida + 100% Rec. Financeira`
+            observacao: obsCsll
         });
     }
 
@@ -220,6 +246,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
     const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
     
+    // Lucro Liquido (apenas informativo, considera o mês atual)
     const lucroLiquido = (receitaTotal + extraReceitas) - input.custoMercadoriaVendida - input.despesasOperacionais - input.folhaPagamento - extraDespesas - totalImpostos;
 
     return {
@@ -291,6 +318,8 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
     // IRPJ / CSLL (Lucro Real - Ajustado por Período)
+    // Nota: A lógica de Lucro Real Trimestral também acumula, mas é baseada no Lucro Contábil acumulado.
+    // Simplificação atual mantendo a lógica de input, mas idealmente deveria somar os lucros anteriores se for trimestral.
     const despesasTotaisDedutiveis = input.despesasOperacionais + input.despesasDedutiveis + extraDespesasDedutiveis;
     const lucroContabil = totalReceitas - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotaisDedutiveis;
     

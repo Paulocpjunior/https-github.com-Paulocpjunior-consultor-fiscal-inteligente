@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, SearchType, LucroInput, LucroResult, IssConfig, ItemFinanceiroAvulso, CategoriaItemEspecial } from '../types';
+import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, SearchType, LucroInput, LucroResult, IssConfig, ItemFinanceiroAvulso, CategoriaItemEspecial, AcumuladoTrimestre } from '../types';
 import * as lucroService from '../services/lucroPresumidoService';
 import { calcularLucro } from '../services/lucroService';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
@@ -111,6 +111,47 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         return currentUser?.role === 'admin' || currentUser?.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
     }, [currentUser]);
 
+    // Lógica para detectar e somar faturamento dos meses anteriores do trimestre
+    const acumuladoTrimestre = useMemo<AcumuladoTrimestre | undefined>(() => {
+        if (periodoApuracao !== 'Trimestral' || !empresa.fichaFinanceira || !mesReferencia) return undefined;
+
+        const [anoStr, mesStr] = mesReferencia.split('-');
+        const ano = parseInt(anoStr);
+        const mes = parseInt(mesStr);
+
+        // Verifica se é mês de fechamento de trimestre (3, 6, 9, 12)
+        if (![3, 6, 9, 12].includes(mes)) return undefined;
+
+        // Meses anteriores do trimestre
+        const mes1 = mes - 2;
+        const mes2 = mes - 1;
+        
+        const chaveMes1 = `${ano}-${String(mes1).padStart(2, '0')}`;
+        const chaveMes2 = `${ano}-${String(mes2).padStart(2, '0')}`;
+
+        const registrosAnteriores = empresa.fichaFinanceira.filter(f => f.mesReferencia === chaveMes1 || f.mesReferencia === chaveMes2);
+
+        if (registrosAnteriores.length === 0) return undefined;
+
+        const acumulado = {
+            comercio: 0,
+            industria: 0,
+            servico: 0,
+            financeira: 0,
+            mesesConsiderados: registrosAnteriores.map(r => r.mesReferencia)
+        };
+
+        registrosAnteriores.forEach(reg => {
+            acumulado.comercio += (reg.faturamentoMesComercio || 0);
+            acumulado.industria += (reg.faturamentoMesIndustria || 0);
+            acumulado.servico += (reg.faturamentoMesServico || 0);
+            acumulado.financeira += (reg.receitaFinanceira || 0);
+        });
+
+        return acumulado;
+
+    }, [mesReferencia, periodoApuracao, empresa.fichaFinanceira]);
+
     const resultadoCalculado = useMemo(() => {
         const input: LucroInput = {
             regimeSelecionado, periodoApuracao,
@@ -131,10 +172,11 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             retencaoCsll: financeiro.retencaoCsll,
             isEquiparacaoHospitalar,
             itensAvulsos,
-            acumuladoAno: financeiro.acumuladoAno // Necessário para checagem do limite de R$ 5M
+            acumuladoAno: financeiro.acumuladoAno, // Necessário para checagem do limite de R$ 5M
+            acumuladoTrimestre // Passa o acumulado calculado para o serviço
         };
         return calcularLucro(input);
-    }, [financeiro, regimeSelecionado, periodoApuracao, issConfig, isEquiparacaoHospitalar, itensAvulsos, mesReferencia]);
+    }, [financeiro, regimeSelecionado, periodoApuracao, issConfig, isEquiparacaoHospitalar, itensAvulsos, mesReferencia, acumuladoTrimestre]);
 
     useEffect(() => {
         if (currentUser) lucroService.getEmpresas(currentUser).then(setCompanies);
@@ -519,6 +561,23 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                             />
                         </div>
                         <div className="space-y-4">
+                            {acumuladoTrimestre && (
+                                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 animate-fade-in">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <ShieldIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase">Fechamento do Trimestre</span>
+                                    </div>
+                                    <p className="text-xs text-indigo-700 dark:text-indigo-300 mb-2">
+                                        O sistema detectou faturamento nos meses anteriores deste trimestre ({acumuladoTrimestre.mesesConsiderados.join(', ')}). 
+                                        Estes valores serão <strong>somados automaticamente</strong> ao faturamento deste mês para o cálculo do IRPJ e CSLL Trimestral.
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2 text-[10px] font-mono font-bold text-indigo-900 dark:text-indigo-200">
+                                        <div>Comércio Ant.: R$ {acumuladoTrimestre.comercio.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                                        <div>Serviços Ant.: R$ {acumuladoTrimestre.servico.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</div>
+                                    </div>
+                                </div>
+                            )}
+
                             <CurrencyInput label="Faturamento Comércio" value={financeiro.faturamentoMesComercio} onChange={v => setFinanceiro(p => ({...p, faturamentoMesComercio: v}))} />
                             <CurrencyInput label="Faturamento Indústria" value={financeiro.faturamentoMesIndustria} onChange={v => setFinanceiro(p => ({...p, faturamentoMesIndustria: v}))} />
                             <CurrencyInput label="Faturamento Serviços" value={financeiro.faturamentoMesServico} onChange={v => setFinanceiro(p => ({...p, faturamentoMesServico: v}))} />

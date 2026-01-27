@@ -247,6 +247,15 @@ export interface ItemFinanceiroAvulso {
     categoriaEspecial?: CategoriaItemEspecial; // Novo campo para PIS/COFINS específicos
 }
 
+// Interface para dados acumulados do trimestre (para IRPJ/CSLL)
+export interface AcumuladoTrimestre {
+    comercio: number;
+    industria: number;
+    servico: number;
+    financeira: number;
+    mesesConsiderados: string[]; // Lista de meses (ex: ['2025-10', '2025-11'])
+}
+
 export interface LucroInput {
     regimeSelecionado: 'Presumido' | 'Real';
     periodoApuracao: 'Mensal' | 'Trimestral';
@@ -272,6 +281,8 @@ export interface LucroInput {
     itensAvulsos?: ItemFinanceiroAvulso[];
     // Feature: LC 224/2025
     acumuladoAno?: number; // Para verificação do limite de R$ 5M
+    // Feature: Fechamento Trimestral
+    acumuladoTrimestre?: AcumuladoTrimestre; // Se preenchido, será usado como base para IRPJ/CSLL
 }
 
 export interface PlanoCotas {
