@@ -135,7 +135,8 @@ export interface SimplesDetalheItem {
     icmsSt: boolean;
     isSup: boolean;
     isMonofasico: boolean;
-    isImune?: boolean; // Nova flag para Imunidade (Livros/Papel)
+    isImune?: boolean;
+    isExterior?: boolean; // Nova flag: Serviço Prestado no Exterior
 }
 
 export interface SimplesNacionalEmpresa {
@@ -186,6 +187,7 @@ export interface DetalhamentoAnexo {
     icmsSt?: boolean;
     isMonofasico?: boolean;
     isImune?: boolean;
+    isExterior?: boolean;
 }
 
 export interface SimplesItemCalculo {
@@ -197,6 +199,7 @@ export interface SimplesItemCalculo {
     isSup?: boolean; // Sociedade Uniprofissional (ISS Fixo)
     isMonofasico?: boolean; // PIS/COFINS Monofásico (Revenda)
     isImune?: boolean; // Imunidade de Livros/Papel
+    isExterior?: boolean; // Serviço Prestado no Exterior
 }
 
 export interface SimplesNacionalResumo {

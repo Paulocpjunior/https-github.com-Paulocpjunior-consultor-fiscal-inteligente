@@ -4,7 +4,7 @@ import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResul
 import * as simplesService from '../services/simplesNacionalService';
 import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS, calcularDiscriminacaoImpostos } from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails, fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
-import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon } from './Icons';
+import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon, GlobeIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 import SimpleChart from './SimpleChart';
 import Tooltip from './Tooltip';
@@ -31,6 +31,7 @@ interface CnaeInputState {
     isSup: boolean; // Sociedade Uniprofissional (ISS Fixo)
     isMonofasico: boolean; // PIS/COFINS Monofásico
     isImune: boolean; // Imunidade de Livros/Papel
+    isExterior: boolean; // Serviço no Exterior
 }
 
 type TabType = 'calculo' | 'analise' | 'historico_salvo';
@@ -207,7 +208,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 icmsSt: state.icmsSt, 
                 isSup: state.isSup,
                 isMonofasico: state.isMonofasico,
-                isImune: state.isImune
+                isImune: state.isImune,
+                isExterior: state.isExterior
             });
         });
 
@@ -268,7 +270,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             const getOrCreateState = (key: string, storedItem: number | SimplesDetalheItem | undefined, fallbackTotal: number, cnae: string): CnaeInputState => {
                 
                 let val = 0;
-                let flags = { issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false };
+                let flags = { issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
 
                 if (storedItem !== undefined) {
                     // Caso 1: Existe dado exato para este mês (prioridade máxima)
@@ -281,7 +283,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             icmsSt: storedItem.icmsSt, 
                             isSup: storedItem.isSup, 
                             isMonofasico: storedItem.isMonofasico,
-                            isImune: storedItem.isImune || false
+                            isImune: storedItem.isImune || false,
+                            isExterior: storedItem.isExterior || false
                         };
                     }
                 } else if (!hasDetalhe && previousConfig) {
@@ -301,7 +304,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             icmsSt: prevItem.icmsSt, 
                             isSup: prevItem.isSup, 
                             isMonofasico: prevItem.isMonofasico,
-                            isImune: prevItem.isImune || false
+                            isImune: prevItem.isImune || false,
+                            isExterior: prevItem.isExterior || false
                         };
                     }
                     val = fallbackTotal; // Geralmente 0 se for novo mês
@@ -356,7 +360,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }));
     };
 
-    const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt' | 'isSup' | 'isMonofasico' | 'isImune') => {
+    const handleOptionToggle = (key: string, field: 'issRetido' | 'icmsSt' | 'isSup' | 'isMonofasico' | 'isImune' | 'isExterior') => {
         setFaturamentoPorCnae((prev) => ({
             ...prev,
             [key]: { ...prev[key], [field]: !prev[key][field] }
@@ -391,14 +395,15 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                      icmsSt: state.icmsSt,
                      isSup: state.isSup,
                      isMonofasico: state.isMonofasico,
-                     isImune: state.isImune
+                     isImune: state.isImune,
+                     isExterior: state.isExterior
                 };
 
                 if(val >= 0) { // Add to calc list
                      itensCalculoParaSalvar.push({
                         cnae: cnaeCode, anexo: anexoCode as any, valor: val,
                         issRetido: state.issRetido, icmsSt: state.icmsSt, isSup: state.isSup, isMonofasico: state.isMonofasico,
-                        isImune: state.isImune
+                        isImune: state.isImune, isExterior: state.isExterior
                      });
                 }
             });
@@ -575,7 +580,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             ? `secundario::${index}::${cnaeCode}::${anexoCode}`
             : `principal::0::${cnaeCode}::${anexoCode}`;
             
-        const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false };
+        const state = faturamentoPorCnae[key] || { valor: '0,00', issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
         const showIcmsSt = ['I', 'II'].includes(anexoCode);
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexoCode);
         const showMonofasico = ['I', 'II'].includes(anexoCode);
@@ -633,7 +638,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-600">
                     <p className="text-[10px] uppercase font-bold text-slate-400 mb-2">Opções de Retenção / Dedução</p>
                     <div className="flex flex-wrap gap-2">
-                        {/* IMUNIDADE DE LIVROS (NOVO) */}
+                        {/* SERVIÇO NO EXTERIOR (NOVO) */}
+                        <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isExterior ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
+                            <input type="checkbox" checked={state.isExterior} onChange={() => handleOptionToggle(key, 'isExterior')} className="hidden" />
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isExterior ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
+                                {state.isExterior && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <GlobeIcon className={`w-3 h-3 ${state.isExterior ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400'}`} />
+                            <span className="text-xs font-bold" title="Exportação de Serviços (Isenção de ISS, PIS e COFINS)">Serviço no Exterior</span>
+                        </label>
+
+                        {/* IMUNIDADE DE LIVROS */}
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isImune ? 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                             <input type="checkbox" checked={state.isImune} onChange={() => handleOptionToggle(key, 'isImune')} className="hidden" />
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isImune ? 'bg-purple-500 border-purple-500' : 'bg-white border-slate-300'}`}>

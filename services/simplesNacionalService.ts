@@ -504,7 +504,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                         icmsSt: item.icmsSt,
                         isSup: item.isSup,
                         isMonofasico: item.isMonofasico,
-                        isImune: item.isImune // Carrega a flag de imunidade se existir
+                        isImune: item.isImune, // Carrega a flag de imunidade se existir
+                        isExterior: item.isExterior // Carrega a flag de exterior se existir
                     });
                 } else if (typeof value === 'number') {
                     // Legado: apenas valor
@@ -516,7 +517,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                         icmsSt: false,
                         isSup: false,
                         isMonofasico: false,
-                        isImune: false
+                        isImune: false,
+                        isExterior: false
                     });
                 }
             });
@@ -532,7 +534,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                     icmsSt: false,
                     isSup: false, // Default
                     isMonofasico: false,
-                    isImune: false
+                    isImune: false,
+                    isExterior: false
                 });
             }
         }
@@ -584,8 +587,18 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
                 if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                 if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
-            } else {
-                // Se não for imune, aplica as regras normais de retenção/ST/Monofásico
+            } 
+            // SERVIÇO PRESTADO NO EXTERIOR (LC 123/2006, Art. 18, § 4º-A)
+            // Imunidade de PIS, COFINS e ISS na exportação de serviços.
+            else if (item.isExterior) {
+                if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
+                if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
+                if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
+                // ICMS geralmente não incide sobre serviços do anexo III/IV/V, mas se houver incidência mista (raro), 
+                // a exportação também costuma ser imune. Para o Simples, focamos nos tributos principais de serviço.
+            }
+            else {
+                // Se não for imune nem exterior, aplica as regras normais de retenção/ST/Monofásico
                 
                 // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
                 if ((item.issRetido || item.isSup) && reparticao['ISS']) {
@@ -616,7 +629,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             issRetido: item.issRetido,
             icmsSt: item.icmsSt,
             isMonofasico: item.isMonofasico,
-            isImune: item.isImune
+            isImune: item.isImune,
+            isExterior: item.isExterior
         });
     });
 
