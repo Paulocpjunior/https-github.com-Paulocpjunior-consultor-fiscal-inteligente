@@ -218,6 +218,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         if (selectedEmpresaId && empresa.fichaFinanceira) {
             const registro = empresa.fichaFinanceira.find(f => f.mesReferencia === mesReferencia);
             if (registro) {
+                // SE EXISTE REGISTRO SALVO, CARREGA OS DADOS
                 setFinanceiro({
                     acumuladoAno: registro.acumuladoAno,
                     faturamentoMesComercio: registro.faturamentoMesComercio,
@@ -237,9 +238,30 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 setItensAvulsos(registro.itensAvulsos || []);
                 if (registro.regime) setRegimeSelecionado(registro.regime);
                 if (registro.periodoApuracao) setPeriodoApuracao(registro.periodoApuracao);
+            } else {
+                // SE NÃO EXISTE REGISTRO (MÊS NOVO), RESETA OS CAMPOS PARA 0 (OU PADRÃO)
+                setFinanceiro({
+                    acumuladoAno: 0,
+                    faturamentoMesComercio: 0,
+                    faturamentoMesIndustria: 0,
+                    faturamentoMesServico: 0,
+                    faturamentoMonofasico: 0,
+                    receitaFinanceira: 0, // Garante reset do campo
+                    despesas: 0,
+                    despesasDedutiveis: 0,
+                    folha: 0,
+                    cmv: 0,
+                    // Mantém as retenções padrão se configuradas no cadastro da empresa
+                    retencaoPis: empresa.retencoesPadrao?.pis || 0,
+                    retencaoCofins: empresa.retencoesPadrao?.cofins || 0,
+                    retencaoIrpj: empresa.retencoesPadrao?.irpj || 0,
+                    retencaoCsll: empresa.retencoesPadrao?.csll || 0
+                });
+                setItensAvulsos([]);
+                // Opcional: Manter o regime/período atual selecionado na tela
             }
         }
-    }, [mesReferencia, selectedEmpresaId, empresa.fichaFinanceira]);
+    }, [mesReferencia, selectedEmpresaId, empresa.fichaFinanceira, empresa.retencoesPadrao]);
 
     const handleExportPDF = async () => {
         if (!empresa.nome || !resultadoCalculado || !currentUser) return;
