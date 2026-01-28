@@ -503,7 +503,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                         issRetido: item.issRetido,
                         icmsSt: item.icmsSt,
                         isSup: item.isSup,
-                        isMonofasico: item.isMonofasico
+                        isMonofasico: item.isMonofasico,
+                        isImune: item.isImune // Carrega a flag de imunidade se existir
                     });
                 } else if (typeof value === 'number') {
                     // Legado: apenas valor
@@ -514,7 +515,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                         issRetido: false,
                         icmsSt: false,
                         isSup: false,
-                        isMonofasico: false
+                        isMonofasico: false,
+                        isImune: false
                     });
                 }
             });
@@ -529,7 +531,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                     issRetido: false,
                     icmsSt: false,
                     isSup: false, // Default
-                    isMonofasico: false
+                    isMonofasico: false,
+                    isImune: false
                 });
             }
         }
@@ -567,23 +570,35 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             aliq_eff = tabela[0].aliquota;
         }
 
-        // 3. Aplica Retenções (ISS, ICMS ST, Monofásico) e SUP
+        // 3. Aplica Retenções (ISS, ICMS ST, Monofásico) e Imunidade (Livros/Papel)
         // A lógica é: Nova Alíquota = Alíquota Efetiva * (1 - (Percentual do Tributo / 100))
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
         
         if (reparticao) {
-            // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
-            if ((item.issRetido || item.isSup) && reparticao['ISS']) {
-                percentualReducao += reparticao['ISS'];
-            }
-            if (item.icmsSt && reparticao['ICMS']) {
-                percentualReducao += reparticao['ICMS'];
-            }
-            // Produtos Monofásicos (PIS/COFINS Zero no DAS)
-            if (item.isMonofasico) {
+            
+            // IMUNIDADE DE LIVROS (CONSTITUCIONAL)
+            // Remove ICMS, IPI e geralmente PIS/COFINS (Alíquota Zero Lei 10.865/04)
+            if (item.isImune) {
+                if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
+                if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
                 if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                 if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
+            } else {
+                // Se não for imune, aplica as regras normais de retenção/ST/Monofásico
+                
+                // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
+                if ((item.issRetido || item.isSup) && reparticao['ISS']) {
+                    percentualReducao += reparticao['ISS'];
+                }
+                if (item.icmsSt && reparticao['ICMS']) {
+                    percentualReducao += reparticao['ICMS'];
+                }
+                // Produtos Monofásicos (PIS/COFINS Zero no DAS)
+                if (item.isMonofasico) {
+                    if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
+                    if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
+                }
             }
         }
 
@@ -600,7 +615,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             valorDas: valorDasItem,
             issRetido: item.issRetido,
             icmsSt: item.icmsSt,
-            isMonofasico: item.isMonofasico
+            isMonofasico: item.isMonofasico,
+            isImune: item.isImune
         });
     });
 
