@@ -4,7 +4,7 @@ import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResul
 import * as simplesService from '../services/simplesNacionalService';
 import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS, calcularDiscriminacaoImpostos } from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails, fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
-import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon, GlobeIcon, CopyIcon } from './Icons';
+import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon, GlobeIcon, CopyIcon, EyeIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 import SimpleChart from './SimpleChart';
 import Tooltip from './Tooltip';
@@ -134,6 +134,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const [isChartExporting, setIsChartExporting] = useState(false);
 
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+    const [isMemoryModalOpen, setIsMemoryModalOpen] = useState(false);
 
     const chartContainerRef = useRef<HTMLDivElement>(null); 
     const chartFaixasContainerRef = useRef<HTMLDivElement>(null);
@@ -381,7 +382,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         // Atualiza a empresa e força a UI a renderizar o novo campo
         onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
         
-        if (onShowToast) onShowToast("Linha adicionada para segregação!");
+        if (onShowToast) onShowToast("Linha duplicada para segregação de receitas!");
     };
 
     const handleSaveMesVigente = async () => {
@@ -602,8 +603,14 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexoCode);
         const showMonofasico = ['I', 'II'].includes(anexoCode);
 
+        // Define status badge for the card based on toggles
+        let statusBadge = null;
+        if (state.isExterior) statusBadge = <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-indigo-200">Exportação/Exterior</span>;
+        else if (state.isImune) statusBadge = <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-purple-200">Imunidade</span>;
+        else if (parseFloat(state.valor.replace(',', '.')) > 0) statusBadge = <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-green-200">Tributado Normal</span>;
+
         return (
-            <div key={key} className="bg-white dark:bg-slate-700/30 border border-slate-200 dark:border-slate-600 rounded-lg p-4 shadow-sm hover:border-sky-300 transition-colors">
+            <div key={key} className={`bg-white dark:bg-slate-700/30 border rounded-lg p-4 shadow-sm transition-all ${state.isExterior ? 'border-indigo-300 ring-1 ring-indigo-100' : 'border-slate-200 dark:border-slate-600 hover:border-sky-300'}`}>
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                     <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-lg ${isSecondary ? 'bg-slate-100 dark:bg-slate-600' : 'bg-sky-100 dark:bg-sky-900/30'}`}>
@@ -615,6 +622,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${isSecondary ? 'bg-slate-100 text-slate-500' : 'bg-sky-100 text-sky-700'}`}>
                                     {label}
                                 </span>
+                                {statusBadge}
                             </div>
                             <div className="flex gap-2 mt-1">
                                 <span className="text-xs font-bold bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-800">
@@ -804,7 +812,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-l-4 border-sky-500 dark:border-sky-400">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                                 <div className="w-full sm:w-auto">
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Mês de Apuração)</label>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Apuração Mensal)</label>
                                     <input type="month" value={mesApuracao.toISOString().substring(0, 7)} onChange={(e) => { if(e.target.value) { const [y, m] = e.target.value.split('-'); setMesApuracao(new Date(parseInt(y), parseInt(m)-1, 1)); } }} className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white" />
                                 </div>
                                 <div className="flex flex-col gap-2 w-full sm:w-auto">
@@ -891,6 +899,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             )}
                             
                             <div className="mt-6 flex gap-3">
+                                <button onClick={() => setIsMemoryModalOpen(true)} className="flex-1 py-4 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex justify-center items-center gap-2">
+                                    <EyeIcon className="w-5 h-5" /> Ver Memória de Cálculo
+                                </button>
                                 <button 
                                     onClick={handleSaveMesVigente} 
                                     disabled={isSaving} 
@@ -1062,6 +1073,77 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 {isSavingHistory ? <LoadingSpinner small /> : <SaveIcon className="w-4 h-4" />}
                                 <span>{isSavingHistory ? 'Salvando...' : 'Salvar Alterações'}</span>
                              </button>
+                        </div>
+                    </div>
+                </div>
+             )}
+
+             {/* Modal Memória de Cálculo Detalhada */}
+             {isMemoryModalOpen && resumo.detalhamento_anexos && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsMemoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 rounded-t-xl">
+                            <div>
+                                <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg flex items-center gap-2">
+                                    <CalculatorIcon className="w-5 h-5 text-sky-600" />
+                                    Memória de Cálculo Detalhada
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Segregação item a item</p>
+                            </div>
+                            <button onClick={() => setIsMemoryModalOpen(false)} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"><CloseIcon className="w-5 h-5 text-slate-400" /></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs text-slate-500 uppercase bg-slate-100 dark:bg-slate-700/50 dark:text-slate-400">
+                                    <tr>
+                                        <th className="px-4 py-2 rounded-tl-lg">Atividade / CNAE</th>
+                                        <th className="px-4 py-2 text-right">Receita (R$)</th>
+                                        <th className="px-4 py-2 text-center">Aliq. Nominal</th>
+                                        <th className="px-4 py-2 text-center">Aliq. Efetiva</th>
+                                        <th className="px-4 py-2 text-right rounded-tr-lg">Imposto Devido</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                    {resumo.detalhamento_anexos.map((item, idx) => (
+                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                            <td className="px-4 py-3">
+                                                <div className="font-bold text-slate-700 dark:text-slate-200">{item.cnae || 'Receita'}</div>
+                                                <div className="flex gap-1 mt-1">
+                                                    <span className="text-[10px] bg-slate-200 dark:bg-slate-600 px-1.5 rounded text-slate-600 dark:text-slate-300">Anexo {item.anexo}</span>
+                                                    {item.isExterior && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded font-bold border border-indigo-200">Exportação</span>}
+                                                    {item.isImune && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 rounded font-bold border border-purple-200">Imunidade</span>}
+                                                    {!item.isExterior && !item.isImune && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 rounded font-bold border border-green-200">Tributado</span>}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold text-slate-800 dark:text-slate-200">
+                                                {item.faturamento.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                            </td>
+                                            <td className="px-4 py-3 text-center text-slate-500">
+                                                {item.aliquotaNominal.toFixed(2)}%
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`font-bold ${item.aliquotaEfetiva < resumo.aliq_eff ? 'text-green-600' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                    {item.aliquotaEfetiva.toFixed(4)}%
+                                                </span>
+                                                {item.aliquotaEfetiva < resumo.aliq_eff && (
+                                                    <p className="text-[9px] text-green-600">(Reduzida)</p>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold text-sky-700 dark:text-sky-400">
+                                                {item.valorDas.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                                <tfoot className="border-t-2 border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/30">
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-3 text-right font-bold uppercase text-xs">Total Apurado:</td>
+                                        <td className="px-4 py-3 text-right font-mono font-black text-lg text-sky-800 dark:text-white">
+                                            {resumo.das_mensal.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
+                                        </td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
                     </div>
                 </div>
