@@ -216,6 +216,9 @@ export interface SimplesNacionalResumo {
     ultrapassou_sublimite: boolean;
     faixa_index: number; // Índice da faixa (0-5) para cálculo de repartição
     detalhamento_anexos?: DetalhamentoAnexo[]; // Breakdown per Annex for current month
+    // Novos campos para segregação explícita
+    totalMercadoInterno: number;
+    totalMercadoExterno: number;
 }
 
 export interface CnaeTaxDetail {

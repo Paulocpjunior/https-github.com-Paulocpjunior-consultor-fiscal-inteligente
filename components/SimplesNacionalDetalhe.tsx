@@ -787,17 +787,38 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência</label>
                                     <input type="month" value={mesApuracao.toISOString().substring(0, 7)} onChange={(e) => { if(e.target.value) { const [y, m] = e.target.value.split('-'); setMesApuracao(new Date(parseInt(y), parseInt(m)-1, 1)); } }} className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white" />
                                 </div>
-                                <div className="flex gap-4">
-                                    <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-center">
+                                <div className="flex flex-col gap-2 w-full sm:w-auto">
+                                    <div className="bg-slate-50 dark:bg-slate-700/50 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-center min-w-[200px]">
                                         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Apuração do Mês</p>
                                         <p className="text-xl font-mono font-bold text-slate-900 dark:text-white">R$ {totalMesVigente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                    </div>
-                                    <div className="bg-sky-50 dark:bg-sky-900/20 px-4 py-2 rounded-lg border border-sky-100 dark:border-sky-800 text-center">
-                                        <p className="text-[10px] font-bold text-sky-700 dark:text-sky-400 uppercase">DAS Estimado</p>
-                                        <p className="text-xl font-mono font-bold text-sky-800 dark:text-white">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                        {(resumo.totalMercadoInterno > 0 || resumo.totalMercadoExterno > 0) && (
+                                            <div className="flex justify-center gap-2 mt-1 text-[9px] font-bold text-slate-400 dark:text-slate-500 border-t border-slate-200 dark:border-slate-600 pt-1">
+                                                <span>Int: {resumo.totalMercadoInterno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                <span className="text-slate-300">|</span>
+                                                <span className="text-indigo-500">Ext: {resumo.totalMercadoExterno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
+                                <div className="bg-sky-50 dark:bg-sky-900/20 px-4 py-2 rounded-lg border border-sky-100 dark:border-sky-800 text-center min-w-[150px]">
+                                    <p className="text-[10px] font-bold text-sky-700 dark:text-sky-400 uppercase">DAS Estimado</p>
+                                    <p className="text-xl font-mono font-bold text-sky-800 dark:text-white">R$ {resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                </div>
                             </div>
+
+                            {resumo.totalMercadoExterno > 0 && (
+                                <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 border-l-4 border-indigo-500 rounded-r-lg animate-fade-in">
+                                    <div className="flex gap-3">
+                                        <GlobeIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <h4 className="text-xs font-bold text-indigo-800 dark:text-indigo-200 uppercase">Segregação de Receitas (Exportação)</h4>
+                                            <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-1 leading-relaxed">
+                                                Identificada receita de exportação. Conforme LC 123/2006 (Art. 18, § 4º-A), a alíquota efetiva é calculada sobre a receita bruta total (RBT12 Global), porém as parcelas relativas a PIS, COFINS e ISS são deduzidas especificamente sobre a parte da exportação.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase mb-3 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
                                 <CalculatorIcon className="w-4 h-4 text-sky-600" /> Discriminativo de Receitas por CNAE

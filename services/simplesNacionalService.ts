@@ -543,11 +543,18 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     let dasTotal = 0;
     let faturamentoTotalMes = 0;
+    let totalMercadoInterno = 0;
+    let totalMercadoExterno = 0;
     const detalhamentoAnexos: DetalhamentoAnexo[] = [];
 
     // Cálculo por Item (CNAE/Anexo)
     itensCalculo.forEach(item => {
         faturamentoTotalMes += item.valor;
+        if (item.isExterior) {
+            totalMercadoExterno += item.valor;
+        } else {
+            totalMercadoInterno += item.valor;
+        }
         
         let anexoAplicado = item.anexo;
         if (anexoAplicado === 'III_V') {
@@ -558,6 +565,8 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         if (!tabela) return;
 
         // 1. Determina a Faixa
+        // NOTA IMPORTANTE: A faixa é determinada pela Receita Bruta Global (Interno + Externo)
+        // conforme LC 123/2006. A segregação ocorre apenas para fins de isenção/imunidade.
         let faixaIndex = tabela.findIndex((f: any) => rbt12 <= f.limite);
         if (faixaIndex === -1 && rbt12 > 0) faixaIndex = tabela.length - 1; // Faixa 6
         if (rbt12 === 0) faixaIndex = 0;
@@ -657,7 +666,10 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         folha_12: empresa.folha12, 
         ultrapassou_sublimite: rbt12 > 3600000,
         faixa_index: faixaIndexPrincipal, // Use main activity range for general distribution chart if needed
-        detalhamento_anexos: detalhamentoAnexos
+        detalhamento_anexos: detalhamentoAnexos,
+        // Segregação para UI
+        totalMercadoInterno,
+        totalMercadoExterno
     };
 };
 
