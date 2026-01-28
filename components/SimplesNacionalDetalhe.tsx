@@ -4,7 +4,7 @@ import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResul
 import * as simplesService from '../services/simplesNacionalService';
 import { ANEXOS_TABELAS, REPARTICAO_IMPOSTOS, calcularDiscriminacaoImpostos } from '../services/simplesNacionalService';
 import { fetchCnaeTaxDetails, fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
-import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon, GlobeIcon } from './Icons';
+import { ArrowLeftIcon, CalculatorIcon, DownloadIcon, SaveIcon, UserIcon, InfoIcon, PlusIcon, TrashIcon, CloseIcon, ShieldIcon, HistoryIcon, DocumentTextIcon, AnimatedCheckIcon, GlobeIcon, CopyIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 import SimpleChart from './SimpleChart';
 import Tooltip from './Tooltip';
@@ -265,7 +265,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }
 
         setFaturamentoPorCnae(prev => {
-            const novoFaturamentoPorCnae: Record<string, CnaeInputState> = { ...prev };
+            const novoFaturamentoPorCnae: Record<string, CnaeInputState> = {};
             
             const getOrCreateState = (key: string, storedItem: number | SimplesDetalheItem | undefined, fallbackTotal: number, cnae: string): CnaeInputState => {
                 
@@ -325,15 +325,22 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
             let storedPrincipal = detalheMes[keyPrincipal] || detalheMes[empresa.cnae];
             
+            // Preserve existing values if user is editing and effect runs (e.g. from state change, though dependencies are restricted)
+            // But here we are rebuilding from props/history mostly.
             novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, storedPrincipal, totalMes, empresa.cnae);
             
-            // 2. Secundários
+            // 2. Secundários (Incluindo Splits)
             if (empresa.atividadesSecundarias) {
                 empresa.atividadesSecundarias.forEach((ativ, index) => {
                     const keySec = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
                     let storedSec = detalheMes[keySec] || detalheMes[ativ.cnae];
                     
-                    if (ativ.cnae === empresa.cnae && storedSec === storedPrincipal) storedSec = undefined;
+                    // Avoid conflict with legacy keys if principal key was used for a secondary in older versions
+                    if (ativ.cnae === empresa.cnae && storedSec === storedPrincipal && index === 0) {
+                         // Only if we suspect it's a legacy mixup, but with unique keys now it's safer.
+                         // Keeping logic simple: Use specific key if available.
+                         storedSec = detalheMes[keySec];
+                    }
 
                     novoFaturamentoPorCnae[keySec] = getOrCreateState(keySec, storedSec, 0, ativ.cnae);
                 });
@@ -365,6 +372,16 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             ...prev,
             [key]: { ...prev[key], [field]: !prev[key][field] }
         }));
+    };
+
+    const handleSplitCnae = (cnae: string, anexo: any) => {
+        // Adiciona uma nova atividade secundária com o mesmo CNAE para permitir configurações diferentes (Segregação)
+        const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae, anexo }];
+        
+        // Atualiza a empresa e força a UI a renderizar o novo campo
+        onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
+        
+        if (onShowToast) onShowToast("Linha adicionada para segregação!");
     };
 
     const handleSaveMesVigente = async () => {
@@ -606,6 +623,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <button onClick={() => handleValidateCnae(cnaeCode)} className="text-[10px] text-sky-600 hover:underline flex items-center gap-1">
                                     <ShieldIcon className="w-3 h-3" /> Validar
                                 </button>
+                                <button onClick={() => handleSplitCnae(cnaeCode, anexoCode)} className="text-[10px] text-sky-600 hover:underline flex items-center gap-1 ml-2 border-l border-slate-200 pl-2">
+                                    <CopyIcon className="w-3 h-3" /> Segregar
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -654,7 +674,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isImune ? 'bg-purple-500 border-purple-500' : 'bg-white border-slate-300'}`}>
                                 {state.isImune && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                             </div>
-                            <span className="text-xs font-bold" title="Imunidade Constitucional (Livros, Jornais, Papel)">Imunidade (Livros)</span>
+                            <span className="text-xs font-bold" title="Imunidade Constitucional (ICMS/IPI). Para PIS/COFINS zero, marque também 'Monofásico'.">Imunidade (ICMS/IPI)</span>
                         </label>
 
                         {showMonofasico && (
@@ -663,7 +683,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isMonofasico ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
                                     {state.isMonofasico && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                 </div>
-                                <span className="text-xs font-bold">Monofásico (PIS/COFINS)</span>
+                                <span className="text-xs font-bold">Monofásico / Alíq. Zero</span>
                             </label>
                         )}
                         {showIcmsSt && (
@@ -784,7 +804,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-l-4 border-sky-500 dark:border-sky-400">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                                 <div className="w-full sm:w-auto">
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência</label>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Mês de Apuração)</label>
                                     <input type="month" value={mesApuracao.toISOString().substring(0, 7)} onChange={(e) => { if(e.target.value) { const [y, m] = e.target.value.split('-'); setMesApuracao(new Date(parseInt(y), parseInt(m)-1, 1)); } }} className="w-full p-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-900 font-bold dark:text-white" />
                                 </div>
                                 <div className="flex flex-col gap-2 w-full sm:w-auto">
@@ -902,6 +922,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             <div className="p-3 bg-slate-100 dark:bg-slate-700/50 rounded-lg mb-3">
                                 <p className="text-[10px] text-slate-500 uppercase font-bold">Receita Bruta Acumulada</p>
                                 <p className="text-lg font-mono font-bold text-slate-900 dark:text-white">R$ {totalRbt12Manual.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                <p className="text-[10px] text-slate-400 mt-1 italic">* Base para cálculo da faixa e alíquota nominal</p>
                             </div>
                         </div>
 

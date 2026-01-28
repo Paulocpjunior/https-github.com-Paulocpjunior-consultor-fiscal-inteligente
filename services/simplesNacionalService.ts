@@ -590,12 +590,14 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         if (reparticao) {
             
             // IMUNIDADE DE LIVROS (CONSTITUCIONAL)
-            // Remove ICMS, IPI e geralmente PIS/COFINS (Alíquota Zero Lei 10.865/04)
+            // Remove ICMS e IPI (Art. 150, VI, 'd' CF/88). 
+            // OBS: PIS/COFINS sobre livros é Alíquota Zero (Lei 10.865/04), devendo ser marcado "Monofásico/Alíquota Zero" separadamente se aplicável,
+            // pois a imunidade constitucional stricto sensu tange impostos (ICMS/IPI).
             if (item.isImune) {
                 if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
-                if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
-                if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
+                // Removido PIS/COFINS daqui para permitir cálculo correto quando houver tributação dessas contribuições
+                // ou uso da flag 'Monofásico' para Alíquota Zero.
             } 
             // SERVIÇO PRESTADO NO EXTERIOR (LC 123/2006, Art. 18, § 4º-A)
             // Imunidade de PIS, COFINS e ISS na exportação de serviços.
