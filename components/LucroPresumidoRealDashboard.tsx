@@ -191,7 +191,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         // Load Saved Configuration
         if (c.regimePadrao) setRegimeSelecionado(c.regimePadrao);
         if (c.issPadraoConfig) setIssConfig(c.issPadraoConfig);
-        if (c.isEquiparacaoHospitalar !== undefined) setIsEquiparacaoHospitalar(c.isEquiparacaoHospitalar);
+        setIsEquiparacaoHospitalar(c.isEquiparacaoHospitalar || false);
         
         // Load Default Retentions if available
         if (c.retencoesPadrao) {
@@ -238,6 +238,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                 setItensAvulsos(registro.itensAvulsos || []);
                 if (registro.regime) setRegimeSelecionado(registro.regime);
                 if (registro.periodoApuracao) setPeriodoApuracao(registro.periodoApuracao);
+                if (registro.isEquiparacaoHospitalar !== undefined) setIsEquiparacaoHospitalar(registro.isEquiparacaoHospitalar);
             } else {
                 // SE NÃO EXISTE REGISTRO (MÊS NOVO), RESETA OS CAMPOS PARA 0 (OU PADRÃO)
                 setFinanceiro({
@@ -491,9 +492,35 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                         </div>
                     </div>
 
-                    {/* Configuração de ISS */}
+                    {/* Configurações Fiscais */}
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2 text-slate-800 dark:text-slate-100"><CalculatorIcon className="w-5 h-5 text-sky-600" /> Configuração de ISS</h3>
+                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2 text-slate-800 dark:text-slate-100"><CalculatorIcon className="w-5 h-5 text-sky-600" /> Configurações Fiscais (ISS e Especiais)</h3>
+                         
+                         {/* Toggle Equiparação Hospitalar */}
+                         <div className="mb-6 p-3 bg-purple-50 dark:bg-purple-900/10 rounded-lg border border-purple-100 dark:border-purple-800/30">
+                            <label className="flex items-start gap-3 cursor-pointer group">
+                                <div className="relative mt-0.5">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isEquiparacaoHospitalar} 
+                                        onChange={() => setIsEquiparacaoHospitalar(prev => !prev)}
+                                        className="w-5 h-5 rounded-lg border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500"
+                                    />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-purple-800 dark:text-purple-300 uppercase flex items-center gap-2">
+                                        Equiparação Hospitalar
+                                        <Tooltip content="Reduz a base de presunção do IRPJ para 8% e CSLL para 12% (Regra: Serviços Hospitalares).">
+                                            <InfoIcon className="w-3 h-3 text-purple-400 cursor-help" />
+                                        </Tooltip>
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 leading-tight mt-1">
+                                        Selecione se a empresa possui decisão judicial ou atende aos requisitos da ANVISA para alíquotas reduzidas em serviços médicos.
+                                    </span>
+                                </div>
+                            </label>
+                         </div>
+
                          <div className="space-y-4">
                             <div className="flex gap-4">
                                 <label className="flex items-center gap-2 cursor-pointer group">
