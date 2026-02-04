@@ -108,6 +108,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         // Campos de Dedução da Base
         valorIpi: 0,
         valorDevolucoes: 0,
+        icmsVendas: 0, // Novo: Deduz de PIS/COFINS
 
         receitaFinanceira: 0, // Novo
         despesas: 0, 
@@ -200,6 +201,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             // Passa Deduções
             valorIpi: financeiro.valorIpi,
             valorDevolucoes: financeiro.valorDevolucoes,
+            icmsVendas: financeiro.icmsVendas, // Passa ICMS
 
             receitaFinanceira: financeiro.receitaFinanceira, // Passado ao cálculo
             despesasOperacionais: financeiro.despesas,
@@ -279,6 +281,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     // Carrega Deduções
                     valorIpi: registro.valorIpi || 0,
                     valorDevolucoes: registro.valorDevolucoes || 0,
+                    icmsVendas: registro.icmsVendas || 0, // Carrega ICMS
 
                     receitaFinanceira: registro.receitaFinanceira || 0,
                     despesas: registro.despesas,
@@ -310,6 +313,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     faturamentoMonofasico: 0,
                     valorIpi: 0,
                     valorDevolucoes: 0,
+                    icmsVendas: 0, // Reset ICMS
                     receitaFinanceira: 0, // Garante reset do campo
                     despesas: 0,
                     despesasDedutiveis: 0,
@@ -437,6 +441,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             // Salvando Deduções
             valorIpi: financeiro.valorIpi,
             valorDevolucoes: financeiro.valorDevolucoes,
+            icmsVendas: financeiro.icmsVendas, // Salvando ICMS
 
             receitaFinanceira: financeiro.receitaFinanceira,
             faturamentoMesTotal: financeiro.faturamentoMesComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoMesServico + financeiro.faturamentoMesServicoHospitalar,
@@ -867,6 +872,17 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                 />
                             </div>
 
+                            {/* NOVO CAMPO: ICMS SOBRE VENDAS (Apenas PIS/COFINS) */}
+                            <div className="p-3 bg-blue-50/30 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-800">
+                                <CurrencyInput 
+                                    label="ICMS sobre Vendas (Tese do Século)" 
+                                    value={financeiro.icmsVendas} 
+                                    onChange={v => setFinanceiro(p => ({...p, icmsVendas: v}))} 
+                                    tooltip="Valor do ICMS destacado nas notas de venda. Será deduzido APENAS da base de cálculo do PIS e COFINS (conforme decisão do STF), mantendo-se na base de IRPJ e CSLL."
+                                    className="bg-white dark:bg-slate-800/50 p-2 rounded border border-blue-100 dark:border-blue-800/30"
+                                />
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                                 <CurrencyInput label="CMV" value={financeiro.cmv} onChange={v => setFinanceiro(p => ({...p, cmv: v}))} />
                                 <CurrencyInput label="Folha de Salários" value={financeiro.folha} onChange={v => setFinanceiro(p => ({...p, folha: v}))} />
@@ -1087,7 +1103,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                 <div className="flex justify-between text-xs text-red-500 font-bold border-t pt-4 italic"><span>(-) Dedução IPI:</span><span>R$ {financeiro.valorIpi.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-xs text-red-500 font-bold italic"><span>(-) Dedução Devoluções:</span><span>R$ {financeiro.valorDevolucoes.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 
-                                <div className="flex justify-between text-lg text-sky-900 font-black border-t-2 border-sky-50 pt-4"><span>Base Cálculo PIS/COF (Efetiva):</span><span>R$ {(financeiro.faturamentoMesComercio + financeiro.faturamentoFiliaisComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoFiliaisIndustria + financeiro.faturamentoMesServico + financeiro.faturamentoFiliaisServico + financeiro.faturamentoMesServicoHospitalar + financeiro.faturamentoFiliaisServicoHospitalar + financeiro.receitaFinanceira + itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0) - financeiro.valorIpi - financeiro.valorDevolucoes).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-lg text-sky-900 font-black border-t-2 border-sky-50 pt-4"><span>Base Cálculo IRPJ/CSLL:</span><span>R$ {(financeiro.faturamentoMesComercio + financeiro.faturamentoFiliaisComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoFiliaisIndustria + financeiro.faturamentoMesServico + financeiro.faturamentoFiliaisServico + financeiro.faturamentoMesServicoHospitalar + financeiro.faturamentoFiliaisServicoHospitalar + financeiro.receitaFinanceira + itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0) - financeiro.valorIpi - financeiro.valorDevolucoes).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                
+                                {financeiro.icmsVendas > 0 && (
+                                    <div className="flex justify-between text-xs text-blue-500 font-bold italic"><span>(-) Ded. ICMS s/ Vendas (STF):</span><span>R$ {financeiro.icmsVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                )}
+                                <div className="flex justify-between text-md text-sky-700 font-black border-t border-sky-50 pt-1"><span>Base Cálculo PIS/COFINS:</span><span>R$ {(financeiro.faturamentoMesComercio + financeiro.faturamentoFiliaisComercio + financeiro.faturamentoMesIndustria + financeiro.faturamentoFiliaisIndustria + financeiro.faturamentoMesServico + financeiro.faturamentoFiliaisServico + financeiro.faturamentoMesServicoHospitalar + financeiro.faturamentoFiliaisServicoHospitalar + financeiro.receitaFinanceira + itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0) - financeiro.valorIpi - financeiro.valorDevolucoes - financeiro.icmsVendas).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                             </div>
                         </div>
                         {/* Rest of the PDF Template (Custos e Gastos, etc.) */}

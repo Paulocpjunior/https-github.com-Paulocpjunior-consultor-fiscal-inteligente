@@ -132,10 +132,11 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const totalFaturadoInputs = fatComercioMes + fatIndustriaMes + fatServicoMes + fatServicoHospMes;
 
     // 2. Aplicação de Deduções da Receita Bruta (IPI e Devoluções)
+    // OBS: ICMS sobre Vendas NÃO é deduzido aqui, pois afeta apenas PIS/COFINS (Tese do Século).
     const valorIpi = input.valorIpi || 0;
     const valorDevolucoes = input.valorDevolucoes || 0;
 
-    // Calcular Bases Ajustadas (Líquidas de IPI e Devoluções) para Presunção
+    // Calcular Bases Ajustadas (Líquidas de IPI e Devoluções) para Presunção (IRPJ/CSLL)
     // Lógica: 
     // - IPI é deduzido prioritariamente da Indústria (Natureza do imposto).
     // - Devoluções são deduzidas proporcionalmente de todas as receitas.
@@ -154,13 +155,14 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const ratioServico = totalSemIpi > 0 ? fatServicoMes / totalSemIpi : 0;
     const ratioServicoHosp = totalSemIpi > 0 ? fatServicoHospMes / totalSemIpi : 0;
 
-    // Bases Finais para Presunção (Líquidas de IPI e Devoluções)
+    // Bases Finais para Presunção (Líquidas de IPI e Devoluções, mas COM ICMS) -> Base IRPJ/CSLL
     const baseComercioFinal = Math.max(0, fatComercioMes - (valorDevolucoes * ratioComercio) - (restoDeducaoIpi > 0 ? restoDeducaoIpi : 0)); // Simplificação: joga resto do IPI no comércio se houver
     const baseIndustriaFinal = Math.max(0, fatIndustriaDeduzidoIpi - (valorDevolucoes * ratioIndustria));
     const baseServicoFinal = Math.max(0, fatServicoMes - (valorDevolucoes * ratioServico));
     const baseServicoHospFinal = Math.max(0, fatServicoHospMes - (valorDevolucoes * ratioServicoHosp));
 
-    // Receita Bruta Efetiva (Base de Cálculo dos Impostos Federais)
+    // Receita Bruta Efetiva (Base de Cálculo IRPJ/CSLL)
+    // Fórmula: Vendas Brutas - Devoluções - IPI
     const receitaBrutaEfetiva = baseComercioFinal + baseIndustriaFinal + baseServicoFinal + baseServicoHospFinal;
     const receitaTotalMes = receitaBrutaEfetiva + (input.receitaFinanceira || 0);
     
@@ -187,8 +189,10 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const retencaoCsll = input.retencaoCsll || 0;
 
     // PIS/COFINS
-    // Base: Receita Bruta Efetiva (Sem dedução de Monofásicos conforme solicitado)
-    const basePisCofins = receitaBrutaEfetiva;
+    // Base: Receita Bruta Efetiva - ICMS sobre Vendas (Exclusão do ICMS da base de PIS/COFINS)
+    // O campo 'faturamentoMonofasico' não é deduzido automaticamente aqui, conforme solicitado anteriormente.
+    const icmsVendas = input.icmsVendas || 0;
+    const basePisCofins = Math.max(0, receitaBrutaEfetiva - icmsVendas);
     
     if (basePisCofins > 0) {
         detalhamento.push({
@@ -196,22 +200,23 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_PIS_CUMULATIVO) - retencaoPis),
-            observacao: `Base: Receita Bruta Efetiva`
+            observacao: icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)})` : `Base: Receita Bruta Efetiva`
         });
         detalhamento.push({
             imposto: 'COFINS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_COFINS_CUMULATIVO) - retencaoCofins),
-            observacao: `Base: Receita Bruta Efetiva`
+            observacao: icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)})` : `Base: Receita Bruta Efetiva`
         });
     }
 
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
     // IRPJ - Base de Presunção
-    // IMPORTANTE: Aqui usamos as bases finais (já líquidas de IPI/Devoluções) MAS NÃO subtraímos o Monofásico.
+    // IMPORTANTE: Aqui usamos as bases finais (já líquidas de IPI/Devoluções) MAS NÃO subtraímos o Monofásico nem o ICMS sobre Vendas.
     // O Monofásico compõe a Receita Bruta para fins de IRPJ/CSLL no Presumido.
+    // O ICMS compõe a Receita Bruta para fins de IRPJ/CSLL no Presumido.
     
     let baseCalculoIrpjComercio = baseComercioFinal;
     let baseCalculoIrpjIndustria = baseIndustriaFinal;
@@ -223,8 +228,6 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
 
     if (input.periodoApuracao === 'Trimestral' && input.acumuladoTrimestre) {
         // Se houver acumulado manual, soma-se. 
-        // Nota: O acumulado manual já deve ser líquido, ou o usuário deve ajustar.
-        // Assumimos aqui que o acumulado inserido pelo usuário é a base de receita válida.
         baseCalculoIrpjComercio += input.acumuladoTrimestre.comercio;
         baseCalculoIrpjIndustria += input.acumuladoTrimestre.industria;
         baseCalculoIrpjServico += input.acumuladoTrimestre.servico;
@@ -339,7 +342,10 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     const totalReceitas = receitaLiquida + (input.receitaFinanceira || 0) + (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
 
     // PIS/COFINS (Não Cumulativo - Mensal - Consolidado)
-    const basePisCofins = Math.max(0, receitaLiquida - (input.faturamentoMonofasico || 0));
+    // Base PIS/COFINS Real: Receita Líquida - ICMS sobre Vendas (Tese do Século) - Monofásico
+    // Monofásico é deduzido aqui pois no Regime Não-Cumulativo a receita é segregada.
+    const icmsVendas = input.icmsVendas || 0;
+    const basePisCofins = Math.max(0, receitaLiquida - icmsVendas - (input.faturamentoMonofasico || 0));
     const baseCredito = input.despesasDedutiveis + extraBaseCredito; 
     
     detalhamento.push({
@@ -347,7 +353,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         baseCalculo: basePisCofins,
         aliquota: ALIQ_PIS_NAO_CUMULATIVO * 100,
         valor: Math.max(0, (basePisCofins * ALIQ_PIS_NAO_CUMULATIVO) - (baseCredito * ALIQ_PIS_NAO_CUMULATIVO) - (input.retencaoPis || 0)),
-        observacao: `Mensal - Crédito sobre despesas dedutíveis`
+        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.`
     });
 
     detalhamento.push({
@@ -355,7 +361,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         baseCalculo: basePisCofins,
         aliquota: ALIQ_COFINS_NAO_CUMULATIVO * 100,
         valor: Math.max(0, (basePisCofins * ALIQ_COFINS_NAO_CUMULATIVO) - (baseCredito * ALIQ_COFINS_NAO_CUMULATIVO) - (input.retencaoCofins || 0)),
-        observacao: `Mensal - Crédito sobre despesas dedutíveis`
+        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.`
     });
 
     // PIS/COFINS sobre Receita Financeira (Regime Não-Cumulativo)

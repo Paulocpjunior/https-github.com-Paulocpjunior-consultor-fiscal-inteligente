@@ -287,6 +287,7 @@ export interface LucroInput {
     // Novas deduções para cálculo correto da Base Bruta
     valorIpi?: number;
     valorDevolucoes?: number;
+    icmsVendas?: number; // Novo: ICMS sobre vendas (Deduz apenas da base de PIS/COFINS)
 
     receitaFinanceira: number; // Novo campo explícito
     despesasOperacionais: number;
@@ -365,6 +366,7 @@ export interface FichaFinanceiraRegistro {
     // Novos campos de dedução
     valorIpi?: number;
     valorDevolucoes?: number;
+    icmsVendas?: number; // Novo: ICMS para dedução de PIS/COFINS
 
     receitaFinanceira?: number; // Novo
     faturamentoMesTotal: number;
