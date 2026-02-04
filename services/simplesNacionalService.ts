@@ -623,9 +623,16 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 // Se não for imune nem exterior, aplica as regras normais de retenção/ST/Monofásico
                 
                 // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
-                if ((item.issRetido || item.isSup) && reparticao['ISS']) {
-                    percentualReducao += reparticao['ISS'];
+                if (item.issRetido || item.isSup) {
+                    if (anexoAplicado === 'V') {
+                        // Regra vigente solicitada: Anexo V com retenção deduz 23.5% fixo da alíquota efetiva
+                        percentualReducao += 23.5;
+                    } else if (reparticao['ISS']) {
+                        // Demais anexos seguem a tabela de repartição
+                        percentualReducao += reparticao['ISS'];
+                    }
                 }
+
                 if (item.icmsSt && reparticao['ICMS']) {
                     percentualReducao += reparticao['ICMS'];
                 }
