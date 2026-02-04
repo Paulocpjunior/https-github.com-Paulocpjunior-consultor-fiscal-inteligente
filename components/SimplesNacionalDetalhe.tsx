@@ -214,7 +214,13 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             });
         });
 
-        const empresaTemp = { ...empresa, faturamentoManual: historicoManualEditavel };
+        // Use a folha12Input em tempo real para cálculo reativo, não apenas o salvo no banco (empresa.folha12)
+        // Isso permite simulação "E se?" imediata
+        const empresaTemp = { 
+            ...empresa, 
+            faturamentoManual: historicoManualEditavel,
+            folha12: folha12Input // Overrides saved value with current input for calculation
+        };
 
         let fatorRValue: number | undefined = undefined;
         if (fatorRManual.trim() !== '') {
@@ -231,7 +237,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 fatorRManual: fatorRValue
             }
         );
-    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel, fatorRManual]);
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel, fatorRManual, folha12Input]);
 
     const discriminacaoImpostos = useMemo(() => {
         return calcularDiscriminacaoImpostos(
@@ -244,6 +250,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const percentuaisImpostos = useMemo(() => {
         return REPARTICAO_IMPOSTOS[resumo.anexo_efetivo]?.[Math.min(resumo.faixa_index, 5)] || {};
     }, [resumo]);
+
+    // ... (restante do código igual até a parte da Modal de Memória)
 
     // --- EFFECTS ---
 
@@ -355,8 +363,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.faturamentoMensalDetalhado, empresa.atividadesSecundarias, empresa.cnae, empresa.anexo]);
 
-    // --- HANDLERS ---
-
+    // --- HANDLERS (Same as before) ---
+    // ...
     const handleFaturamentoChange = (key: string, rawValue: string) => {
         const digits = rawValue.replace(/\D/g, '');
         const numberValue = parseInt(digits, 10) / 100;
@@ -376,12 +384,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     };
 
     const handleSplitCnae = (cnae: string, anexo: any) => {
-        // Adiciona uma nova atividade secundária com o mesmo CNAE para permitir configurações diferentes (Segregação)
         const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae, anexo }];
-        
-        // Atualiza a empresa e força a UI a renderizar o novo campo
         onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
-        
         if (onShowToast) onShowToast("Linha duplicada para segregação de receitas!");
     };
 
@@ -405,8 +409,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
                 totalCalculado += val;
 
-                // Salva SEMPRE o objeto completo com flags para persistência, mesmo que valor seja 0
-                // Isso permite carregar as flags no futuro (mês seguinte)
                 detalheMes[key] = {
                      valor: val,
                      issRetido: state.issRetido,
@@ -428,8 +430,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
             const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
             const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
-            
-            // Atualiza o histórico detalhado preservando outros meses
             const updatedDetalhado = { ...historicoDetalhadoEditavel, [mesChave]: detalheMes };
 
             setHistoricoManualEditavel(updatedManual);
@@ -451,7 +451,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             };
             
             const novoHistoricoCalculos = [...(empresa.historicoCalculos || []), novoItemHistorico];
-            await onUpdateEmpresa(empresa.id, { faturamentoManual: updatedManual, faturamentoMensalDetalhado: updatedDetalhado, historicoCalculos: novoHistoricoCalculos });
+            await onUpdateEmpresa(empresa.id, { 
+                faturamentoManual: updatedManual, 
+                faturamentoMensalDetalhado: updatedDetalhado, 
+                historicoCalculos: novoHistoricoCalculos,
+                folha12: folha12Input
+            });
 
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 2500);
@@ -483,25 +488,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         try {
             const { default: jsPDF } = await import('jspdf');
             const { default: html2canvas } = await import('html2canvas');
-
-            // Renderiza o elemento oculto
             const element = document.getElementById('extrato-simples-completo');
             if (!element) throw new Error('Elemento de extrato não encontrado');
 
-            // Temporariamente torna visível para o canvas se necessário, 
-            // mas a técnica de absolute fora da tela geralmente funciona.
-            // Para garantir estilos, forçamos um reflow se precisar.
-
-            const canvas = await html2canvas(element, {
-                scale: 2,
-                backgroundColor: '#ffffff', // Força fundo branco
-                logging: false,
-                windowWidth: 1200 // Largura fixa para layout consistente
-            });
-
+            const canvas = await html2canvas(element, { scale: 2, backgroundColor: '#ffffff', logging: false, windowWidth: 1200 });
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
-            
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             const imgProps = pdf.getImageProperties(imgData);
@@ -531,68 +523,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }
     };
 
-    const handleSearchCnae = (query: string) => {
-        setNewCnaeCode(query);
-        if (searchTimeout.current) clearTimeout(searchTimeout.current);
-        if (query.length < 3) { setCnaeSuggestions([]); return; }
-        setIsSearchingCnae(true);
-        searchTimeout.current = setTimeout(async () => {
-            try { setCnaeSuggestions(await fetchCnaeSuggestions(query)); } catch (e) { console.error(e); } finally { setIsSearchingCnae(false); }
-        }, 600);
-    };
-    const handleSelectSuggestion = (suggestion: CnaeSuggestion) => {
-        setNewCnaeCode(suggestion.code); setCnaeSuggestions([]);
-        if (suggestion.code.startsWith('47')) setNewCnaeAnexo('I');
-        else if (suggestion.code.startsWith('10')) setNewCnaeAnexo('II');
-        else setNewCnaeAnexo('III');
-    };
-    const handleAddNewCnae = () => {
-        if (!newCnaeCode) return;
-        const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae: newCnaeCode, anexo: newCnaeAnexo }];
-        onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
-        setIsAddingCnae(false); setNewCnaeCode(''); setNewCnaeAnexo('I');
-    };
-    const handleRemoveSecondary = (index: number) => {
-        if (!empresa.atividadesSecundarias) return;
-        const newAtividades = empresa.atividadesSecundarias.filter((_, i) => i !== index);
-        onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades });
-    };
-    const handleValidateCnae = async (cnaeToValidate: string) => {
-        if (!cnaeToValidate.trim()) return;
-        setIsValidatingCnae(cnaeToValidate);
-        try {
-            const result = await fetchCnaeDescription(cnaeToValidate);
-            setCnaeAnalysis(result.text || '');
-        } catch (e) { if(onShowToast) onShowToast("Erro ao validar CNAE."); } finally { setIsValidatingCnae(null); }
-    };
-    const handleAnalyzeTax = async () => {
-        setIsAnalyzingTax(true); setTaxDetails({});
-        try {
-            const cnaesToAnalyze = [empresa.cnae, ...(empresa.atividadesSecundarias?.map(a => a.cnae) || [])];
-            const uniqueCnaes = Array.from(new Set(cnaesToAnalyze));
-            const results: Record<string, CnaeTaxDetail[]> = {};
-            for (const cnae of uniqueCnaes) {
-                if (cnae) results[cnae] = await fetchCnaeTaxDetails(cnae, manualTaxRates);
-            }
-            setTaxDetails(results);
-        } catch (e) { console.error(e); if(onShowToast) onShowToast("Erro ao analisar impostos."); } finally { setIsAnalyzingTax(false); }
-    };
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files.length > 0) {
-            setIsImporting(true);
-            try {
-                const res = await onImport(empresa.id, e.target.files[0]);
-                setImportResult(res);
-            } catch (error) {
-                console.error(error);
-                if (onShowToast) onShowToast("Erro na importação.");
-            } finally {
-                setIsImporting(false);
-            }
-        }
-    };
-    
-    // ... (Render Helpers)
+    // ... (rest of search/validate cnae handlers)
+    // Same as existing file...
+    const handleSearchCnae = (query: string) => { setNewCnaeCode(query); if (searchTimeout.current) clearTimeout(searchTimeout.current); if (query.length < 3) { setCnaeSuggestions([]); return; } setIsSearchingCnae(true); searchTimeout.current = setTimeout(async () => { try { setCnaeSuggestions(await fetchCnaeSuggestions(query)); } catch (e) { console.error(e); } finally { setIsSearchingCnae(false); } }, 600); };
+    const handleSelectSuggestion = (suggestion: CnaeSuggestion) => { setNewCnaeCode(suggestion.code); setCnaeSuggestions([]); if (suggestion.code.startsWith('47')) setNewCnaeAnexo('I'); else if (suggestion.code.startsWith('10')) setNewCnaeAnexo('II'); else setNewCnaeAnexo('III'); };
+    const handleAddNewCnae = () => { if (!newCnaeCode) return; const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae: newCnaeCode, anexo: newCnaeAnexo }]; onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades }); setIsAddingCnae(false); setNewCnaeCode(''); setNewCnaeAnexo('I'); };
+    const handleRemoveSecondary = (index: number) => { if (!empresa.atividadesSecundarias) return; const newAtividades = empresa.atividadesSecundarias.filter((_, i) => i !== index); onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades }); };
+    const handleValidateCnae = async (cnaeToValidate: string) => { if (!cnaeToValidate.trim()) return; setIsValidatingCnae(cnaeToValidate); try { const result = await fetchCnaeDescription(cnaeToValidate); setCnaeAnalysis(result.text || ''); } catch (e) { if(onShowToast) onShowToast("Erro ao validar CNAE."); } finally { setIsValidatingCnae(null); } };
+    const handleAnalyzeTax = async () => { setIsAnalyzingTax(true); setTaxDetails({}); try { const cnaesToAnalyze = [empresa.cnae, ...(empresa.atividadesSecundarias?.map(a => a.cnae) || [])]; const uniqueCnaes = Array.from(new Set(cnaesToAnalyze)); const results: Record<string, CnaeTaxDetail[]> = {}; for (const cnae of uniqueCnaes) { if (cnae) results[cnae] = await fetchCnaeTaxDetails(cnae, manualTaxRates); } setTaxDetails(results); } catch (e) { console.error(e); if(onShowToast) onShowToast("Erro ao analisar impostos."); } finally { setIsAnalyzingTax(false); } };
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { setIsImporting(true); try { const res = await onImport(empresa.id, e.target.files[0]); setImportResult(res); } catch (error) { console.error(error); if (onShowToast) onShowToast("Erro na importação."); } finally { setIsImporting(false); } } };
+
+    // ... (renderCardCnae same as existing)
     const renderCardCnae = (cnaeCode: string, anexoCode: string, label: string, isSecondary = false, index?: number) => {
         const key = isSecondary 
             ? `secundario::${index}::${cnaeCode}::${anexoCode}`
@@ -666,23 +607,23 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-600">
                     <p className="text-[10px] uppercase font-bold text-slate-400 mb-2">Opções de Retenção / Dedução</p>
                     <div className="flex flex-wrap gap-2">
-                        {/* SERVIÇO NO EXTERIOR (NOVO) */}
+                        {/* SERVIÇO NO EXTERIOR */}
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isExterior ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                             <input type="checkbox" checked={state.isExterior} onChange={() => handleOptionToggle(key, 'isExterior')} className="hidden" />
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isExterior ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
                                 {state.isExterior && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                             </div>
                             <GlobeIcon className={`w-3 h-3 ${state.isExterior ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-400'}`} />
-                            <span className="text-xs font-bold" title="Exportação de Serviços (Isenção de ISS, PIS e COFINS)">Serviço no Exterior</span>
+                            <span className="text-xs font-bold" title="Exportação de Serviços (Isenção de ISS, PIS, COFINS, ICMS e IPI)">Serviço no Exterior</span>
                         </label>
 
-                        {/* IMUNIDADE DE LIVROS */}
+                        {/* ... (Other toggles: Imune, Monofasico, ICMS ST, ISS, SUP) */}
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isImune ? 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                             <input type="checkbox" checked={state.isImune} onChange={() => handleOptionToggle(key, 'isImune')} className="hidden" />
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isImune ? 'bg-purple-500 border-purple-500' : 'bg-white border-slate-300'}`}>
                                 {state.isImune && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                             </div>
-                            <span className="text-xs font-bold" title="Imunidade Constitucional (ICMS/IPI). Para PIS/COFINS zero, marque também 'Monofásico'.">Imunidade (ICMS/IPI)</span>
+                            <span className="text-xs font-bold" title="Imunidade Constitucional (ICMS/IPI).">Imunidade (ICMS/IPI)</span>
                         </label>
 
                         {showMonofasico && (
@@ -733,7 +674,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         );
     };
 
-    // --- RENDER ---
+    // ... (rest of the file content)
+    // ...
+    // renderTaxAnalysisSection implementation
     const renderTaxAnalysisSection = () => {
         return (
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mt-6">
@@ -745,6 +688,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         Alíquotas médias e bases legais (ICMS, ISS, PIS/COFINS) obtidas via IA.
                     </p>
                 </div>
+                {/* ... (content same as previous) ... */}
                 <div className="mb-6">
                     <button onClick={() => setShowRefinement(!showRefinement)} className="text-xs font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 flex items-center gap-1 mb-2 transition-colors">
                         {showRefinement ? '▼ Ocultar Refinamento' : '▶ Refinar com Alíquotas Manuais (Opcional)'}
@@ -779,6 +723,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     return (
         <div className="animate-fade-in pb-12">
+            {/* Header ... */}
             <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors font-bold">
@@ -810,6 +755,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
                     <div className="lg:col-span-2 space-y-6">
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-l-4 border-sky-500 dark:border-sky-400">
+                            {/* ... (Competência and Summary Cards) ... */}
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                                 <div className="w-full sm:w-auto">
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Apuração Mensal)</label>
@@ -824,6 +770,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                                 <span>Int: {resumo.totalMercadoInterno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                                 <span className="text-slate-300">|</span>
                                                 <span className="text-indigo-500">Ext: {resumo.totalMercadoExterno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                        )}
+                                        {/* Indicador de Fator R */}
+                                        {['III', 'III_V', 'V'].includes(empresa.anexo) && (resumo.fator_r > 0) && (
+                                            <div className={`mt-2 p-1.5 rounded text-[10px] font-bold border ${resumo.fator_r >= 0.28 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                                                Fator R: {(resumo.fator_r * 100).toFixed(2)}%
+                                                <span className="block mt-0.5 opacity-80">
+                                                    {resumo.fator_r >= 0.28 
+                                                        ? ' (>28% -> Reduz para Anexo III)' 
+                                                        : ' (<28% -> Mantém Anexo V)'}
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -841,19 +798,19 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                         <div>
                                             <h4 className="text-xs font-bold text-indigo-800 dark:text-indigo-200 uppercase">Segregação de Receitas (Exportação)</h4>
                                             <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-1 leading-relaxed">
-                                                Identificada receita de exportação. Conforme LC 123/2006 (Art. 18, § 4º-A), a alíquota efetiva é calculada sobre a receita bruta total (RBT12 Global), porém as parcelas relativas a PIS, COFINS e ISS são deduzidas especificamente sobre a parte da exportação.
+                                                Identificada receita de exportação. A alíquota efetiva foi ajustada para remover a incidência de PIS, COFINS, ISS, ICMS e IPI, mantendo apenas os tributos federais sobre renda e folha (IRPJ, CSLL e CPP), conforme legislação.
                                             </p>
                                         </div>
                                     </div>
                                 </div>
                             )}
 
+                            {/* ... rest of the main panel */}
                             <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase mb-3 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
                                 <CalculatorIcon className="w-4 h-4 text-sky-600" /> Discriminativo de Receitas por CNAE
                             </h4>
 
                             <div className="space-y-4">
-                                {/* Lista Unificada de CNAEs */}
                                 {renderCardCnae(empresa.cnae, empresa.anexo, 'Principal')}
                                 {(empresa.atividadesSecundarias || []).map((ativ, i) => renderCardCnae(ativ.cnae, ativ.anexo, 'Secundária', true, i))}
                             </div>
@@ -864,6 +821,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </button>
                             ) : (
                                 <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 relative">
+                                    {/* ... add cnae form ... */}
                                     <p className="text-xs font-bold text-sky-700 mb-3 uppercase">Nova Atividade</p>
                                     <div className="flex gap-2 mb-3 items-end">
                                         <div className="flex-grow">
@@ -923,7 +881,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         </div>
                     </div>
 
-                    {/* Coluna Direita (Ferramentas) */}
+                    {/* Coluna Direita (Ferramentas) ... */}
                     <div className="space-y-6">
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
@@ -977,12 +935,11 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             )}
                         </div>
 
-                         {/* Seção de Análise Tributária IA */}
                          {renderTaxAnalysisSection()}
                     </div>
                 </div>
 
-                {/* Seção Histórico de Cálculos Salvos (Tabela) */}
+                {/* Seção Histórico ... */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                     <div className="p-6 border-b border-slate-200 dark:border-slate-700">
                          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -1029,7 +986,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 </div>
             </div>
 
-             {/* Modal Histórico Manual */}
+             {/* Modal Histórico Manual ... */}
              {isHistoryModalOpen && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsHistoryModalOpen(false)}>
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -1108,9 +1065,13 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                         <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
                                             <td className="px-4 py-3">
                                                 <div className="font-bold text-slate-700 dark:text-slate-200">{item.cnae || 'Receita'}</div>
-                                                <div className="flex gap-1 mt-1">
-                                                    <span className="text-[10px] bg-slate-200 dark:bg-slate-600 px-1.5 rounded text-slate-600 dark:text-slate-300">Anexo {item.anexo}</span>
-                                                    {item.isExterior && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded font-bold border border-indigo-200">Exportação</span>}
+                                                <div className="flex gap-1 mt-1 flex-wrap">
+                                                    <span className={`text-[10px] px-1.5 rounded text-white font-bold ${item.anexoOriginal && item.anexoOriginal !== item.anexo ? 'bg-purple-600' : 'bg-slate-400 dark:bg-slate-600'}`}>
+                                                        {item.anexoOriginal && item.anexoOriginal !== item.anexo 
+                                                            ? `Anexo ${item.anexoOriginal} → III (Fator R)` 
+                                                            : `Anexo ${item.anexo}`}
+                                                    </span>
+                                                    {item.isExterior && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 rounded font-bold border border-indigo-200">Exportação (IRPJ/CSLL/CPP)</span>}
                                                     {item.isImune && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 rounded font-bold border border-purple-200">Imunidade</span>}
                                                     {!item.isExterior && !item.isImune && <span className="text-[10px] bg-green-50 text-green-700 px-1.5 rounded font-bold border border-green-200">Tributado</span>}
                                                 </div>

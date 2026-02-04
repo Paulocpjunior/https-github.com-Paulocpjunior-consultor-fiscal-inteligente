@@ -177,8 +177,9 @@ export interface SimplesCalculoMensal {
 }
 
 export interface DetalhamentoAnexo {
-    cnae?: string; // NEW field to track origin
+    cnae?: string; 
     anexo: SimplesNacionalAnexo;
+    anexoOriginal?: SimplesNacionalAnexo; // NEW: Para mostrar de onde veio (Ex: V -> III)
     faturamento: number;
     aliquotaNominal: number; 
     aliquotaEfetiva: number;
@@ -260,6 +261,7 @@ export interface AcumuladoTrimestre {
     comercio: number;
     industria: number;
     servico: number;
+    servicoHospitalar?: number; // Acumulado específico para hosp
     financeira: number;
     mesesConsiderados: string[];
 }
@@ -269,9 +271,23 @@ export interface LucroInput {
     periodoApuracao: 'Mensal' | 'Trimestral';
     mesReferencia?: string; // YYYY-MM (Necessário para regra LC 224/2025)
     faturamentoComercio: number;
-    faturamentoIndustria: number; // Novo
-    faturamentoServico: number;
+    faturamentoIndustria: number;
+    faturamentoServico: number; // Serviço Geral (32%)
+    faturamentoServicoHospitalar?: number; // Serviço Equiparado (8%/12%)
     faturamentoMonofasico: number;
+    
+    // Novo: Consolidação de Filiais
+    faturamentoFiliais?: {
+        comercio: number;
+        industria: number;
+        servico: number;
+        servicoHospitalar?: number; // Filial Hosp
+    };
+
+    // Novas deduções para cálculo correto da Base Bruta
+    valorIpi?: number;
+    valorDevolucoes?: number;
+
     receitaFinanceira: number; // Novo campo explícito
     despesasOperacionais: number;
     despesasDedutiveis: number; 
@@ -285,6 +301,8 @@ export interface LucroInput {
     retencaoCsll?: number;
     // Feature: Equiparação Hospitalar
     isEquiparacaoHospitalar?: boolean;
+    // Feature: Presunção Reduzida 16% (R$ 120k/ano)
+    isPresuncaoReduzida16?: boolean;
     // Feature: Campos Dinâmicos
     itensAvulsos?: ItemFinanceiroAvulso[];
     // Feature: LC 224/2025
@@ -329,9 +347,25 @@ export interface FichaFinanceiraRegistro {
     issValorOuAliquota?: number; // Salva o valor usado (rate ou fixo)
     acumuladoAno: number;
     faturamentoMesComercio: number;
-    faturamentoMesIndustria: number; // Novo
+    faturamentoMesIndustria: number;
     faturamentoMesServico: number;
+    faturamentoMesServicoHospitalar?: number; // Segregação Salva
+    
+    // Novo: Persistência Filiais
+    faturamentoFiliaisComercio?: number;
+    faturamentoFiliaisIndustria?: number;
+    faturamentoFiliaisServico?: number;
+    faturamentoFiliaisServicoHospitalar?: number; // Segregação Salva
+
+    // Feature: Fechamento Trimestral Manual (Salvar o que foi usado no fechamento)
+    dadosTrimestrais?: AcumuladoTrimestre;
+
     faturamentoMonofasico?: number;
+    
+    // Novos campos de dedução
+    valorIpi?: number;
+    valorDevolucoes?: number;
+
     receitaFinanceira?: number; // Novo
     faturamentoMesTotal: number;
     totalGeral: number; 
@@ -347,6 +381,7 @@ export interface FichaFinanceiraRegistro {
     retencaoCsll?: number;
     // Configurações Especiais
     isEquiparacaoHospitalar?: boolean;
+    isPresuncaoReduzida16?: boolean; // Nova feature 16%
     // Itens Dinâmicos
     itensAvulsos?: ItemFinanceiroAvulso[];
     // Analise
@@ -368,6 +403,7 @@ export interface LucroPresumidoEmpresa {
     regimePadrao?: 'Presumido' | 'Real';
     issPadraoConfig?: IssConfig; // Configuração padrão da empresa
     isEquiparacaoHospitalar?: boolean; // Configuração padrão da empresa
+    isPresuncaoReduzida16?: boolean; // Configuração padrão da empresa
     retencoesPadrao?: { pis: number; cofins: number; irpj: number; csll: number }; // Retenções padrão salvas no perfil
     createdBy?: string;
     createdByEmail?: string; // NOVO: Para identificar quem fez o cálculo no painel do admin

@@ -557,7 +557,17 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         }
         
         let anexoAplicado = item.anexo;
-        if (anexoAplicado === 'III_V') {
+        const anexoOriginal = item.anexo; // Store original for trace
+        
+        // --- REGRA DO FATOR R (LC 123/2006) ---
+        // Se a atividade é Anexo V, ela pode migrar para o Anexo III se Fator R >= 28%
+        if (anexoAplicado === 'V') {
+            if (fator_r >= 0.28) {
+                anexoAplicado = 'III';
+            }
+        }
+        // Se a atividade é III_V (híbrida/configurada auto), aplica a regra padrão
+        else if (anexoAplicado === 'III_V') {
             anexoAplicado = fator_r >= 0.28 ? 'III' : 'V';
         }
 
@@ -600,13 +610,14 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 // ou uso da flag 'Monofásico' para Alíquota Zero.
             } 
             // SERVIÇO PRESTADO NO EXTERIOR (LC 123/2006, Art. 18, § 4º-A)
-            // Imunidade de PIS, COFINS e ISS na exportação de serviços.
+            // Imunidade de PIS, COFINS, ISS, ICMS e IPI na exportação.
+            // O cálculo recai apenas sobre IRPJ, CSLL e CPP (exceto Anexo IV onde CPP é pago em guia separada).
             else if (item.isExterior) {
                 if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                 if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
                 if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
-                // ICMS geralmente não incide sobre serviços do anexo III/IV/V, mas se houver incidência mista (raro), 
-                // a exportação também costuma ser imune. Para o Simples, focamos nos tributos principais de serviço.
+                if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
+                if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
             }
             else {
                 // Se não for imune nem exterior, aplica as regras normais de retenção/ST/Monofásico
@@ -633,6 +644,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         detalhamentoAnexos.push({
             cnae: item.cnae, // Added cnae field for mapping
             anexo: anexoAplicado as any,
+            anexoOriginal: anexoOriginal, // Trace of original annex
             faturamento: item.valor,
             aliquotaNominal: faixa.aliquota,
             aliquotaEfetiva: aliq_final,
