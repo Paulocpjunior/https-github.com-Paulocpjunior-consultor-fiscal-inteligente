@@ -118,7 +118,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
         retencaoPis: 0, 
         retencaoCofins: 0, 
         retencaoIrpj: 0, 
-        retencaoCsll: 0
+        retencaoCsll: 0,
+
+        // Novos campos: Impostos a Recolher (Manual)
+        ipiRecolher: 0,
+        icmsProprioRecolher: 0,
+        icmsStRecolher: 0
     });
 
     // Estado para os acumulados trimestrais manuais
@@ -217,7 +222,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             isPresuncaoReduzida16, // Passando a nova flag
             itensAvulsos,
             acumuladoAno: financeiro.acumuladoAno, // Necessário para checagem do limite de R$ 5M
-            acumuladoTrimestre: periodoApuracao === 'Trimestral' ? acumuladoTrimestreManual : undefined
+            acumuladoTrimestre: periodoApuracao === 'Trimestral' ? acumuladoTrimestreManual : undefined,
+
+            // Passa Impostos Manuais para o serviço anexar ao resultado
+            ipiRecolher: financeiro.ipiRecolher,
+            icmsProprioRecolher: financeiro.icmsProprioRecolher,
+            icmsStRecolher: financeiro.icmsStRecolher
         };
         return calcularLucro(input);
     }, [financeiro, regimeSelecionado, periodoApuracao, issConfig, isEquiparacaoHospitalar, isPresuncaoReduzida16, itensAvulsos, mesReferencia, acumuladoTrimestreManual]);
@@ -291,7 +301,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     retencaoPis: registro.retencaoPis || 0,
                     retencaoCofins: registro.retencaoCofins || 0,
                     retencaoIrpj: registro.retencaoIrpj || 0,
-                    retencaoCsll: registro.retencaoCsll || 0
+                    retencaoCsll: registro.retencaoCsll || 0,
+
+                    // Carrega Impostos Manuais
+                    ipiRecolher: registro.ipiRecolher || 0,
+                    icmsProprioRecolher: registro.icmsProprioRecolher || 0,
+                    icmsStRecolher: registro.icmsStRecolher || 0
                 });
                 setItensAvulsos(registro.itensAvulsos || []);
                 if (registro.regime) setRegimeSelecionado(registro.regime);
@@ -323,7 +338,11 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                     retencaoPis: empresa.retencoesPadrao?.pis || 0,
                     retencaoCofins: empresa.retencoesPadrao?.cofins || 0,
                     retencaoIrpj: empresa.retencoesPadrao?.irpj || 0,
-                    retencaoCsll: empresa.retencoesPadrao?.csll || 0
+                    retencaoCsll: empresa.retencoesPadrao?.csll || 0,
+                    // Reset Impostos Manuais
+                    ipiRecolher: 0,
+                    icmsProprioRecolher: 0,
+                    icmsStRecolher: 0
                 });
                 setItensAvulsos([]);
                 // Opcional: Manter o regime/período atual selecionado na tela
@@ -454,6 +473,12 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
             retencaoCofins: financeiro.retencaoCofins,
             retencaoIrpj: financeiro.retencaoIrpj,
             retencaoCsll: financeiro.retencaoCsll,
+            
+            // Salvando Impostos Manuais
+            ipiRecolher: financeiro.ipiRecolher,
+            icmsProprioRecolher: financeiro.icmsProprioRecolher,
+            icmsStRecolher: financeiro.icmsStRecolher,
+
             isEquiparacaoHospitalar,
             isPresuncaoReduzida16,
             itensAvulsos,
@@ -894,6 +919,34 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                         </div>
                     </div>
 
+                    {/* Apuração Fiscal (Impostos Estaduais/IPI) */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2 text-slate-800 dark:text-slate-100"><ShieldIcon className="w-5 h-5 text-sky-600" /> Apuração Fiscal (Impostos Estaduais/IPI)</h3>
+                        <p className="text-xs text-slate-500 mb-2">Informe os valores apurados para compor a ficha financeira e o total de desembolsos.</p>
+                        <div className="space-y-4">
+                            <CurrencyInput 
+                                label="ICMS Próprio (A Recolher)" 
+                                value={financeiro.icmsProprioRecolher} 
+                                onChange={v => setFinanceiro(p => ({...p, icmsProprioRecolher: v}))} 
+                                className="bg-amber-50/30 dark:bg-amber-900/10 p-2 rounded border border-amber-100 dark:border-amber-800/30"
+                            />
+                            <div className="grid grid-cols-2 gap-4">
+                                <CurrencyInput 
+                                    label="ICMS ST (A Recolher)" 
+                                    value={financeiro.icmsStRecolher} 
+                                    onChange={v => setFinanceiro(p => ({...p, icmsStRecolher: v}))} 
+                                    className="bg-amber-50/30 dark:bg-amber-900/10 p-2 rounded border border-amber-100 dark:border-amber-800/30"
+                                />
+                                <CurrencyInput 
+                                    label="IPI (A Recolher)" 
+                                    value={financeiro.ipiRecolher} 
+                                    onChange={v => setFinanceiro(p => ({...p, ipiRecolher: v}))} 
+                                    className="bg-red-50/20 dark:bg-red-900/10 p-2 rounded border border-red-100 dark:border-red-800/30"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Retenções na Fonte */}
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                         <h3 className="text-lg font-bold mb-4 flex items-center gap-2 border-b pb-2 text-slate-800 dark:text-slate-100"><ShieldIcon className="w-5 h-5 text-sky-600" /> Retenções na Fonte (Crédito)</h3>
@@ -966,7 +1019,9 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                             <p className="text-[10px] text-slate-500 uppercase font-bold mt-0.5">
                                                 {det.imposto.includes('ISS-SUP') 
                                                     ? `Sócios: ${det.baseCalculo}`
-                                                    : `Base: R$ ${det.baseCalculo.toLocaleString('pt-BR')} (${det.aliquota.toFixed(2)}%)`
+                                                    : det.aliquota > 0 
+                                                        ? `Base: R$ ${det.baseCalculo.toLocaleString('pt-BR')} (${det.aliquota.toFixed(2)}%)`
+                                                        : `Valor Informado Manualmente`
                                                 }
                                             </p>
                                         </div>
@@ -1114,18 +1169,23 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                         {/* Rest of the PDF Template (Custos e Gastos, etc.) */}
                         {/* ... */}
                         <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
-                            <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Custos e Gastos Informados</h4>
+                            <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Custos, Gastos e Impostos</h4>
                             <div className="space-y-4">
                                 <div className="flex justify-between text-sm font-bold text-slate-600"><span>Custo de Mercadoria (CMV):</span><span>R$ {financeiro.cmv.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-sm font-bold text-slate-600"><span>Folha e Encargos Sociais:</span><span>R$ {financeiro.folha.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-sm font-bold text-slate-600"><span>Despesas Operacionais:</span><span>R$ {financeiro.despesas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                
+                                {financeiro.icmsProprioRecolher > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>ICMS Próprio (Apuração):</span><span>R$ {financeiro.icmsProprioRecolher.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {financeiro.icmsStRecolher > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>ICMS ST (Apuração):</span><span>R$ {financeiro.icmsStRecolher.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {financeiro.ipiRecolher > 0 && <div className="flex justify-between text-sm font-bold text-red-600"><span>IPI (Apuração):</span><span>R$ {financeiro.ipiRecolher.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+
                                 {itensAvulsos.filter(i => i.tipo === 'despesa').length > 0 && (
                                     <div className="flex justify-between text-sm font-bold text-slate-600">
                                         <span>(+) Outras Despesas:</span>
                                         <span>R$ {itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
                                     </div>
                                 )}
-                                <div className="flex justify-between text-sm font-black text-sky-900 border-t pt-4"><span>Total Desembolsos:</span><span>R$ {(financeiro.cmv + financeiro.folha + financeiro.despesas + itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0)).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm font-black text-sky-900 border-t pt-4"><span>Total Desembolsos:</span><span>R$ {(financeiro.cmv + financeiro.folha + financeiro.despesas + financeiro.icmsProprioRecolher + financeiro.icmsStRecolher + financeiro.ipiRecolher + itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0)).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                             </div>
                         </div>
                     </div>

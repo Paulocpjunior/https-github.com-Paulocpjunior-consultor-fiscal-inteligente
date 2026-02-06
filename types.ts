@@ -309,6 +309,11 @@ export interface LucroInput {
     // Feature: LC 224/2025
     acumuladoAno?: number; // Para verificação do limite de R$ 5M
     acumuladoTrimestre?: AcumuladoTrimestre; // Feature: Fechamento Trimestral com dados anteriores
+
+    // Novos campos: Impostos a Recolher (Informados Manualmente)
+    ipiRecolher?: number;
+    icmsProprioRecolher?: number;
+    icmsStRecolher?: number;
 }
 
 export interface PlanoCotas {
@@ -381,6 +386,11 @@ export interface FichaFinanceiraRegistro {
     retencaoPisCofins?: number; // Legacy
     retencaoIrpj?: number;
     retencaoCsll?: number;
+    // Impostos Recolher (Manual)
+    ipiRecolher?: number;
+    icmsProprioRecolher?: number;
+    icmsStRecolher?: number;
+
     // Configurações Especiais
     isEquiparacaoHospitalar?: boolean;
     isPresuncaoReduzida16?: boolean; // Nova feature 16%

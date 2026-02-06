@@ -17,7 +17,7 @@ interface SimplesNacionalDetalheProps {
     onBack: () => void;
     onImport: (empresaId: string, file: File) => Promise<SimplesNacionalImportResult>;
     onUpdateFolha12: (id: string, value: number) => void;
-    onSaveFaturamentoManual: (id: string, faturamento: any, faturamentoDetalhado: any) => Promise<void> | void;
+    onSaveFaturamentoManual: (id: string, faturamento: any, faturamentoDetalhado: any) => Promise<any> | void;
     onUpdateEmpresa: (id: string, data: Partial<SimplesNacionalEmpresa>) => Promise<any> | void;
     onShowClienteView: () => void;
     onShowToast?: (msg: string) => void;
@@ -264,8 +264,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         return REPARTICAO_IMPOSTOS[resumo.anexo_efetivo]?.[Math.min(resumo.faixa_index, 5)] || {};
     }, [resumo]);
 
-    // ... (restante do código igual até a parte da Modal de Memória)
-
     // --- EFFECTS ---
 
     // Load Data - Smart Fallback to previous month for configuration
@@ -382,8 +380,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     }, [mesApuracao, empresa.id, empresa.faturamentoManual, empresa.faturamentoMensalDetalhado, empresa.atividadesSecundarias, empresa.cnae, empresa.anexo]);
 
-    // --- HANDLERS (Same as before) ---
-    // ...
+    // --- HANDLERS ---
+
     const handleFaturamentoChange = (key: string, rawValue: string) => {
         const digits = rawValue.replace(/\D/g, '');
         const numberValue = parseInt(digits, 10) / 100;
@@ -555,8 +553,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }
     };
 
-    // ... (rest of search/validate cnae handlers)
-    // Same as existing file...
     const handleSearchCnae = (query: string) => { setNewCnaeCode(query); if (searchTimeout.current) clearTimeout(searchTimeout.current); if (query.length < 3) { setCnaeSuggestions([]); return; } setIsSearchingCnae(true); searchTimeout.current = setTimeout(async () => { try { setCnaeSuggestions(await fetchCnaeSuggestions(query)); } catch (e) { console.error(e); } finally { setIsSearchingCnae(false); } }, 600); };
     const handleSelectSuggestion = (suggestion: CnaeSuggestion) => { setNewCnaeCode(suggestion.code); setCnaeSuggestions([]); if (suggestion.code.startsWith('47')) setNewCnaeAnexo('I'); else if (suggestion.code.startsWith('10')) setNewCnaeAnexo('II'); else setNewCnaeAnexo('III'); };
     const handleAddNewCnae = () => { if (!newCnaeCode) return; const newAtividades = [...(empresa.atividadesSecundarias || []), { cnae: newCnaeCode, anexo: newCnaeAnexo }]; onUpdateEmpresa(empresa.id, { atividadesSecundarias: newAtividades }); setIsAddingCnae(false); setNewCnaeCode(''); setNewCnaeAnexo('I'); };
@@ -565,7 +561,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const handleAnalyzeTax = async () => { setIsAnalyzingTax(true); setTaxDetails({}); try { const cnaesToAnalyze = [empresa.cnae, ...(empresa.atividadesSecundarias?.map(a => a.cnae) || [])]; const uniqueCnaes = Array.from(new Set(cnaesToAnalyze)); const results: Record<string, CnaeTaxDetail[]> = {}; for (const cnae of uniqueCnaes) { if (cnae) results[cnae] = await fetchCnaeTaxDetails(cnae, manualTaxRates); } setTaxDetails(results); } catch (e) { console.error(e); if(onShowToast) onShowToast("Erro ao analisar impostos."); } finally { setIsAnalyzingTax(false); } };
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { if (e.target.files && e.target.files.length > 0) { setIsImporting(true); try { const res = await onImport(empresa.id, e.target.files[0]); setImportResult(res); } catch (error) { console.error(error); if (onShowToast) onShowToast("Erro na importação."); } finally { setIsImporting(false); } } };
 
-    // ... (renderCardCnae same as existing)
     const renderCardCnae = (cnaeCode: string, anexoCode: string, label: string, isSecondary = false, index?: number) => {
         const key = isSecondary 
             ? `secundario::${index}::${cnaeCode}::${anexoCode}`
@@ -576,7 +571,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         const showIss = ['III', 'IV', 'V', 'III_V'].includes(anexoCode);
         const showMonofasico = ['I', 'II'].includes(anexoCode);
 
-        // Define status badge for the card based on toggles
         let statusBadge = null;
         if (state.isExterior) statusBadge = <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-indigo-200">Exportação/Exterior</span>;
         else if (state.isImune) statusBadge = <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-purple-200">Imunidade</span>;
@@ -635,11 +629,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
                 </div>
 
-                {/* Opções de Impostos Retidos - Layout em Grid/Pills */}
                 <div className="pt-3 border-t border-slate-100 dark:border-slate-600">
                     <p className="text-[10px] uppercase font-bold text-slate-400 mb-2">Opções de Retenção / Dedução</p>
                     <div className="flex flex-wrap gap-2">
-                        {/* SERVIÇO NO EXTERIOR */}
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isExterior ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                             <input type="checkbox" checked={state.isExterior} onChange={() => handleOptionToggle(key, 'isExterior')} className="hidden" />
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isExterior ? 'bg-indigo-500 border-indigo-500' : 'bg-white border-slate-300'}`}>
@@ -649,7 +641,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             <span className="text-xs font-bold" title="Exportação de Serviços (Isenção de ISS, PIS, COFINS, ICMS e IPI)">Serviço no Exterior</span>
                         </label>
 
-                        {/* ... (Other toggles: Imune, Monofasico, ICMS ST, ISS, SUP) */}
                         <label className={`flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-lg border transition-all select-none ${state.isImune ? 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300' : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-400'}`}>
                             <input type="checkbox" checked={state.isImune} onChange={() => handleOptionToggle(key, 'isImune')} className="hidden" />
                             <div className={`w-4 h-4 rounded border flex items-center justify-center ${state.isImune ? 'bg-purple-500 border-purple-500' : 'bg-white border-slate-300'}`}>
@@ -706,9 +697,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         );
     };
 
-    // ... (rest of the file content)
-    // ...
-    // renderTaxAnalysisSection implementation
     const renderTaxAnalysisSection = () => {
         return (
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mt-6">
@@ -720,7 +708,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         Alíquotas médias e bases legais (ICMS, ISS, PIS/COFINS) obtidas via IA.
                     </p>
                 </div>
-                {/* ... (content same as previous) ... */}
                 <div className="mb-6">
                     <button onClick={() => setShowRefinement(!showRefinement)} className="text-xs font-bold text-sky-600 hover:text-sky-700 dark:text-sky-400 flex items-center gap-1 mb-2 transition-colors">
                         {showRefinement ? '▼ Ocultar Refinamento' : '▶ Refinar com Alíquotas Manuais (Opcional)'}
@@ -755,7 +742,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
 
     return (
         <div className="animate-fade-in pb-12">
-            {/* Header ... */}
             <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4">
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-sky-600 transition-colors font-bold">
@@ -787,7 +773,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
                     <div className="lg:col-span-2 space-y-6">
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm border-l-4 border-sky-500 dark:border-sky-400">
-                            {/* ... (Competência and Summary Cards) ... */}
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                                 <div className="w-full sm:w-auto">
                                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Competência (Apuração Mensal)</label>
@@ -804,7 +789,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                                 <span className="text-indigo-500">Ext: {resumo.totalMercadoExterno.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                                             </div>
                                         )}
-                                        {/* Indicador de Fator R */}
                                         {['III', 'III_V', 'V'].includes(empresa.anexo) && (resumo.fator_r > 0) && (
                                             <div className={`mt-2 p-1.5 rounded text-[10px] font-bold border ${resumo.fator_r >= 0.28 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
                                                 Fator R: {(resumo.fator_r * 100).toFixed(2)}%
@@ -837,7 +821,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </div>
                             )}
 
-                            {/* ... rest of the main panel */}
                             <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase mb-3 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
                                 <CalculatorIcon className="w-4 h-4 text-sky-600" /> Discriminativo de Receitas por CNAE
                             </h4>
@@ -853,7 +836,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 </button>
                             ) : (
                                 <div className="mt-4 p-4 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-200 dark:border-sky-800 relative">
-                                    {/* ... add cnae form ... */}
                                     <p className="text-xs font-bold text-sky-700 mb-3 uppercase">Nova Atividade</p>
                                     <div className="flex gap-2 mb-3 items-end">
                                         <div className="flex-grow">
@@ -913,7 +895,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         </div>
                     </div>
 
-                    {/* Coluna Direita (Ferramentas) ... */}
                     <div className="space-y-6">
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
@@ -946,7 +927,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                             </div>
                         </div>
 
-                        {/* NOVO: CARD DE FILIAIS (SIMPLES NACIONAL) */}
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
                                 <GlobeIcon className="w-4 h-4 text-sky-600" /> Faturamento Filiais
@@ -987,7 +967,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
                 </div>
 
-                {/* Seção Histórico ... */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                     <div className="p-6 border-b border-slate-200 dark:border-slate-700">
                          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -1034,7 +1013,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 </div>
             </div>
 
-             {/* Modal Histórico Manual ... */}
              {isHistoryModalOpen && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsHistoryModalOpen(false)}>
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -1083,7 +1061,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 </div>
              )}
 
-             {/* Modal Memória de Cálculo Detalhada */}
              {isMemoryModalOpen && resumo.detalhamento_anexos && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in" onClick={() => setIsMemoryModalOpen(false)}>
                     <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -1158,9 +1135,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 </div>
              )}
 
-             {/* ELEMENTO OCULTO PARA EXPORTAÇÃO PDF */}
              <div id="extrato-simples-completo" className="fixed left-[-9999px] top-0 w-[900px] bg-white text-slate-900 p-8 font-sans">
-                {/* Header Institucional */}
                 <div className="flex justify-between items-start border-b-2 border-sky-700 pb-4 mb-6">
                     <div className="flex items-center gap-3">
                         <Logo className="h-16 w-auto text-sky-800" />
@@ -1182,7 +1157,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
                 </div>
 
-                {/* Dados da Empresa */}
                 <div className="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -1204,7 +1178,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
                 </div>
 
-                {/* Resumo do Cálculo */}
                 <div className="mb-8">
                     <h3 className="text-lg font-bold text-sky-800 border-l-4 border-sky-600 pl-3 mb-4">Resumo da Apuração</h3>
                     <div className="grid grid-cols-4 gap-4 text-center">
@@ -1227,7 +1200,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                     </div>
                 </div>
 
-                {/* Tabela Dinâmica do Anexo */}
                 {ANEXOS_TABELAS[resumo.anexo_efetivo] && (
                     <div className="mb-8">
                         <h3 className="text-lg font-bold text-sky-800 border-l-4 border-sky-600 pl-3 mb-4">

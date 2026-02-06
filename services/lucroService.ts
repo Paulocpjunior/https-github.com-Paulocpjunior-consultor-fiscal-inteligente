@@ -294,6 +294,36 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         });
     }
 
+    // ADICIONAR IMPOSTOS INFORMATIVOS (MANUAIS) AO RESULTADO FINAL
+    // Isso garante que sejam somados à Carga Tributária Global
+    if (input.icmsProprioRecolher && input.icmsProprioRecolher > 0) {
+        detalhamento.push({
+            imposto: 'ICMS Próprio',
+            baseCalculo: 0,
+            aliquota: 0,
+            valor: input.icmsProprioRecolher,
+            observacao: 'Valor informado (Apuração Fiscal)'
+        });
+    }
+    if (input.icmsStRecolher && input.icmsStRecolher > 0) {
+        detalhamento.push({
+            imposto: 'ICMS ST',
+            baseCalculo: 0,
+            aliquota: 0,
+            valor: input.icmsStRecolher,
+            observacao: 'Valor informado (Apuração Fiscal)'
+        });
+    }
+    if (input.ipiRecolher && input.ipiRecolher > 0) {
+        detalhamento.push({
+            imposto: 'IPI',
+            baseCalculo: 0,
+            aliquota: 0,
+            valor: input.ipiRecolher,
+            observacao: 'Valor informado (Apuração Fiscal)'
+        });
+    }
+
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
     const extraReceitas = (input.itensAvulsos || []).filter(i => i.tipo === 'receita').reduce((acc, i) => acc + i.valor, 0);
     const extraDespesas = (input.itensAvulsos || []).filter(i => i.tipo === 'despesa').reduce((acc, i) => acc + i.valor, 0);
@@ -416,6 +446,17 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
             valor: 0,
             observacao: 'Prejuízo Fiscal no Período'
         });
+    }
+
+    // ADICIONAR IMPOSTOS INFORMATIVOS (MANUAIS) AO RESULTADO FINAL
+    if (input.icmsProprioRecolher && input.icmsProprioRecolher > 0) {
+        detalhamento.push({ imposto: 'ICMS Próprio', baseCalculo: 0, aliquota: 0, valor: input.icmsProprioRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
+    }
+    if (input.icmsStRecolher && input.icmsStRecolher > 0) {
+        detalhamento.push({ imposto: 'ICMS ST', baseCalculo: 0, aliquota: 0, valor: input.icmsStRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
+    }
+    if (input.ipiRecolher && input.ipiRecolher > 0) {
+        detalhamento.push({ imposto: 'IPI', baseCalculo: 0, aliquota: 0, valor: input.ipiRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
     }
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);
