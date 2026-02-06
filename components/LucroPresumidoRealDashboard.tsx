@@ -851,7 +851,7 @@ const LucroPresumidoRealDashboard: React.FC<Props> = ({ currentUser, externalSel
                                 value={financeiro.faturamentoMonofasico} 
                                 onChange={v => setFinanceiro(p => ({...p, faturamentoMonofasico: v}))} 
                                 className="bg-green-50/20 dark:bg-green-900/10 p-2 rounded border border-green-100 dark:border-green-800" 
-                                tooltip="Valor incluído na Receita Bruta para fins de IRPJ/CSLL. No PIS/COFINS, se aplicável, deve ser tratado manualmente se não estiver segregado."
+                                tooltip="Para IRPJ e CSLL (inclusive Trimestral), este valor COMPÕE a base de cálculo (Faturamento Bruto - IPI - Devoluções). A exclusão/dedução ocorre apenas na base de PIS/COFINS."
                             />
                             
                             {/* NOVOS CAMPOS: DEDUÇÕES DE RECEITA BRUTA */}

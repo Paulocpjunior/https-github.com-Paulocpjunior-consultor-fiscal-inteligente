@@ -612,12 +612,15 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             // SERVIÇO PRESTADO NO EXTERIOR (LC 123/2006, Art. 18, § 4º-A)
             // Imunidade de PIS, COFINS, ISS, ICMS e IPI na exportação.
             // O cálculo recai apenas sobre IRPJ, CSLL e CPP (exceto Anexo IV onde CPP é pago em guia separada).
+            // A base de cálculo (item.valor) é o valor total do serviço no exterior.
             else if (item.isExterior) {
+                // Garante que apenas os impostos imunes sejam deduzidos da alíquota efetiva
                 if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                 if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
                 if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
                 if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
+                // IRPJ e CSLL (e CPP) permanecem na alíquota efetiva, incidindo sobre o total da receita externa.
             }
             else {
                 // Se não for imune nem exterior, aplica as regras normais de retenção/ST/Monofásico

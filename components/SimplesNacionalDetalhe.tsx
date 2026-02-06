@@ -100,6 +100,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     // Novo estado complexo para suportar valor + checkboxes por CNAE
     const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
     
+    // NOVO: Estado para faturamento de Filiais (consolidado)
+    const [faturamentoFiliais, setFaturamentoFiliais] = useState<number>(0);
+
     // Estados para Histórico
     const [historicoManualEditavel, setHistoricoManualEditavel] = useState<Record<string, number>>({});
     
@@ -175,15 +178,15 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         return Array.from(new Set(anexos));
     }, [allActivities]);
 
-    // Recalcula o total do mês vigente com base nos inputs
+    // Recalcula o total do mês vigente com base nos inputs + Filiais
     const totalMesVigente = useMemo(() => {
         let total = 0;
         Object.values(faturamentoPorCnae).forEach((item: CnaeInputState) => {
             const raw = item.valor ? item.valor.replace(/\./g, '').replace(',', '.') : '0';
             total += parseFloat(raw) || 0;
         });
-        return total;
-    }, [faturamentoPorCnae]);
+        return total + faturamentoFiliais; // Adiciona filiais ao total
+    }, [faturamentoPorCnae, faturamentoFiliais]);
 
     const resumo: SimplesNacionalResumo = useMemo(() => {
         const itensCalculo: any[] = [];
@@ -214,6 +217,16 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             });
         });
 
+        // Adiciona item genérico para Filiais (assumindo mesma regra do principal por padrão, ou Anexo I genérico se não especificado)
+        if (faturamentoFiliais > 0) {
+             itensCalculo.push({
+                cnae: 'Filiais',
+                anexo: empresa.anexo, // Assume anexo principal para simplificação, ou poderia ser segregado
+                valor: faturamentoFiliais,
+                issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
+             });
+        }
+
         // Use a folha12Input em tempo real para cálculo reativo, não apenas o salvo no banco (empresa.folha12)
         // Isso permite simulação "E se?" imediata
         const empresaTemp = { 
@@ -237,7 +250,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 fatorRManual: fatorRValue
             }
         );
-    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel, fatorRManual, folha12Input]);
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, historicoManualEditavel, fatorRManual, folha12Input, faturamentoFiliais]);
 
     const discriminacaoImpostos = useMemo(() => {
         return calcularDiscriminacaoImpostos(
@@ -358,6 +371,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             return novoFaturamentoPorCnae;
         });
         
+        // Carrega Filiais se salvo (usando uma chave especial no detalheMes ou inferido do total manual se não detalhado)
+        const storedFiliais = detalheMes['faturamento_filiais'];
+        if (typeof storedFiliais === 'number') setFaturamentoFiliais(storedFiliais);
+        else if (typeof storedFiliais === 'object') setFaturamentoFiliais(storedFiliais.valor);
+        else setFaturamentoFiliais(0);
+
         setHistoricoManualEditavel(empresa.faturamentoManual || {});
         setHistoricoDetalhadoEditavel(empresa.faturamentoMensalDetalhado || {});
 
@@ -427,6 +446,19 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                      });
                 }
             });
+
+            // Adiciona Filiais ao Total e ao Detalhe
+            totalCalculado += faturamentoFiliais;
+            detalheMes['faturamento_filiais'] = {
+                valor: faturamentoFiliais,
+                issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
+            };
+            if(faturamentoFiliais > 0) {
+                itensCalculoParaSalvar.push({
+                    cnae: 'Filiais', anexo: empresa.anexo, valor: faturamentoFiliais,
+                    issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
+                });
+            }
 
             const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
             const updatedManual = { ...historicoManualEditavel, [mesChave]: totalCalculado };
@@ -912,6 +944,22 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* NOVO: CARD DE FILIAIS (SIMPLES NACIONAL) */}
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                <GlobeIcon className="w-4 h-4 text-sky-600" /> Faturamento Filiais
+                            </h3>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2 leading-tight">
+                                Insira o total faturado pelas filiais neste mês para compor a Receita Bruta Total.
+                            </p>
+                            <CurrencyInput 
+                                value={faturamentoFiliais} 
+                                onChange={setFaturamentoFiliais}
+                                className="w-full"
+                                placeholder="Total Filiais"
+                            />
                         </div>
 
                         <div className="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">

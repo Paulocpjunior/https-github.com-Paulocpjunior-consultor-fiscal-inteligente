@@ -163,6 +163,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
 
     // Receita Bruta Efetiva (Base de Cálculo IRPJ/CSLL)
     // Fórmula: Vendas Brutas - Devoluções - IPI
+    // Monofásicos: Estão incluídos nas bases finais acima (Comércio/Indústria). Não deduzimos.
     const receitaBrutaEfetiva = baseComercioFinal + baseIndustriaFinal + baseServicoFinal + baseServicoHospFinal;
     const receitaTotalMes = receitaBrutaEfetiva + (input.receitaFinanceira || 0);
     
@@ -214,9 +215,9 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     processarItensEspeciais(input.itensAvulsos, detalhamento);
 
     // IRPJ - Base de Presunção
-    // IMPORTANTE: Aqui usamos as bases finais (já líquidas de IPI/Devoluções) MAS NÃO subtraímos o Monofásico nem o ICMS sobre Vendas.
-    // O Monofásico compõe a Receita Bruta para fins de IRPJ/CSLL no Presumido.
-    // O ICMS compõe a Receita Bruta para fins de IRPJ/CSLL no Presumido.
+    // IMPORTANTE: Aqui usamos as bases finais (já líquidas de IPI/Devoluções).
+    // REGRA: Produtos Monofásicos e ICMS compõem a Receita Bruta para fins de IRPJ/CSLL no Presumido/Trimestral.
+    // Portanto, NÃO subtraímos o Monofásico nem o ICMS sobre Vendas desta base.
     
     let baseCalculoIrpjComercio = baseComercioFinal;
     let baseCalculoIrpjIndustria = baseIndustriaFinal;
@@ -268,7 +269,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             valor: Math.max(0, valorIrpj - retencaoIrpj),
             observacao: (aplicouLc224 
                 ? `LC 224/25. Base Bruta${obsHosp}${obsReduzida}.${obsTrimestre}` 
-                : `Base Bruta${obsHosp}${obsReduzida}.${obsTrimestre}`) + ` Isenção: ${fmt(limiteAdicional)}`
+                : `Base Bruta (Inclui Monofásicos)${obsHosp}${obsReduzida}.${obsTrimestre}`) + ` Isenção: ${fmt(limiteAdicional)}`
         });
     }
 
@@ -289,7 +290,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             valor: Math.max(0, (baseCsllTotal * ALIQ_CSLL) - retencaoCsll),
             observacao: aplicouLc224
                 ? `LC 224/25.${obsHosp}.${obsTrimestre}`
-                : `Base Bruta${obsHosp}.${obsTrimestre}`
+                : `Base Bruta (Inclui Monofásicos)${obsHosp}.${obsTrimestre}`
         });
     }
 
