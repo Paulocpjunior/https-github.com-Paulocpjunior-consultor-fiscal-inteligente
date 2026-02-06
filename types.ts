@@ -1,24 +1,19 @@
 
-import { z } from 'zod';
-
 export enum SearchType {
-  CFOP = 'CFOP',
-  NCM = 'NCM',
-  SERVICO = 'Serviço',
-  REFORMA_TRIBUTARIA = 'Reforma Tributária',
-  SIMPLES_NACIONAL = 'Simples Nacional',
-  LUCRO_PRESUMIDO_REAL = 'Lucro Presumido / Real',
+    CFOP = 'CFOP',
+    NCM = 'NCM',
+    SERVICO = 'Serviço',
+    REFORMA_TRIBUTARIA = 'Reforma Tributária',
+    SIMPLES_NACIONAL = 'Simples Nacional',
+    LUCRO_PRESUMIDO_REAL = 'Lucro Presumido/Real'
 }
 
-export const SearchTypeSchema = z.nativeEnum(SearchType);
-
-export const GroundingSourceSchema = z.object({
-  web: z.object({
-    uri: z.string(),
-    title: z.string(),
-  }),
-});
-export type GroundingSource = z.infer<typeof GroundingSourceSchema>;
+export interface GroundingSource {
+    web: {
+        uri: string;
+        title: string;
+    };
+}
 
 export interface IbptRates {
     nacional: number;
@@ -27,58 +22,24 @@ export interface IbptRates {
     municipal: number;
 }
 
-export const SearchResultSchema = z.object({
-  text: z.string(),
-  sources: z.array(GroundingSourceSchema),
-  query: z.string(),
-  description: z.string().optional(), // Optional description for favorites
-  timestamp: z.number().optional(),
-  context: z.object({
-      aliquotaIcms: z.string().optional(),
-      aliquotaPisCofins: z.string().optional(),
-      aliquotaIss: z.string().optional(),
-      userNotes: z.string().optional(),
-  }).optional(),
-  ibpt: z.object({
-      nacional: z.number(),
-      importado: z.number(),
-      estadual: z.number(),
-      municipal: z.number(),
-  }).optional(),
-});
-export type SearchResult = z.infer<typeof SearchResultSchema>;
+export interface SearchResult {
+    text: string;
+    sources: GroundingSource[];
+    query: string;
+    timestamp?: number;
+    context?: {
+        aliquotaIcms?: string;
+        aliquotaPisCofins?: string;
+        aliquotaIss?: string;
+        userNotes?: string;
+    };
+    ibpt?: IbptRates;
+}
 
-export const ComparisonResultSchema = z.object({
-    summary: z.string(),
-    result1: SearchResultSchema,
-    result2: SearchResultSchema,
-});
-export type ComparisonResult = z.infer<typeof ComparisonResultSchema>;
-
-export const FavoriteItemSchema = z.object({
-    code: z.string(),
-    description: z.string(),
-    type: SearchTypeSchema,
-});
-export type FavoriteItem = z.infer<typeof FavoriteItemSchema>;
-
-export interface HistoryItem {
-    id: string;
-    timestamp: number;
-    queries: string[];
-    type: SearchType;
-    mode: 'single' | 'compare';
-    municipio?: string;
-    alias?: string;
-    responsavel?: string;
-    cnae?: string;
-    regimeTributario?: string;
-    reformaQuery?: string;
-    aliquotaIcms?: string;
-    aliquotaPisCofins?: string;
-    aliquotaIss?: string;
-    userNotes?: string;
-    entityId?: string;
+export interface ComparisonResult {
+    summary: string;
+    result1: SearchResult;
+    result2: SearchResult;
 }
 
 export interface NewsAlert {
@@ -97,20 +58,84 @@ export interface CnaeSuggestion {
     description: string;
 }
 
+export interface CnaeTaxDetail {
+    tributo: string;
+    incidencia: string;
+    aliquotaMedia: string;
+    baseLegal: string;
+}
+
+export type UserRole = 'admin' | 'colaborador';
+
+export interface User {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+    isVerified?: boolean;
+    passwordHash?: string; // Local storage legacy
+}
+
+export interface AccessLog {
+    id: string;
+    userId: string;
+    userName: string;
+    timestamp: number;
+    action: string;
+    details?: string;
+}
+
+export interface FavoriteItem {
+    code: string;
+    description: string;
+    type: SearchType;
+}
+
+export interface HistoryItem {
+    id: string;
+    queries: string[];
+    type: SearchType;
+    mode: 'single' | 'compare';
+    timestamp: number;
+    municipio?: string;
+    alias?: string;
+    responsavel?: string;
+    regimeTributario?: string;
+    reformaQuery?: string;
+    aliquotaIcms?: string;
+    aliquotaPisCofins?: string;
+    aliquotaIss?: string;
+    userNotes?: string;
+    entityId?: string; // For navigation to saved entities
+}
+
 export interface CnpjData {
     razaoSocial: string;
     nomeFantasia: string;
-    cnaePrincipal?: { codigo: string; descricao: string };
-    cnaesSecundarios?: { codigo: string; descricao: string }[];
-    logradouro?: string;
-    numero?: string;
-    bairro?: string;
-    municipio?: string;
-    uf?: string;
-    cep?: string;
+    cnaePrincipal: {
+        codigo: string;
+        descricao: string;
+    };
+    cnaesSecundarios: {
+        codigo: string;
+        descricao: string;
+    }[];
+    logradouro: string;
+    numero: string;
+    bairro: string;
+    municipio: string;
+    uf: string;
+    cep: string;
 }
 
+// Simples Nacional Types
+
 export type SimplesNacionalAnexo = 'I' | 'II' | 'III' | 'IV' | 'V' | 'III_V';
+
+export interface SimplesNacionalAtividade {
+    cnae: string;
+    anexo: SimplesNacionalAnexo;
+}
 
 export interface SimplesHistoricoCalculo {
     id: string;
@@ -120,39 +145,22 @@ export interface SimplesHistoricoCalculo {
     aliq_eff: number;
     fator_r: number;
     das_mensal: number;
-    anexo_efetivo: string;
-}
-
-export interface SimplesNacionalAtividade {
-    cnae: string;
-    anexo: SimplesNacionalAnexo;
-}
-
-// Interface para salvar configurações detalhadas por item (não apenas o valor)
-export interface SimplesDetalheItem {
-    valor: number;
-    issRetido: boolean;
-    icmsSt: boolean;
-    isSup: boolean;
-    isMonofasico: boolean;
-    isImune?: boolean;
-    isExterior?: boolean; // Nova flag: Serviço Prestado no Exterior
+    anexo_efetivo: SimplesNacionalAnexo;
 }
 
 export interface SimplesNacionalEmpresa {
     id: string;
     nome: string;
     cnpj: string;
-    cnae: string; // CNAE Principal
-    anexo: SimplesNacionalAnexo; // Anexo Principal
-    atividadesSecundarias?: SimplesNacionalAtividade[]; // Outros CNAEs
+    cnae: string;
+    anexo: SimplesNacionalAnexo;
+    atividadesSecundarias?: SimplesNacionalAtividade[];
     folha12: number;
-    faturamentoManual?: { [key: string]: number }; // Total YYYY-MM -> Valor
-    // Atualizado para suportar objeto complexo ou número (legado)
-    faturamentoMensalDetalhado?: { [mesIso: string]: { [cnaeKey: string]: number | SimplesDetalheItem } }; 
+    faturamentoManual?: Record<string, number>;
+    faturamentoMensalDetalhado?: Record<string, any>; // Key: MM-YYYY, Value: Record<string (cnae_anexo), number | SimplesDetalheItem>
     historicoCalculos?: SimplesHistoricoCalculo[];
     createdBy?: string;
-    createdByEmail?: string; // NOVO: Para identificar quem fez o cálculo no painel do admin
+    createdByEmail?: string;
 }
 
 export interface SimplesNacionalNota {
@@ -160,51 +168,41 @@ export interface SimplesNacionalNota {
     empresaId: string;
     data: number;
     valor: number;
-    origem: string;
     descricao: string;
+    origem: string;
     createdBy?: string;
 }
 
 export interface SimplesCalculoMensal {
-    competencia: string; // YYYY-MM
-    label: string; // Mes/Ano
+    competencia: string;
+    label: string;
     faturamento: number;
     rbt12: number;
     aliquotaEfetiva: number;
     fatorR: number;
     dasCalculado: number;
-    anexoAplicado: string;
+    anexoAplicado: SimplesNacionalAnexo;
 }
 
 export interface DetalhamentoAnexo {
-    cnae?: string; 
-    anexo: SimplesNacionalAnexo;
-    anexoOriginal?: SimplesNacionalAnexo; // NEW: Para mostrar de onde veio (Ex: V -> III)
-    faturamento: number;
-    aliquotaNominal: number; 
-    aliquotaEfetiva: number;
-    valorDas: number;
-    issRetido?: boolean;
-    icmsSt?: boolean;
-    isMonofasico?: boolean;
-    isImune?: boolean;
-    isExterior?: boolean;
-}
-
-export interface SimplesItemCalculo {
     cnae: string;
     anexo: SimplesNacionalAnexo;
-    valor: number;
+    anexoOriginal: SimplesNacionalAnexo;
+    faturamento: number;
+    aliquotaNominal: number;
+    aliquotaEfetiva: number;
+    valorDas: number;
     issRetido: boolean;
     icmsSt: boolean;
-    isSup?: boolean; // Sociedade Uniprofissional (ISS Fixo)
-    isMonofasico?: boolean; // PIS/COFINS Monofásico (Revenda)
-    isImune?: boolean; // Imunidade de Livros/Papel
-    isExterior?: boolean; // Serviço Prestado no Exterior
+    isMonofasico: boolean;
+    isImune: boolean;
+    isExterior: boolean;
 }
 
 export interface SimplesNacionalResumo {
     rbt12: number;
+    rbt12Interno: number;
+    rbt12Externo: number;
     aliq_nom: number;
     aliq_eff: number;
     das: number;
@@ -215,19 +213,10 @@ export interface SimplesNacionalResumo {
     fator_r: number;
     folha_12: number;
     ultrapassou_sublimite: boolean;
-    faixa_index: number; // Índice da faixa (0-5) para cálculo de repartição
-    detalhamento_anexos?: DetalhamentoAnexo[]; // Breakdown per Annex for current month
-    // Novos campos para segregação explícita
+    faixa_index: number;
+    detalhamento_anexos?: DetalhamentoAnexo[];
     totalMercadoInterno: number;
     totalMercadoExterno: number;
-}
-
-export interface CnaeTaxDetail {
-    tributo: string;
-    incidencia: string;
-    aliquotaMedia: string;
-    baseLegal: string;
-    observacao: string;
 }
 
 export interface SimplesNacionalImportResult {
@@ -236,170 +225,114 @@ export interface SimplesNacionalImportResult {
     errors: string[];
 }
 
-// --- Lucro Presumido / Real Types ---
-
-export interface IssConfig {
-    tipo: 'aliquota_municipal' | 'sup_fixo';
-    aliquota?: number; // Para alíquota municipal (ex: 2%, 5%)
-    valorPorSocio?: number; // Para SUP
-    qtdeSocios?: number; // Para SUP
+export interface SimplesItemCalculo {
+    cnae: string;
+    anexo: SimplesNacionalAnexo;
+    valor: number;
+    issRetido: boolean;
+    icmsSt: boolean;
+    isSup: boolean;
+    isMonofasico: boolean;
+    isImune: boolean;
+    isExterior: boolean;
 }
 
-export type CategoriaItemEspecial = 'padrao' | 'aplicacao_financeira' | 'importacao';
+export interface SimplesDetalheItem {
+    valor: number;
+    issRetido: boolean;
+    icmsSt: boolean;
+    isSup: boolean;
+    isMonofasico: boolean;
+    isImune: boolean;
+    isExterior: boolean;
+}
+
+// Lucro Presumido / Real types
+
+export type CategoriaItemEspecial = 'padrao' | 'aplicacao_financeira' | 'importacao' | 'ganho_capital';
 
 export interface ItemFinanceiroAvulso {
     id: string;
     descricao: string;
     valor: number;
     tipo: 'receita' | 'despesa';
-    dedutivelIrpj?: boolean; // Se true, abate da base de IRPJ/CSLL (Lucro Real)
-    geraCreditoPisCofins?: boolean; // Se true, soma à base de crédito de PIS/COFINS (Lucro Real)
-    categoriaEspecial?: CategoriaItemEspecial; // Novo campo para PIS/COFINS específicos
+    categoriaEspecial?: CategoriaItemEspecial;
+    dedutivelIrpj?: boolean; // Para despesas no Real ou exclusão da base
+    geraCreditoPisCofins?: boolean; // Para despesas no Real
+}
+
+export interface IssConfig {
+    tipo: 'aliquota_municipal' | 'sup_fixo';
+    aliquota?: number;
+    qtdeSocios?: number;
+    valorPorSocio?: number;
 }
 
 export interface AcumuladoTrimestre {
     comercio: number;
     industria: number;
     servico: number;
-    servicoHospitalar?: number; // Acumulado específico para hosp
+    servicoHospitalar: number;
     financeira: number;
     mesesConsiderados: string[];
-}
-
-export interface LucroInput {
-    regimeSelecionado: 'Presumido' | 'Real';
-    periodoApuracao: 'Mensal' | 'Trimestral';
-    mesReferencia?: string; // YYYY-MM (Necessário para regra LC 224/2025)
-    faturamentoComercio: number;
-    faturamentoIndustria: number;
-    faturamentoServico: number; // Serviço Geral (32%)
-    faturamentoServicoHospitalar?: number; // Serviço Equiparado (8%/12%)
-    faturamentoMonofasico: number;
-    
-    // Novo: Consolidação de Filiais
-    faturamentoFiliais?: {
-        comercio: number;
-        industria: number;
-        servico: number;
-        servicoHospitalar?: number; // Filial Hosp
-    };
-
-    // Novas deduções para cálculo correto da Base Bruta
-    valorIpi?: number;
-    valorDevolucoes?: number;
-    icmsVendas?: number; // Novo: ICMS sobre vendas (Deduz apenas da base de PIS/COFINS)
-
-    receitaFinanceira: number; // Novo campo explícito
-    despesasOperacionais: number;
-    despesasDedutiveis: number; 
-    folhaPagamento: number;
-    custoMercadoriaVendida: number; 
-    issConfig: IssConfig;
-    // Campos de Retenção (Dedução do valor final)
-    retencaoPis?: number;
-    retencaoCofins?: number;
-    retencaoIrpj?: number;
-    retencaoCsll?: number;
-    // Feature: Equiparação Hospitalar
-    isEquiparacaoHospitalar?: boolean;
-    // Feature: Presunção Reduzida 16% (R$ 120k/ano)
-    isPresuncaoReduzida16?: boolean;
-    // Feature: Campos Dinâmicos
-    itensAvulsos?: ItemFinanceiroAvulso[];
-    // Feature: LC 224/2025
-    acumuladoAno?: number; // Para verificação do limite de R$ 5M
-    acumuladoTrimestre?: AcumuladoTrimestre; // Feature: Fechamento Trimestral com dados anteriores
-
-    // Novos campos: Impostos a Recolher (Informados Manualmente)
-    ipiRecolher?: number;
-    icmsProprioRecolher?: number;
-    icmsStRecolher?: number;
-}
-
-export interface PlanoCotas {
-    disponivel: boolean;
-    numeroCotas: number;
-    valorPrimeiraCota: number;
-    valorDemaisCotas?: number;
-    vencimentos?: string[];
-}
-
-export interface DetalheImposto {
-    imposto: string;
-    baseCalculo: number;
-    aliquota: number;
-    valor: number;
-    observacao?: string; 
-    cotaInfo?: PlanoCotas; // Info de pagamento em cotas para IRPJ/CSLL
-}
-
-export interface LucroResult {
-    regime: 'Presumido' | 'Real';
-    periodo: 'Mensal' | 'Trimestral';
-    detalhamento: DetalheImposto[];
-    totalImpostos: number;
-    cargaTributaria: number; 
-    lucroLiquidoEstimado: number;
-    alertaLc224?: boolean; // Indica se houve aumento de 10% na presunção
 }
 
 export interface FichaFinanceiraRegistro {
     id: string;
     dataRegistro: number;
-    mesReferencia: string; // YYYY-MM
-    regime: 'Presumido' | 'Real'; 
-    periodoApuracao?: 'Mensal' | 'Trimestral';
-    issTipo?: 'aliquota_municipal' | 'sup_fixo';
-    issValorOuAliquota?: number; // Salva o valor usado (rate ou fixo)
+    mesReferencia: string;
+    regime: 'Presumido' | 'Real';
+    periodoApuracao: 'Mensal' | 'Trimestral';
+    
     acumuladoAno: number;
+    
     faturamentoMesComercio: number;
     faturamentoMesIndustria: number;
-    faturamentoMesServico: number;
-    faturamentoMesServicoHospitalar?: number; // Segregação Salva
     
-    // Novo: Persistência Filiais
+    faturamentoMesServico: number;
+    faturamentoMesServicoRetido: number;
+    faturamentoMesLocacao: number;
+    faturamentoMesServicoHospitalar: number;
+    
     faturamentoFiliaisComercio?: number;
     faturamentoFiliaisIndustria?: number;
     faturamentoFiliaisServico?: number;
-    faturamentoFiliaisServicoHospitalar?: number; // Segregação Salva
+    faturamentoFiliaisServicoRetido?: number;
+    faturamentoFiliaisLocacao?: number;
+    faturamentoFiliaisServicoHospitalar?: number;
 
-    // Feature: Fechamento Trimestral Manual (Salvar o que foi usado no fechamento)
     dadosTrimestrais?: AcumuladoTrimestre;
 
-    faturamentoMonofasico?: number;
-    
-    // Novos campos de dedução
-    valorIpi?: number;
-    valorDevolucoes?: number;
-    icmsVendas?: number; // Novo: ICMS para dedução de PIS/COFINS
+    faturamentoMonofasico: number;
+    valorIpi: number;
+    valorDevolucoes: number;
+    icmsVendas: number;
 
-    receitaFinanceira?: number; // Novo
+    receitaFinanceira: number;
     faturamentoMesTotal: number;
-    totalGeral: number; 
+    totalGeral: number;
+    
     despesas: number;
-    despesasDedutiveis?: number; 
+    despesasDedutiveis: number;
     folha: number;
     cmv: number;
-    // Retenções Salvas
-    retencaoPis?: number;
-    retencaoCofins?: number;
-    retencaoPisCofins?: number; // Legacy
-    retencaoIrpj?: number;
-    retencaoCsll?: number;
-    // Impostos Recolher (Manual)
+    
+    retencaoPis: number;
+    retencaoCofins: number;
+    retencaoIrpj: number;
+    retencaoCsll: number;
+    
     ipiRecolher?: number;
     icmsProprioRecolher?: number;
     icmsStRecolher?: number;
 
-    // Configurações Especiais
     isEquiparacaoHospitalar?: boolean;
-    isPresuncaoReduzida16?: boolean; // Nova feature 16%
-    // Itens Dinâmicos
+    isPresuncaoReduzida16?: boolean;
     itensAvulsos?: ItemFinanceiroAvulso[];
-    // Analise
-    totalImpostos?: number;
-    cargaTributaria?: number;
-    aplicouLc224?: boolean; // Persistência do cálculo
+    
+    totalImpostos: number;
+    cargaTributaria: number;
+    aplicouLc224?: boolean;
 }
 
 export interface LucroPresumidoEmpresa {
@@ -408,37 +341,103 @@ export interface LucroPresumidoEmpresa {
     cnpj: string;
     nomeFantasia?: string;
     endereco?: string;
-    cnaePrincipal?: { codigo: string; descricao: string };
-    cnaesSecundarios?: { codigo: string; descricao: string }[];
-    fichaFinanceira?: FichaFinanceiraRegistro[];
-    tiposAtividade?: { comercio: boolean; industria: boolean; servico: boolean };
+    cnaePrincipal?: {
+        codigo: string;
+        descricao: string;
+    };
+    cnaesSecundarios?: {
+        codigo: string;
+        descricao: string;
+    }[];
+    tiposAtividade?: {
+        comercio: boolean;
+        industria: boolean;
+        servico: boolean;
+    };
     regimePadrao?: 'Presumido' | 'Real';
-    issPadraoConfig?: IssConfig; // Configuração padrão da empresa
-    isEquiparacaoHospitalar?: boolean; // Configuração padrão da empresa
-    isPresuncaoReduzida16?: boolean; // Configuração padrão da empresa
-    retencoesPadrao?: { pis: number; cofins: number; irpj: number; csll: number }; // Retenções padrão salvas no perfil
+    issPadraoConfig?: IssConfig;
+    isEquiparacaoHospitalar?: boolean;
+    isPresuncaoReduzida16?: boolean;
+    retencoesPadrao?: {
+        pis: number;
+        cofins: number;
+        irpj: number;
+        csll: number;
+    };
+    fichaFinanceira: FichaFinanceiraRegistro[];
     createdBy?: string;
-    createdByEmail?: string; // NOVO: Para identificar quem fez o cálculo no painel do admin
+    createdByEmail?: string;
 }
 
-// --- Auth Types ---
-
-export type UserRole = 'admin' | 'colaborador';
-
-export interface User {
-    id: string;
-    name: string;
-    email: string;
-    role: UserRole;
-    isVerified?: boolean; // New field for email verification
-    verificationCode?: string; // Temporary code for verification
+export interface PlanoCotas {
+    disponivel: boolean;
+    numeroCotas: number;
+    valorPrimeiraCota: number;
+    valorDemaisCotas: number;
+    vencimentos: string[];
 }
 
-export interface AccessLog {
-    id: string;
-    userId: string;
-    userName: string;
-    timestamp: number;
-    action: string;
-    details?: string;
+export interface DetalheImposto {
+    imposto: string;
+    baseCalculo: number;
+    aliquota: number;
+    valor: number;
+    observacao?: string;
+    cotaInfo?: PlanoCotas;
+}
+
+export interface LucroResult {
+    regime: 'Presumido' | 'Real';
+    periodo: 'Mensal' | 'Trimestral';
+    detalhamento: DetalheImposto[];
+    totalImpostos: number;
+    cargaTributaria: number;
+    lucroLiquidoEstimado: number;
+    alertaLc224?: boolean;
+}
+
+export interface LucroInput {
+    regimeSelecionado: 'Presumido' | 'Real';
+    periodoApuracao: 'Mensal' | 'Trimestral';
+    mesReferencia?: string;
+    faturamentoComercio: number;
+    faturamentoIndustria: number;
+    faturamentoServico: number;
+    faturamentoServicoRetido?: number;
+    faturamentoLocacao?: number;
+    faturamentoServicoHospitalar?: number;
+    
+    faturamentoFiliais?: {
+        comercio: number;
+        industria: number;
+        servico: number;
+        servicoRetido: number;
+        locacao: number;
+        servicoHospitalar: number;
+    };
+
+    faturamentoMonofasico: number;
+    valorIpi?: number;
+    valorDevolucoes?: number;
+    icmsVendas?: number;
+
+    receitaFinanceira: number;
+    despesasOperacionais: number;
+    despesasDedutiveis: number;
+    folhaPagamento: number;
+    custoMercadoriaVendida: number;
+    issConfig: IssConfig;
+    retencaoPis: number;
+    retencaoCofins: number;
+    retencaoIrpj: number;
+    retencaoCsll: number;
+    isEquiparacaoHospitalar?: boolean;
+    isPresuncaoReduzida16?: boolean;
+    itensAvulsos?: ItemFinanceiroAvulso[];
+    acumuladoAno?: number;
+    acumuladoTrimestre?: AcumuladoTrimestre;
+    
+    ipiRecolher?: number;
+    icmsProprioRecolher?: number;
+    icmsStRecolher?: number;
 }

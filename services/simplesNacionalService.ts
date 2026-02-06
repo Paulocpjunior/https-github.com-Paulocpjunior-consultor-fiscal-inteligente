@@ -17,15 +17,14 @@ export const ANEXOS_TABELAS: any = {
 };
 
 // Tabela Completa de Repartição dos Tributos (Percentuais da Alíquota Efetiva)
-// Fonte: LC 123/2006 atualizada
 export const REPARTICAO_IMPOSTOS: any = {
     "I": { // Comércio
-        0: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 }, // 1ª Faixa
-        1: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 }, // 2ª Faixa
-        2: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 3ª Faixa
-        3: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 4ª Faixa
-        4: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 }, // 5ª Faixa
-        5: { "IRPJ": 13.50, "CSLL": 10.00, "COFINS": 28.27, "PIS": 6.13, "CPP": 42.10, "ICMS": 0.00 }  // 6ª Faixa (ICMS Fixo/Separado em alguns casos, mas na regra geral segue. Ajustado conforme LC)
+        0: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 },
+        1: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 41.50, "ICMS": 34.00 },
+        2: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        3: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        4: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 12.74, "PIS": 2.76, "CPP": 42.00, "ICMS": 33.50 },
+        5: { "IRPJ": 13.50, "CSLL": 10.00, "COFINS": 28.27, "PIS": 6.13, "CPP": 42.10, "ICMS": 0.00 }
     },
     "II": { // Indústria
         0: { "IRPJ": 5.50, "CSLL": 3.50, "COFINS": 11.51, "PIS": 2.49, "CPP": 37.50, "IPI": 7.50, "ICMS": 32.00 },
@@ -41,7 +40,7 @@ export const REPARTICAO_IMPOSTOS: any = {
         2: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 43.40, "ISS": 32.50 },
         3: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 43.40, "ISS": 32.50 },
         4: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 43.40, "ISS": 33.50 },
-        5: { "IRPJ": 35.00, "CSLL": 15.00, "COFINS": 16.03, "PIS": 3.47, "CPP": 30.50, "ISS": 0.00 } // ISS fixo em valor
+        5: { "IRPJ": 35.00, "CSLL": 15.00, "COFINS": 16.03, "PIS": 3.47, "CPP": 30.50, "ISS": 0.00 }
     },
     "IV": { // Serviços (CPP Separado)
         0: { "IRPJ": 18.80, "CSLL": 15.20, "COFINS": 17.67, "PIS": 3.83, "ISS": 44.50, "CPP": 0.00 },
@@ -57,7 +56,7 @@ export const REPARTICAO_IMPOSTOS: any = {
         2: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 23.85, "ISS": 52.05 },
         3: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 13.64, "PIS": 2.96, "CPP": 23.85, "ISS": 52.05 },
         4: { "IRPJ": 4.00, "CSLL": 3.50, "COFINS": 12.82, "PIS": 2.78, "CPP": 23.85, "ISS": 53.05 },
-        5: { "IRPJ": 6.25, "CSLL": 7.50, "COFINS": 24.20, "PIS": 5.25, "CPP": 42.10, "ISS": 14.70 } // Ajuste na 6 faixa
+        5: { "IRPJ": 6.25, "CSLL": 7.50, "COFINS": 24.20, "PIS": 5.25, "CPP": 42.10, "ISS": 14.70 }
     }
 };
 
@@ -66,12 +65,10 @@ const generateUUID = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-// Helper to remove undefined values which Firestore dislikes
 const sanitizePayload = (obj: any) => {
     return JSON.parse(JSON.stringify(obj));
 };
 
-// --- LOCAL STORAGE FUNCTIONS (Used as Fallback) ---
 const getLocalEmpresas = (): SimplesNacionalEmpresa[] => {
     try {
         const stored = localStorage.getItem(STORAGE_KEY_EMPRESAS);
@@ -83,55 +80,40 @@ const saveLocalEmpresas = (empresas: SimplesNacionalEmpresa[]) => {
     localStorage.setItem(STORAGE_KEY_EMPRESAS, JSON.stringify(empresas));
 };
 
-// --- HYBRID DATA ACCESS ---
-
 export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEmpresa[]> => {
     if (!user) return [];
     let firebaseEmpresas: SimplesNacionalEmpresa[] = [];
     
     const isMasterAdmin = user.role === 'admin' || user.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
-    // 1. Tenta buscar do Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
-            
             let q;
-            // Se for Admin, busca TUDO. Se não, apenas os dele.
             if (isMasterAdmin) {
                 q = query(collection(db, 'simples_empresas'));
             } else {
                 q = query(collection(db, 'simples_empresas'), where('createdBy', '==', uid));
             }
-            
             try {
                 const snapshot = await getDocs(q);
                 firebaseEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalEmpresa));
             } catch (err: any) {
-                // Silently fail to local mode if permission denied or network error
                 if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
                     console.debug("Firebase fetch error (Simples):", err.message);
                 }
             }
-
-        } catch (e: any) {
-            // Silently ignore main query errors
-        }
+        } catch (e: any) { }
     }
 
-    // 2. Busca do Local Storage (Fallback ou modo Offline)
     const localEmpresas = getLocalEmpresas();
-    
     let filteredLocal = localEmpresas;
     if (!isMasterAdmin) {
         filteredLocal = localEmpresas.filter(e => e.createdBy === user.id || !e.createdBy);
     }
 
-    // 3. Mescla Inteligente (Nuvem vence Local se conflito, mas Local preserva não sincronizados)
     const empresaMap = new Map<string, SimplesNacionalEmpresa>();
-
     firebaseEmpresas.forEach(e => empresaMap.set(e.id, e));
-
     filteredLocal.forEach(e => {
         if (!empresaMap.has(e.id)) {
             empresaMap.set(e.id, e);
@@ -146,34 +128,24 @@ export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anex
     
     const newEmpresa: any = {
         id: generateUUID(),
-        nome, 
-        cnpj, 
-        cnae, 
-        anexo: finalAnexo, 
+        nome, cnpj, cnae, anexo: finalAnexo, 
         atividadesSecundarias: atividadesSecundarias || [],
-        folha12: 0, 
-        faturamentoManual: {}, 
-        faturamentoMensalDetalhado: {}, 
-        historicoCalculos: [], 
+        folha12: 0, faturamentoManual: {}, faturamentoMensalDetalhado: {}, historicoCalculos: [], 
         createdBy: userId,
         createdByEmail: auth?.currentUser?.email || undefined
     };
 
-    // 1. Salva no Local Storage
     const localEmpresas = getLocalEmpresas();
     localEmpresas.push(newEmpresa);
     saveLocalEmpresas(localEmpresas);
 
-    // 2. Tenta salvar no Firebase
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             newEmpresa.createdBy = auth.currentUser.uid;
             newEmpresa.createdByEmail = auth.currentUser.email || undefined;
             const payload = sanitizePayload(newEmpresa);
             await setDoc(doc(db, 'simples_empresas', newEmpresa.id), payload);
-        } catch (e: any) {
-            // Silent fallback
-        }
+        } catch (e: any) { }
     }
 
     return newEmpresa;
@@ -191,16 +163,13 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
         try {
             const docRef = doc(db, 'simples_empresas', id);
             const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any;
-            
             const payload = sanitizePayload({ 
                 ...safeData, 
                 createdBy: auth.currentUser.uid,
-                createdByEmail: auth.currentUser.email // Atualiza email se necessário
+                createdByEmail: auth.currentUser.email
             });
             await setDoc(docRef, payload, { merge: true });
-        } catch (e: any) { 
-             // Silent fallback
-        }
+        } catch (e: any) { }
     }
 
     return index !== -1 ? localEmpresas[index] : null;
@@ -210,43 +179,31 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
     let firebaseNotas: SimplesNacionalNota[] = [];
     const isMasterAdmin = user?.role === 'admin' || user?.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
-    // Cloud Fetch
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const uid = auth.currentUser.uid;
-            
             let q;
             if (isMasterAdmin) {
                 q = query(collection(db, 'simples_notas'));
             } else {
                 q = query(collection(db, 'simples_notas'), where('createdBy', '==', uid));
             }
-
             try {
                 const snapshot = await getDocs(q);
                 firebaseNotas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SimplesNacionalNota));
-            } catch (err: any) {
-                // Silent fallback
-            }
-        } catch (e: any) { 
-            // Silent fallback
-        }
+            } catch (err: any) { }
+        } catch (e: any) { }
     }
 
-    // Local Fetch (apenas para fallback, não filtra com segurança aqui)
     const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
     const localNotasMap = stored ? JSON.parse(stored) : {};
     let allNotas: SimplesNacionalNota[] = [];
-    
-    // Flatten local map
     Object.values(localNotasMap).forEach((arr: any) => allNotas.push(...arr));
 
-    // Merge
     const noteMap = new Map<string, SimplesNacionalNota>();
     allNotas.forEach(n => noteMap.set(n.id, n));
     firebaseNotas.forEach(n => noteMap.set(n.id, n));
 
-    // Rebuild Record
     const result: Record<string, SimplesNacionalNota[]> = {};
     noteMap.forEach(note => {
         if (!result[note.empresaId]) result[note.empresaId] = [];
@@ -256,23 +213,18 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
     return result;
 };
 
-// ... (Restante do arquivo permanece inalterado)
 const parseXmlNfe = (xmlContent: string): any[] => {
     try {
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlContent, "text/xml");
         const notes: any[] = [];
-        
         if (xmlDoc.getElementsByTagName("parsererror").length > 0) return [];
-
         const nfeNodes = xmlDoc.getElementsByTagName("infNFe");
-        
         for (let i = 0; i < nfeNodes.length; i++) {
             const node = nfeNodes[i];
             const dhEmi = node.getElementsByTagName("dhEmi")[0]?.textContent || node.getElementsByTagName("dEmi")[0]?.textContent;
-            const vNF = node.getElementsByTagName("vNF")[0]?.textContent; // Total Value
+            const vNF = node.getElementsByTagName("vNF")[0]?.textContent;
             const xNome = node.getElementsByTagName("emit")[0]?.getElementsByTagName("xNome")[0]?.textContent;
-            
             if (dhEmi && vNF) {
                 notes.push({
                     data: dhEmi.split('T')[0],
@@ -300,33 +252,25 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             const pgdasHistory = await extractPgdasDataFromPdf(base64);
             
             if (pgdasHistory && pgdasHistory.length > 0) {
-                // If PGDAS data, we update company directly, not notes
                 const empresas = await getEmpresas({ id: 'temp', role: 'admin', name: '', email: '' } as any);
                 const emp = empresas.find(e => e.id === empresaId);
                 if (emp) {
                     const currentHistory = emp.faturamentoManual || {};
                     let updatesCount = 0;
-                    
                     pgdasHistory.forEach((item: any) => {
                         if (item.periodo && (typeof item.valor === 'number')) {
-                            let key = item.periodo; // Esperado MM/YYYY ou YYYY-MM
+                            let key = item.periodo;
                             if (key.includes('/')) {
                                 const parts = key.split('/');
                                 if (parts.length === 2) key = `${parts[1]}-${parts[0]}`;
                             }
-                            
                             currentHistory[key] = item.valor;
                             updatesCount++;
                         }
                     });
-                    
                     if (updatesCount > 0) {
                         await updateEmpresa(empresaId, { faturamentoManual: currentHistory });
-                        return { 
-                            successCount: updatesCount, 
-                            failCount: 0, 
-                            errors: [`Extrato PGDAS processado! ${updatesCount} meses de histórico atualizados.`] 
-                        };
+                        return { successCount: updatesCount, failCount: 0, errors: [`Extrato PGDAS processado! ${updatesCount} meses de histórico atualizados.`] };
                     }
                 }
             }
@@ -336,12 +280,10 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             const textDecoder = new TextDecoder('utf-8');
             const xmlContent = textDecoder.decode(buffer);
             extractedData = parseXmlNfe(xmlContent);
-
             if (extractedData.length === 0) {
                 const base64 = btoa(unescape(encodeURIComponent(xmlContent))); 
                 extractedData = await extractDocumentData(base64, 'text/xml');
             }
-
         } else if (fileType.endsWith('.xlsx') || fileType.endsWith('.xls')) {
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
             const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -366,7 +308,6 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
                 const parts = item.data.split('/');
                 if (parts.length === 3) dateVal = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
             }
-
             if (!isNaN(dateVal)) {
                 newNotes.push({
                     id: generateUUID(),
@@ -381,14 +322,12 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         }
     });
 
-    // 1. Save Local
     const stored = localStorage.getItem(STORAGE_KEY_NOTAS);
     const notasMap = stored ? JSON.parse(stored) : {};
     if (!notasMap[empresaId]) notasMap[empresaId] = [];
     notasMap[empresaId].push(...newNotes);
     localStorage.setItem(STORAGE_KEY_NOTAS, JSON.stringify(notasMap));
 
-    // 2. Save Cloud (Firestore)
     if (isFirebaseConfigured && db && uid) {
         const batchPromises = newNotes.map(note => {
             const payload = { ...note, createdBy: uid };
@@ -435,24 +374,56 @@ export const sugerirAnexoPorCnae = (cnae: string): any => {
 
 export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: SimplesNacionalNota[], mesReferencia: Date, options?: any): SimplesNacionalResumo => {
     const mesChave = `${mesReferencia.getFullYear()}-${(mesReferencia.getMonth() + 1).toString().padStart(2, '0')}`;
-    let rbt12 = 0;
+    let rbt12Global = 0;
+    let rbt12Interno = 0;
+    let rbt12Externo = 0;
+
     const mensal: any = empresa.faturamentoManual || {};
+    const detalhadoHistorico = empresa.faturamentoMensalDetalhado || {};
     
-    // Create an array for the historical chart (last 12 months)
     const historico_simulado: SimplesCalculoMensal[] = [];
 
+    // --- CÁLCULO DO RBT12 SEGREGADO ---
+    // Percorre os últimos 12 meses
     const dataInicioRBT12 = new Date(mesReferencia.getFullYear(), mesReferencia.getMonth() - 12, 1);
     for (let i = 0; i < 12; i++) {
         const d = new Date(dataInicioRBT12.getFullYear(), dataInicioRBT12.getMonth() + i, 1);
         const k = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
-        const val = (mensal[k] || 0);
-        rbt12 += val;
+        const valTotalMes = (mensal[k] || 0);
+        rbt12Global += valTotalMes;
+
+        // Tenta segregar usando o detalhamento salvo
+        if (detalhadoHistorico[k]) {
+            let mesInterno = 0;
+            let mesExterno = 0;
+            const detalhes = detalhadoHistorico[k];
+            
+            // Itera sobre os itens do mês para somar separadamente
+            Object.values(detalhes).forEach((item: any) => {
+                const valorItem = typeof item === 'number' ? item : item.valor;
+                const isExt = typeof item === 'object' && item.isExterior === true;
+                
+                if (isExt) mesExterno += valorItem;
+                else mesInterno += valorItem;
+            });
+
+            // Se a soma dos detalhes não bater com o total manual (ex: ajuste manual), 
+            // a diferença vai para Interno (padrão)
+            const diff = valTotalMes - (mesInterno + mesExterno);
+            if (diff > 0.01) mesInterno += diff;
+
+            rbt12Interno += mesInterno;
+            rbt12Externo += mesExterno;
+        } else {
+            // Se não houver detalhamento, assume tudo como Interno (padrão seguro)
+            rbt12Interno += valTotalMes;
+        }
 
         historico_simulado.push({
             competencia: k,
             label: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
-            faturamento: val,
-            rbt12: 0, // Placeholder, calculated properly only for current context usually
+            faturamento: valTotalMes,
+            rbt12: 0, 
             aliquotaEfetiva: 0,
             fatorR: 0,
             dasCalculado: 0,
@@ -460,28 +431,22 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         });
     }
 
-    // Calcula Fator R padrão, mas aceita override manual se fornecido nas opções
-    let fator_r = rbt12 > 0 ? (empresa.folha12 / rbt12) : 0;
+    // Calcula Fator R (Folha12 / RBT12 Global)
+    let fator_r = rbt12Global > 0 ? (empresa.folha12 / rbt12Global) : 0;
     if (options && options.fatorRManual !== undefined && options.fatorRManual !== null && !isNaN(options.fatorRManual)) {
         fator_r = options.fatorRManual;
     }
 
-    // Se itens de cálculo (entradas manuais do dashboard) não forem fornecidos,
-    // Tenta reconstruir a partir do faturamentoDetalhado salvo (se contiver configurações de flags)
     let itensCalculo: SimplesItemCalculo[] = options?.itensCalculo || [];
     
     if (itensCalculo.length === 0) {
-        // Tenta buscar do detalhamento salvo (Visão Cliente)
         const detalheSalvo = empresa.faturamentoMensalDetalhado?.[mesChave] || {};
         const entries = Object.entries(detalheSalvo);
         
         if (entries.length > 0) {
-            // Se existir detalhamento, usa ele
             entries.forEach(([key, value]) => {
                 const parts = key.split('::');
                 let cnaeCode = '', anexoCode = '';
-                
-                // Suporta chaves novas e antigas
                 if (parts.length >= 4) {
                     cnaeCode = parts[2];
                     anexoCode = parts[3];
@@ -493,7 +458,6 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                     }
                 }
 
-                // Verifica se é um objeto complexo (novo padrão) ou número (legado)
                 if (typeof value === 'object' && value !== null) {
                     const item = value as SimplesDetalheItem;
                     itensCalculo.push({
@@ -504,38 +468,22 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                         icmsSt: item.icmsSt,
                         isSup: item.isSup,
                         isMonofasico: item.isMonofasico,
-                        isImune: item.isImune, // Carrega a flag de imunidade se existir
-                        isExterior: item.isExterior // Carrega a flag de exterior se existir
+                        isImune: item.isImune,
+                        isExterior: item.isExterior
                     });
                 } else if (typeof value === 'number') {
-                    // Legado: apenas valor
                     itensCalculo.push({
-                        cnae: cnaeCode,
-                        anexo: anexoCode as SimplesNacionalAnexo,
-                        valor: value,
-                        issRetido: false,
-                        icmsSt: false,
-                        isSup: false,
-                        isMonofasico: false,
-                        isImune: false,
-                        isExterior: false
+                        cnae: cnaeCode, anexo: anexoCode as SimplesNacionalAnexo, valor: value,
+                        issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
                     });
                 }
             });
         } else {
-            // Fallback total (sem detalhamento)
             const faturamentoTotalMes = mensal[mesChave] || 0;
             if (faturamentoTotalMes > 0) {
                 itensCalculo.push({
-                    cnae: empresa.cnae,
-                    anexo: empresa.anexo,
-                    valor: faturamentoTotalMes,
-                    issRetido: false,
-                    icmsSt: false,
-                    isSup: false, // Default
-                    isMonofasico: false,
-                    isImune: false,
-                    isExterior: false
+                    cnae: empresa.cnae, anexo: empresa.anexo, valor: faturamentoTotalMes,
+                    issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
                 });
             }
         }
@@ -547,99 +495,64 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     let totalMercadoExterno = 0;
     const detalhamentoAnexos: DetalhamentoAnexo[] = [];
 
-    // Cálculo por Item (CNAE/Anexo)
     itensCalculo.forEach(item => {
         faturamentoTotalMes += item.valor;
-        if (item.isExterior) {
-            totalMercadoExterno += item.valor;
-        } else {
-            totalMercadoInterno += item.valor;
-        }
+        if (item.isExterior) totalMercadoExterno += item.valor;
+        else totalMercadoInterno += item.valor;
         
         let anexoAplicado = item.anexo;
-        const anexoOriginal = item.anexo; // Store original for trace
+        const anexoOriginal = item.anexo;
         
-        // --- REGRA DO FATOR R (LC 123/2006) ---
-        // Se a atividade é Anexo V, ela pode migrar para o Anexo III se Fator R >= 28%
         if (anexoAplicado === 'V') {
-            if (fator_r >= 0.28) {
-                anexoAplicado = 'III';
-            }
-        }
-        // Se a atividade é III_V (híbrida/configurada auto), aplica a regra padrão
-        else if (anexoAplicado === 'III_V') {
+            if (fator_r >= 0.28) anexoAplicado = 'III';
+        } else if (anexoAplicado === 'III_V') {
             anexoAplicado = fator_r >= 0.28 ? 'III' : 'V';
         }
 
         const tabela = ANEXOS_TABELAS[anexoAplicado];
         if (!tabela) return;
 
-        // 1. Determina a Faixa
-        // NOTA IMPORTANTE: A faixa é determinada pela Receita Bruta Global (Interno + Externo)
-        // conforme LC 123/2006. A segregação ocorre apenas para fins de isenção/imunidade.
-        let faixaIndex = tabela.findIndex((f: any) => rbt12 <= f.limite);
-        if (faixaIndex === -1 && rbt12 > 0) faixaIndex = tabela.length - 1; // Faixa 6
-        if (rbt12 === 0) faixaIndex = 0;
+        // --- SEGREGAÇÃO DE RBT12 PARA ENQUADRAMENTO DE FAIXA ---
+        // Se for Mercado Externo, usa RBT12 Externo. Se for Interno, usa RBT12 Interno.
+        const rbtParaEnquadramento = item.isExterior ? rbt12Externo : rbt12Interno;
+
+        let faixaIndex = tabela.findIndex((f: any) => rbtParaEnquadramento <= f.limite);
+        if (faixaIndex === -1 && rbtParaEnquadramento > 0) faixaIndex = tabela.length - 1; 
+        if (rbtParaEnquadramento === 0) faixaIndex = 0;
         
         const faixa = tabela[faixaIndex];
 
-        // 2. Calcula Alíquota Efetiva Base
-        let aliq_eff = 0;
-        if (rbt12 > 0) {
-            aliq_eff = (((rbt12 * faixa.aliquota / 100) - faixa.parcela) / rbt12) * 100;
+        // Cálculo da Alíquota Nominal Específica para este Item/Origem
+        let aliq_eff_item = 0;
+        if (rbtParaEnquadramento > 0) {
+            aliq_eff_item = (((rbtParaEnquadramento * faixa.aliquota / 100) - faixa.parcela) / rbtParaEnquadramento) * 100;
         } else {
-            // Se RBT12 é 0, usa a alíquota nominal da 1ª faixa
-            aliq_eff = tabela[0].aliquota;
+            aliq_eff_item = tabela[0].aliquota;
         }
 
-        // 3. Aplica Retenções (ISS, ICMS ST, Monofásico) e Imunidade (Livros/Papel)
-        // A lógica é: Nova Alíquota = Alíquota Efetiva * (1 - (Percentual do Tributo / 100))
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
         
         if (reparticao) {
-            
-            // IMUNIDADE DE LIVROS (CONSTITUCIONAL)
-            // Remove ICMS e IPI (Art. 150, VI, 'd' CF/88). 
-            // OBS: PIS/COFINS sobre livros é Alíquota Zero (Lei 10.865/04), devendo ser marcado "Monofásico/Alíquota Zero" separadamente se aplicável,
-            // pois a imunidade constitucional stricto sensu tange impostos (ICMS/IPI).
             if (item.isImune) {
                 if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
-                // Removido PIS/COFINS daqui para permitir cálculo correto quando houver tributação dessas contribuições
-                // ou uso da flag 'Monofásico' para Alíquota Zero.
             } 
-            // SERVIÇO PRESTADO NO EXTERIOR (LC 123/2006, Art. 18, § 4º-A)
-            // Imunidade de PIS, COFINS, ISS, ICMS e IPI na exportação.
-            // O cálculo recai apenas sobre IRPJ, CSLL e CPP (exceto Anexo IV onde CPP é pago em guia separada).
-            // A base de cálculo (item.valor) é o valor total do serviço no exterior.
             else if (item.isExterior) {
-                // Garante que apenas os impostos imunes sejam deduzidos da alíquota efetiva
+                // Imunidade na Exportação (PIS, COFINS, IPI, ICMS, ISS)
+                // Mantém IRPJ, CSLL e CPP (exceto anexo IV onde CPP é fora)
                 if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                 if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
                 if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
                 if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
-                // IRPJ e CSLL (e CPP) permanecem na alíquota efetiva, incidindo sobre o total da receita externa.
             }
             else {
-                // Se não for imune nem exterior, aplica as regras normais de retenção/ST/Monofásico
-                
-                // SUP (Sociedade Uniprofissional) funciona igual à retenção para o cálculo do DAS: o ISS não é pago no DAS
                 if (item.issRetido || item.isSup) {
-                    if (anexoAplicado === 'V') {
-                        // Regra vigente solicitada: Anexo V com retenção deduz 23.5% fixo da alíquota efetiva
-                        percentualReducao += 23.5;
-                    } else if (reparticao['ISS']) {
-                        // Demais anexos seguem a tabela de repartição
-                        percentualReducao += reparticao['ISS'];
-                    }
+                    if (anexoAplicado === 'V') percentualReducao += 23.5;
+                    else if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
                 }
-
-                if (item.icmsSt && reparticao['ICMS']) {
-                    percentualReducao += reparticao['ICMS'];
-                }
-                // Produtos Monofásicos (PIS/COFINS Zero no DAS)
+                if (item.icmsSt && reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (item.isMonofasico) {
                     if (reparticao['PIS']) percentualReducao += reparticao['PIS'];
                     if (reparticao['COFINS']) percentualReducao += reparticao['COFINS'];
@@ -647,14 +560,14 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             }
         }
 
-        const aliq_final = Math.max(0, aliq_eff * (1 - (percentualReducao / 100)));
+        const aliq_final = Math.max(0, aliq_eff_item * (1 - (percentualReducao / 100)));
         const valorDasItem = (item.valor * aliq_final) / 100;
         dasTotal += valorDasItem;
 
         detalhamentoAnexos.push({
-            cnae: item.cnae, // Added cnae field for mapping
+            cnae: item.cnae,
             anexo: anexoAplicado as any,
-            anexoOriginal: anexoOriginal, // Trace of original annex
+            anexoOriginal: anexoOriginal,
             faturamento: item.valor,
             aliquotaNominal: faixa.aliquota,
             aliquotaEfetiva: aliq_final,
@@ -669,44 +582,40 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     const aliq_eff_global = faturamentoTotalMes > 0 ? (dasTotal / faturamentoTotalMes) * 100 : 0;
 
-    // Determine main range for generic display logic
     const tabelaPrincipal = ANEXOS_TABELAS[empresa.anexo === 'III_V' ? (fator_r >= 0.28 ? 'III' : 'V') : empresa.anexo];
     let faixaIndexPrincipal = 0;
     if(tabelaPrincipal) {
-        faixaIndexPrincipal = tabelaPrincipal.findIndex((f: any) => rbt12 <= f.limite);
-        if (faixaIndexPrincipal === -1 && rbt12 > 0) faixaIndexPrincipal = 5;
+        faixaIndexPrincipal = tabelaPrincipal.findIndex((f: any) => rbt12Global <= f.limite);
+        if (faixaIndexPrincipal === -1 && rbt12Global > 0) faixaIndexPrincipal = 5;
     }
 
     return {
-        rbt12, 
+        rbt12: rbt12Global,
+        rbt12Interno, // Retorna segregado
+        rbt12Externo, // Retorna segregado
         aliq_nom: tabelaPrincipal ? tabelaPrincipal[faixaIndexPrincipal].aliquota : 0, 
         aliq_eff: aliq_eff_global, 
-        das: dasTotal * 12, // Estimativa anualizada simplista
+        das: dasTotal * 12,
         das_mensal: dasTotal,
         mensal, 
         historico_simulado: historico_simulado, 
         anexo_efetivo: empresa.anexo, 
         fator_r,
         folha_12: empresa.folha12, 
-        ultrapassou_sublimite: rbt12 > 3600000,
-        faixa_index: faixaIndexPrincipal, // Use main activity range for general distribution chart if needed
+        ultrapassou_sublimite: rbt12Global > 3600000,
+        faixa_index: faixaIndexPrincipal,
         detalhamento_anexos: detalhamentoAnexos,
-        // Segregação para UI
         totalMercadoInterno,
         totalMercadoExterno
     };
 };
 
 export const calcularDiscriminacaoImpostos = (anexo: string, faixaIndex: number, valorDas: number) => {
-    // Busca a distribuição correta baseada no Anexo e Faixa
     const distribuicao = REPARTICAO_IMPOSTOS[anexo]?.[Math.min(faixaIndex, 5)];
-    
     if (!distribuicao || valorDas === 0) return {};
-
     const resultado: Record<string, number> = {};
     for (const [imposto, percentual] of Object.entries(distribuicao)) {
         resultado[imposto] = valorDas * ((percentual as number) / 100);
     }
-    
     return resultado;
 };

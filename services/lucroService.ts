@@ -85,8 +85,11 @@ const calcularISS = (input: LucroInput): DetalheImposto | null => {
         };
     } else {
         const aliquota = input.issConfig.aliquota || 0;
-        // Soma serviços gerais e hospitalares da matriz para base do ISS (assumindo que filiais pagam no local e não aqui)
-        const baseIss = input.faturamentoServico + (input.faturamentoServicoHospitalar || 0);
+        
+        // Base de ISS APENAS sobre serviços com ISS Devido e Hospitalar
+        // Serviços com retenção na fonte ou Locação (não incide ISS) são excluídos aqui.
+        const baseIss = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0) + 
+                        (input.faturamentoServicoHospitalar || 0) + (input.faturamentoFiliais?.servicoHospitalar || 0);
         
         if (baseIss <= 0 || aliquota <= 0) return null;
 
@@ -94,7 +97,8 @@ const calcularISS = (input: LucroInput): DetalheImposto | null => {
             imposto: `ISS (${aliquota}%)`,
             baseCalculo: baseIss,
             aliquota: aliquota,
-            valor: baseIss * (aliquota / 100)
+            valor: baseIss * (aliquota / 100),
+            observacao: 'Incide apenas sobre serviços próprios (sem retenção) e hospitalares.'
         };
     }
 };
@@ -125,11 +129,18 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     // 1. Consolidar Faturamento Global do Mês (Matriz + Filiais) - VALOR DA NOTA (INCLUINDO IPI)
     const fatComercioMes = input.faturamentoComercio + (input.faturamentoFiliais?.comercio || 0);
     const fatIndustriaMes = input.faturamentoIndustria + (input.faturamentoFiliais?.industria || 0);
-    const fatServicoMes = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0);
+    
+    // Serviços: Consolida todas as vertentes para cálculo federal
+    const fatServicoProprio = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0);
+    const fatServicoRetido = (input.faturamentoServicoRetido || 0) + (input.faturamentoFiliais?.servicoRetido || 0);
+    const fatLocacao = (input.faturamentoLocacao || 0) + (input.faturamentoFiliais?.locacao || 0);
+    
+    const fatServicoMesTotal = fatServicoProprio + fatServicoRetido + fatLocacao;
+    
     const fatServicoHospMes = (input.faturamentoServicoHospitalar || 0) + (input.faturamentoFiliais?.servicoHospitalar || 0);
     
     // Total Faturado Bruto (Antes de Deduções)
-    const totalFaturadoInputs = fatComercioMes + fatIndustriaMes + fatServicoMes + fatServicoHospMes;
+    const totalFaturadoInputs = fatComercioMes + fatIndustriaMes + fatServicoMesTotal + fatServicoHospMes;
 
     // 2. Aplicação de Deduções da Receita Bruta (IPI e Devoluções)
     // OBS: ICMS sobre Vendas NÃO é deduzido aqui, pois afeta apenas PIS/COFINS (Tese do Século).
@@ -152,13 +163,13 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     // Se totalSemIpi for 0, evita divisão por zero
     const ratioComercio = totalSemIpi > 0 ? fatComercioMes / totalSemIpi : 0;
     const ratioIndustria = totalSemIpi > 0 ? fatIndustriaDeduzidoIpi / totalSemIpi : 0;
-    const ratioServico = totalSemIpi > 0 ? fatServicoMes / totalSemIpi : 0;
+    const ratioServico = totalSemIpi > 0 ? fatServicoMesTotal / totalSemIpi : 0;
     const ratioServicoHosp = totalSemIpi > 0 ? fatServicoHospMes / totalSemIpi : 0;
 
     // Bases Finais para Presunção (Líquidas de IPI e Devoluções, mas COM ICMS) -> Base IRPJ/CSLL
     const baseComercioFinal = Math.max(0, fatComercioMes - (valorDevolucoes * ratioComercio) - (restoDeducaoIpi > 0 ? restoDeducaoIpi : 0)); // Simplificação: joga resto do IPI no comércio se houver
     const baseIndustriaFinal = Math.max(0, fatIndustriaDeduzidoIpi - (valorDevolucoes * ratioIndustria));
-    const baseServicoFinal = Math.max(0, fatServicoMes - (valorDevolucoes * ratioServico));
+    const baseServicoFinal = Math.max(0, fatServicoMesTotal - (valorDevolucoes * ratioServico));
     const baseServicoHospFinal = Math.max(0, fatServicoHospMes - (valorDevolucoes * ratioServicoHosp));
 
     // Receita Bruta Efetiva (Base de Cálculo IRPJ/CSLL)
@@ -295,7 +306,6 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     }
 
     // ADICIONAR IMPOSTOS INFORMATIVOS (MANUAIS) AO RESULTADO FINAL
-    // Isso garante que sejam somados à Carga Tributária Global
     if (input.icmsProprioRecolher && input.icmsProprioRecolher > 0) {
         detalhamento.push({
             imposto: 'ICMS Próprio',
@@ -348,17 +358,22 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     
     const fatComercio = input.faturamentoComercio + (input.faturamentoFiliais?.comercio || 0);
     const fatIndustria = input.faturamentoIndustria + (input.faturamentoFiliais?.industria || 0);
-    const fatServico = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0);
+    
+    // Consolidação de Serviços (Próprio, Retido, Locação)
+    const fatServicoTotal = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0) + 
+                            (input.faturamentoServicoRetido || 0) + (input.faturamentoFiliais?.servicoRetido || 0) +
+                            (input.faturamentoLocacao || 0) + (input.faturamentoFiliais?.locacao || 0);
+
     const fatServicoHosp = (input.faturamentoServicoHospitalar || 0) + (input.faturamentoFiliais?.servicoHospitalar || 0);
     
-    const faturamentoBrutoInput = fatComercio + fatIndustria + fatServico + fatServicoHosp;
+    const faturamentoBrutoInput = fatComercio + fatIndustria + fatServicoTotal + fatServicoHosp;
     
     // Aplica deduções também no Real para chegar à Receita Líquida Operacional (base de partida)
     const receitaLiquida = Math.max(0, faturamentoBrutoInput - (input.valorIpi || 0) - (input.valorDevolucoes || 0));
 
     const detalhamento: DetalheImposto[] = [];
     
-    // ISS
+    // ISS (Apenas sobre serviços próprios/hospitalares, excluindo retenção e locação)
     const issItem = calcularISS(input);
     if (issItem) detalhamento.push(issItem);
 
