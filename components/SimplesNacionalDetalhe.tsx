@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, User, SimplesDetalheItem, SimplesItemCalculo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon } from './Icons';
+import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon, PlusIcon, TrashIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SimplesNacionalDetalheProps {
@@ -76,32 +76,44 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         // Helper para criar estado inicial ou carregar
         const getOrCreateState = (key: string, storedItem: any): CnaeInputState => {
             if (storedItem && typeof storedItem === 'object') {
+                const item = storedItem as SimplesDetalheItem;
                 return {
-                    valor: new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(storedItem.valor),
-                    issRetido: storedItem.issRetido || false,
-                    icmsSt: storedItem.icmsSt || false,
-                    isSup: storedItem.isSup || false,
-                    isMonofasico: storedItem.isMonofasico || false,
-                    isImune: storedItem.isImune || false,
-                    isExterior: storedItem.isExterior || false
+                    valor: new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(item.valor),
+                    issRetido: item.issRetido || false,
+                    icmsSt: item.icmsSt || false,
+                    isSup: item.isSup || false,
+                    isMonofasico: item.isMonofasico || false,
+                    isImune: item.isImune || false,
+                    isExterior: item.isExterior || false
                 };
             }
             return { valor: '0,00', issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
         };
 
-        // 1. Principal
-        const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
-        // Tenta buscar pela chave nova ou antiga (apenas CNAE) para retrocompatibilidade
-        const storedPrincipal = detalheMes[keyPrincipal] || detalheMes[empresa.cnae];
-        novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, storedPrincipal);
-
-        // 2. Secundários
-        if (empresa.atividadesSecundarias) {
-            empresa.atividadesSecundarias.forEach((ativ, index) => {
-                const keySec = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
-                const storedSec = detalheMes[keySec] || detalheMes[ativ.cnae];
-                novoFaturamentoPorCnae[keySec] = getOrCreateState(keySec, storedSec);
+        // Verifica se já existem dados salvos completos (incluindo itens extras adicionados manualmente)
+        const keysSalvas = Object.keys(detalheMes).filter(k => k !== 'faturamento_filiais');
+        
+        if (keysSalvas.length > 0) {
+            // Se já tem dados salvos, carrega exatamente o que está salvo (preserva itens extras)
+            keysSalvas.forEach(key => {
+                novoFaturamentoPorCnae[key] = getOrCreateState(key, detalheMes[key]);
             });
+        } else {
+            // Se não tem dados, inicializa com o padrão (Principal + Secundários)
+            
+            // 1. Principal
+            const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
+            const storedPrincipal = detalheMes[keyPrincipal] || detalheMes[empresa.cnae];
+            novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, storedPrincipal);
+
+            // 2. Secundários
+            if (empresa.atividadesSecundarias) {
+                empresa.atividadesSecundarias.forEach((ativ, index) => {
+                    const keySec = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
+                    const storedSec = detalheMes[keySec] || detalheMes[ativ.cnae];
+                    novoFaturamentoPorCnae[keySec] = getOrCreateState(keySec, storedSec);
+                });
+            }
         }
 
         setFaturamentoPorCnae(novoFaturamentoPorCnae);
@@ -109,7 +121,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         // Carrega Filiais
         const storedFiliais = detalheMes['faturamento_filiais'];
         if (storedFiliais) {
-            setFaturamentoFiliais(typeof storedFiliais === 'number' ? storedFiliais : storedFiliais.valor);
+            setFaturamentoFiliais(typeof storedFiliais === 'number' ? storedFiliais : (storedFiliais as SimplesDetalheItem).valor);
         } else {
             setFaturamentoFiliais(0);
         }
@@ -122,7 +134,8 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     const resumo = useMemo(() => {
         const itensCalculo: SimplesItemCalculo[] = [];
         
-        Object.entries(faturamentoPorCnae).forEach(([key, state]) => {
+        Object.entries(faturamentoPorCnae).forEach(([key, value]) => {
+            const state = value as CnaeInputState;
             const parts = key.split('::');
             const cnaeCode = parts.length >= 3 ? parts[2] : key;
             const anexoCode = parts.length >= 4 ? parts[3] : empresa.anexo;
@@ -191,13 +204,34 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         }));
     };
 
+    const handleAddRevenueItem = () => {
+        // Cria uma nova chave única para o item extra
+        // Padrão: extra::timestamp::cnae::anexo
+        const id = Date.now();
+        const key = `extra::${id}::${empresa.cnae}::${empresa.anexo}`;
+        
+        setFaturamentoPorCnae(prev => ({
+            ...prev,
+            [key]: { valor: '0,00', issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false }
+        }));
+    };
+
+    const handleRemoveRevenueItem = (key: string) => {
+        setFaturamentoPorCnae(prev => {
+            const newState = { ...prev };
+            delete newState[key];
+            return newState;
+        });
+    };
+
     const handleSaveMesVigente = async () => {
         setIsSaving(true);
         try {
             const detalheMes: Record<string, SimplesDetalheItem> = {};
             let totalMes = 0;
 
-            Object.entries(faturamentoPorCnae).forEach(([key, state]) => {
+            Object.entries(faturamentoPorCnae).forEach(([key, value]) => {
+                const state = value as CnaeInputState;
                 const val = parseFloat(state.valor.replace(/\./g, '').replace(',', '.') || '0');
                 totalMes += val;
                 detalheMes[key] = {
@@ -315,7 +349,10 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <div className="text-center">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase">Apuração do Mês</p>
                                     <p className="text-xl font-mono font-bold text-slate-900 dark:text-white">
-                                        R$ {Object.values(faturamentoPorCnae).reduce((acc, curr) => acc + parseFloat(curr.valor.replace(/\./g,'').replace(',','.') || '0'), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        R$ {Object.values(faturamentoPorCnae).reduce((acc, curr) => {
+                                            const state = curr as CnaeInputState;
+                                            return acc + parseFloat(state.valor.replace(/\./g,'').replace(',','.') || '0');
+                                        }, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </p>
                                 </div>
                                 <div className="text-center px-4 py-1 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-100 dark:border-sky-800">
@@ -332,15 +369,29 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         </h3>
 
                         <div className="space-y-4">
-                            {Object.entries(faturamentoPorCnae).map(([key, state]) => {
+                            {Object.entries(faturamentoPorCnae).map(([key, value]) => {
+                                const state = value as CnaeInputState;
                                 const parts = key.split('::');
                                 const type = parts.length >= 2 ? parts[0] : 'activity';
                                 const cnaeCode = parts.length >= 3 ? parts[2] : 'UNKNOWN';
                                 const anexoCode = parts.length >= 4 ? parts[3] : empresa.anexo;
-                                const label = type === 'principal' ? 'Atividade Principal' : 'Atividade Secundária';
+                                const isExtra = type === 'extra';
+                                const label = isExtra ? 'Receita Adicional' : (type === 'principal' ? 'Atividade Principal' : 'Atividade Secundária');
 
                                 return (
-                                    <div key={key} className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/20 hover:border-sky-300 transition-colors">
+                                    <div key={key} className="p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-700/20 hover:border-sky-300 transition-colors relative group">
+                                        
+                                        {/* Botão de Remover para Itens Extras */}
+                                        {isExtra && (
+                                            <button 
+                                                onClick={() => handleRemoveRevenueItem(key)}
+                                                className="absolute top-2 right-2 p-1.5 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-800 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                                                title="Remover este item"
+                                            >
+                                                <TrashIcon className="w-4 h-4" />
+                                            </button>
+                                        )}
+
                                         <div className="flex flex-col md:flex-row justify-between gap-4 mb-3">
                                             <div className="flex items-center gap-3">
                                                 <div className="p-2 bg-white dark:bg-slate-800 rounded text-sky-600 dark:text-sky-400 border border-slate-100 dark:border-slate-600">
@@ -349,7 +400,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                                 <div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-bold text-slate-800 dark:text-slate-200">{cnaeCode}</span>
-                                                        <span className="text-[10px] uppercase font-bold bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded">{label}</span>
+                                                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${isExtra ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'}`}>
+                                                            {label}
+                                                        </span>
                                                     </div>
                                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">Anexo {anexoCode}</p>
                                                 </div>
@@ -391,6 +444,14 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                     </div>
                                 );
                             })}
+
+                            <button 
+                                onClick={handleAddRevenueItem}
+                                className="w-full py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg text-slate-500 dark:text-slate-400 hover:border-sky-500 hover:text-sky-600 dark:hover:text-sky-400 transition-colors flex items-center justify-center gap-2 font-bold text-sm"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                Adicionar Receita / Segregar (ST/Normal)
+                            </button>
 
                             <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
                                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Faturamento Filiais (Consolidado)</label>
@@ -568,12 +629,5 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         </div>
     );
 };
-
-// Icon component needed for the modal close button, defining here if not imported properly or just reuse
-const PlusIcon = ({ className }: { className?: string }) => (
-    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-    </svg>
-);
 
 export default SimplesNacionalDetalhe;
