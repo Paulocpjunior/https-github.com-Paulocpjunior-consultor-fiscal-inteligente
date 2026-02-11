@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, User, SimplesDetalheItem, SimplesItemCalculo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon, PlusIcon, TrashIcon } from './Icons';
+import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, TagIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SimplesNacionalDetalheProps {
@@ -228,14 +228,18 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         setIsSaving(true);
         try {
             const detalheMes: Record<string, SimplesDetalheItem> = {};
-            let totalMes = 0;
+            let totalMes: number = 0;
 
             Object.entries(faturamentoPorCnae).forEach(([key, value]) => {
                 const state = value as CnaeInputState;
-                const val = parseFloat(state.valor.replace(/\./g, '').replace(',', '.') || '0');
-                totalMes += val;
+                const valString = state.valor.replace(/\./g, '').replace(',', '.') || '0';
+                const val = parseFloat(valString);
+                const safeVal = isNaN(val) ? 0 : val;
+                
+                totalMes += safeVal;
+                
                 detalheMes[key] = {
-                    valor: val,
+                    valor: safeVal,
                     issRetido: state.issRetido,
                     icmsSt: state.icmsSt,
                     isSup: state.isSup,
@@ -245,9 +249,11 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 };
             });
 
-            totalMes += faturamentoFiliais;
+            const safeFiliais = typeof faturamentoFiliais === 'number' ? faturamentoFiliais : 0;
+            totalMes += safeFiliais;
+            
             detalheMes['faturamento_filiais'] = {
-                valor: faturamentoFiliais,
+                valor: safeFiliais,
                 issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
             };
 
@@ -430,10 +436,16 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                             )}
 
                                             {['I', 'II'].includes(anexoCode) && (
-                                                <label className={`cursor-pointer px-3 py-1 rounded text-xs font-bold border transition-colors flex items-center gap-2 select-none ${state.icmsSt ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-600'}`}>
-                                                    <input type="checkbox" checked={state.icmsSt} onChange={() => handleOptionToggle(key, 'icmsSt')} className="hidden" />
-                                                    ICMS ST
-                                                </label>
+                                                <>
+                                                    <label className={`cursor-pointer px-3 py-1 rounded text-xs font-bold border transition-colors flex items-center gap-2 select-none ${state.icmsSt ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-600'}`}>
+                                                        <input type="checkbox" checked={state.icmsSt} onChange={() => handleOptionToggle(key, 'icmsSt')} className="hidden" />
+                                                        ICMS ST
+                                                    </label>
+                                                    <label className={`cursor-pointer px-3 py-1 rounded text-xs font-bold border transition-colors flex items-center gap-2 select-none ${state.isMonofasico ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-600'}`}>
+                                                        <input type="checkbox" checked={state.isMonofasico} onChange={() => handleOptionToggle(key, 'isMonofasico')} className="hidden" />
+                                                        <TagIcon className="w-3 h-3" /> PIS/COFINS Monofásico
+                                                    </label>
+                                                </>
                                             )}
                                             
                                             <label className={`cursor-pointer px-3 py-1 rounded text-xs font-bold border transition-colors flex items-center gap-2 select-none ${state.isImune ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-600'}`}>
