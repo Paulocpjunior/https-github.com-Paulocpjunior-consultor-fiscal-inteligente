@@ -4,7 +4,7 @@ import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, LucroInput, Histo
 import * as lucroPresumidoService from '../services/lucroPresumidoService';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { calcularLucro } from '../services/lucroService';
-import { PlusIcon, CalculatorIcon, DownloadIcon, TrashIcon, ArrowLeftIcon, SaveIcon, UserIcon, BuildingIcon, PencilIcon, CloseIcon, TagIcon } from './Icons';
+import { PlusIcon, CalculatorIcon, DownloadIcon, TrashIcon, ArrowLeftIcon, SaveIcon, UserIcon, BuildingIcon, PencilIcon, CloseIcon, TagIcon, BriefcaseIcon, ShieldIcon, InfoIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 // Helper to convert Ficha to Input for Calculation Service
@@ -61,7 +61,7 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
 };
 
 // Helper component for Currency Input
-const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean }> = ({ label, value, onChange, className, disabled }) => {
+const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean; placeholder?: string; highlight?: boolean }> = ({ label, value, onChange, className, disabled, placeholder, highlight }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -71,20 +71,38 @@ const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: nu
     
     return (
         <div className={className}>
-            <label className={`block text-xs font-bold uppercase mb-1 ${disabled ? 'text-slate-400' : 'text-slate-500'}`}>{label}</label>
+            <label className={`block text-xs font-bold uppercase mb-1 ${disabled ? 'text-slate-400' : (highlight ? 'text-sky-700 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400')}`}>{label}</label>
             <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">R$</span>
+                <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs ${highlight ? 'text-sky-600' : 'text-slate-400'}`}>R$</span>
                 <input 
                     type="text" 
-                    value={formatted} 
+                    value={value === 0 ? '' : formatted}
+                    placeholder={placeholder || '0,00'}
                     onChange={handleChange} 
                     disabled={disabled}
-                    className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-mono text-sm font-bold text-right ${disabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
+                    className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-mono text-sm font-bold text-right transition-colors 
+                        ${disabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700' : 
+                          highlight ? 'bg-sky-50 dark:bg-sky-900/20 text-sky-800 dark:text-sky-200 border-sky-200 dark:border-sky-800' : 
+                          'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
                 />
             </div>
         </div>
     );
 };
+
+const ToggleSwitch: React.FC<{ label: string; checked: boolean; onChange: (val: boolean) => void; description?: string; colorClass?: string }> = ({ label, checked, onChange, description, colorClass = "bg-sky-600" }) => (
+    <div className={`p-4 rounded-lg border transition-all cursor-pointer ${checked ? 'bg-white dark:bg-slate-800 border-l-4 border-l-' + colorClass.replace('bg-', '') + ' border-y-slate-200 border-r-slate-200 dark:border-y-slate-700 dark:border-r-slate-700 shadow-sm' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent opacity-70 hover:opacity-100'}`} onClick={() => onChange(!checked)}>
+        <div className="flex items-start gap-3">
+            <div className={`mt-1 w-5 h-5 rounded border flex items-center justify-center transition-colors ${checked ? colorClass + ' border-transparent' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500'}`}>
+                {checked && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+            </div>
+            <div>
+                <span className={`block text-sm font-bold ${checked ? 'text-slate-800 dark:text-slate-100' : 'text-slate-600 dark:text-slate-400'}`}>{label}</span>
+                {description && <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 block leading-relaxed">{description}</span>}
+            </div>
+        </div>
+    </div>
+);
 
 interface LucroPresumidoRealDashboardProps {
     currentUser: User | null;
@@ -119,11 +137,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaServicoRetido, setFichaServicoRetido] = useState(0);
     const [fichaLocacao, setFichaLocacao] = useState(0);
     const [fichaRecFinanceira, setFichaRecFinanceira] = useState(0);
+    const [fichaServicoHospitalar, setFichaServicoHospitalar] = useState(0);
     
     // Filiais (Consolidação)
     const [fichaFilialComercio, setFichaFilialComercio] = useState(0);
     const [fichaFilialIndustria, setFichaFilialIndustria] = useState(0);
     const [fichaFilialServico, setFichaFilialServico] = useState(0);
+    const [fichaFilialServicoHospitalar, setFichaFilialServicoHospitalar] = useState(0); // Added for hospital consolidation
     
     // Deduções e Ajustes
     const [isMonofasicoOption, setIsMonofasicoOption] = useState(false);
@@ -143,6 +163,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaRetIrpj, setFichaRetIrpj] = useState(0);
     const [fichaRetCsll, setFichaRetCsll] = useState(0);
 
+    // Configurações Fiscais (Tempo Real)
+    const [isEquiparacaoHospitalar, setIsEquiparacaoHospitalar] = useState(false);
+    const [isPresuncaoReduzida, setIsPresuncaoReduzida] = useState(false);
+    const [issTipo, setIssTipo] = useState<'aliquota_municipal' | 'sup_fixo'>('aliquota_municipal');
+    const [issAliquota, setIssAliquota] = useState(5);
+    const [pagarCotas, setPagarCotas] = useState(false);
+
     useEffect(() => {
         loadEmpresas();
     }, [currentUser]);
@@ -156,6 +183,69 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             }
         }
     }, [externalSelectedId, empresas]);
+
+    const selectedEmpresa = useMemo(() => empresas.find(e => e.id === selectedEmpresaId), [empresas, selectedEmpresaId]);
+
+    // Live Calculation Logic
+    const liveResults = useMemo(() => {
+        if (!selectedEmpresa) return null;
+
+        const liveInput: LucroInput = {
+            regimeSelecionado: selectedEmpresa.regimePadrao || 'Presumido',
+            periodoApuracao: 'Trimestral', // Defaulting to Trimestral for the "Resultado" view to enable Cotas simulation, could be toggled
+            mesReferencia: fichaMes,
+            
+            faturamentoComercio: fichaComercio,
+            faturamentoIndustria: fichaIndustria,
+            faturamentoServico: fichaServico,
+            faturamentoServicoRetido: fichaServicoRetido,
+            faturamentoLocacao: fichaLocacao,
+            faturamentoServicoHospitalar: fichaServicoHospitalar,
+            
+            faturamentoFiliais: {
+                comercio: fichaFilialComercio,
+                industria: fichaFilialIndustria,
+                servico: fichaFilialServico,
+                servicoRetido: 0,
+                locacao: 0,
+                servicoHospitalar: fichaFilialServicoHospitalar // Included in calculation
+            },
+
+            faturamentoMonofasico: isMonofasicoOption ? fichaMonofasico : 0,
+            valorIpi: fichaIpi,
+            valorDevolucoes: fichaDevolucoes,
+            icmsVendas: fichaIcmsVendas,
+
+            receitaFinanceira: fichaRecFinanceira,
+            despesasOperacionais: fichaDespesas,
+            despesasDedutiveis: 0,
+            folhaPagamento: fichaFolha,
+            custoMercadoriaVendida: fichaCmv,
+            
+            issConfig: {
+                tipo: issTipo,
+                aliquota: issAliquota
+            },
+            
+            retencaoPis: fichaRetPis,
+            retencaoCofins: fichaRetCofins,
+            retencaoIrpj: fichaRetIrpj,
+            retencaoCsll: fichaRetCsll,
+
+            isEquiparacaoHospitalar: isEquiparacaoHospitalar,
+            isPresuncaoReduzida16: isPresuncaoReduzida,
+        };
+
+        return calcularLucro(liveInput);
+    }, [
+        selectedEmpresa, fichaMes, fichaComercio, fichaIndustria, fichaServico, fichaServicoRetido, fichaLocacao, fichaRecFinanceira, fichaServicoHospitalar,
+        fichaFilialComercio, fichaFilialIndustria, fichaFilialServico, fichaFilialServicoHospitalar,
+        isMonofasicoOption, fichaMonofasico, fichaIpi, fichaDevolucoes, fichaIcmsVendas,
+        fichaCmv, fichaFolha, fichaDespesas,
+        issTipo, issAliquota,
+        fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
+        isEquiparacaoHospitalar, isPresuncaoReduzida
+    ]);
 
     const loadEmpresas = async () => {
         setLoading(true);
@@ -227,23 +317,21 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     };
 
     const handleSaveFicha = async () => {
-        if (!selectedEmpresaId) return;
-        const empresa = empresas.find(e => e.id === selectedEmpresaId);
-        if (!empresa) return;
+        if (!selectedEmpresa) return;
+        if (!liveResults) return;
 
         setLoading(true);
         try {
             const totalFaturamento = 
-                fichaComercio + fichaIndustria + fichaServico + fichaServicoRetido + fichaLocacao + fichaRecFinanceira +
-                fichaFilialComercio + fichaFilialIndustria + fichaFilialServico;
+                fichaComercio + fichaIndustria + fichaServico + fichaServicoRetido + fichaLocacao + fichaRecFinanceira + fichaServicoHospitalar +
+                fichaFilialComercio + fichaFilialIndustria + fichaFilialServico + fichaFilialServicoHospitalar;
             
-            // Simulação de cálculo para obter total de impostos
             const tempFicha: FichaFinanceiraRegistro = {
                 id: Date.now().toString(),
                 dataRegistro: Date.now(),
                 mesReferencia: fichaMes,
-                regime: empresa.regimePadrao || 'Presumido',
-                periodoApuracao: 'Mensal',
+                regime: selectedEmpresa.regimePadrao || 'Presumido',
+                periodoApuracao: 'Mensal', // Saving as Monthly record primarily
                 acumuladoAno: 0,
                 
                 faturamentoMesComercio: fichaComercio,
@@ -251,11 +339,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 faturamentoMesServico: fichaServico,
                 faturamentoMesServicoRetido: fichaServicoRetido,
                 faturamentoMesLocacao: fichaLocacao,
-                faturamentoMesServicoHospitalar: 0,
+                faturamentoMesServicoHospitalar: fichaServicoHospitalar,
                 
                 faturamentoFiliaisComercio: fichaFilialComercio,
                 faturamentoFiliaisIndustria: fichaFilialIndustria,
                 faturamentoFiliaisServico: fichaFilialServico,
+                faturamentoFiliaisServicoHospitalar: fichaFilialServicoHospitalar,
 
                 faturamentoMonofasico: isMonofasicoOption ? fichaMonofasico : 0,
                 valorIpi: fichaIpi,
@@ -276,21 +365,20 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 retencaoIrpj: fichaRetIrpj,
                 retencaoCsll: fichaRetCsll,
                 
-                totalImpostos: 0, // Será calculado
-                cargaTributaria: 0
+                totalImpostos: liveResults.totalImpostos,
+                cargaTributaria: liveResults.cargaTributaria,
+                
+                isEquiparacaoHospitalar: isEquiparacaoHospitalar,
+                isPresuncaoReduzida16: isPresuncaoReduzida
             };
 
-            const calculo = calcularLucro(convertFichaToInput(tempFicha, empresa));
-            tempFicha.totalImpostos = calculo.totalImpostos;
-            tempFicha.cargaTributaria = calculo.cargaTributaria;
-
-            await lucroPresumidoService.addFichaFinanceira(selectedEmpresaId, tempFicha);
-            await loadEmpresas(); // Refresh para pegar os novos dados
+            await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
+            await loadEmpresas(); 
             setView('details');
             
             // Reset fields
-            setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0);
-            setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0);
+            setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0); setFichaServicoHospitalar(0);
+            setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0); setFichaFilialServicoHospitalar(0);
             setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
             setFichaMonofasico(0); setIsMonofasicoOption(false);
         } catch (e) {
@@ -300,7 +388,6 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         }
     };
 
-    const selectedEmpresa = useMemo(() => empresas.find(e => e.id === selectedEmpresaId), [empresas, selectedEmpresaId]);
     const selectedFicha = useMemo(() => selectedEmpresa?.fichaFinanceira.find(f => f.id === selectedFichaId), [selectedEmpresa, selectedFichaId]);
 
     const renderList = () => (
@@ -405,55 +492,144 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     );
 
     const renderNewFicha = () => (
-        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-lg shadow-sm animate-fade-in pb-20">
-            <div className="flex items-center gap-4 mb-6">
-                <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Nova Competência (Ficha Financeira)</h2>
+        <div className="max-w-7xl mx-auto animate-fade-in pb-20">
+            <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full text-slate-500 dark:text-slate-300"><ArrowLeftIcon className="w-5 h-5" /></button>
+                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 uppercase">{selectedEmpresa?.nome}</h2>
+                </div>
+                <div>
+                    <button onClick={handleSaveFicha} disabled={loading} className="px-6 py-2 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 shadow-lg flex items-center gap-2">
+                        {loading ? 'Salvando...' : <><SaveIcon className="w-5 h-5" /> Salvar Competência</>}
+                    </button>
+                </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Coluna 1: Receitas */}
-                <div className="space-y-4">
-                    <div className="bg-sky-50 dark:bg-sky-900/20 p-4 rounded-lg border border-sky-100 dark:border-sky-800">
-                        <h3 className="font-bold text-sky-700 dark:text-sky-300 mb-3 flex items-center gap-2">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* COLUNA 1: Configurações e Inputs (Esquerda) */}
+                <div className="lg:col-span-2 space-y-6">
+                    
+                    {/* Configurações Fiscais */}
+                    <div className="bg-slate-900/5 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <h3 className="font-bold text-sky-700 dark:text-sky-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide">
+                            <ShieldIcon className="w-4 h-4" /> Configurações Fiscais (ISS e Especiais)
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                            <ToggleSwitch 
+                                label="Equiparação Hospitalar" 
+                                description="Selecione se a empresa possui decisão judicial ou atende aos requisitos da ANVISA para alíquotas reduzidas (8% IRPJ / 12% CSLL)."
+                                checked={isEquiparacaoHospitalar} 
+                                onChange={setIsEquiparacaoHospitalar} 
+                                colorClass="bg-purple-600"
+                            />
+                            <ToggleSwitch 
+                                label="Presunção Reduzida IRPJ (16%)" 
+                                description="Aplica-se apenas para receita bruta anual até R$ 120.000,00. Reduz a base de IRPJ de 32% para 16%."
+                                checked={isPresuncaoReduzida} 
+                                onChange={setIsPresuncaoReduzida} 
+                                colorClass="bg-green-600"
+                            />
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-700 flex flex-col md:flex-row items-center gap-6">
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" checked={issTipo === 'aliquota_municipal'} onChange={() => setIssTipo('aliquota_municipal')} className="text-sky-600 focus:ring-sky-500" />
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Alíquota Municipal (%)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" checked={issTipo === 'sup_fixo'} onChange={() => setIssTipo('sup_fixo')} className="text-sky-600 focus:ring-sky-500" />
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">ISS Fixo (SUP)</span>
+                                </label>
+                            </div>
+                            <div className="flex-grow w-full md:w-auto">
+                                {issTipo === 'aliquota_municipal' ? (
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1">Alíquota do ISS (%)</label>
+                                        <input 
+                                            type="number" 
+                                            value={issAliquota} 
+                                            onChange={e => setIssAliquota(parseFloat(e.target.value) || 0)}
+                                            className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded text-slate-900 dark:text-white font-bold outline-none focus:ring-2 focus:ring-sky-500"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="text-sm text-slate-500 italic">Cálculo por sócio (SUP) será aplicado.</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Consolidação Filiais */}
+                    <div className="bg-slate-900/5 dark:bg-slate-800/50 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <h3 className="font-bold text-indigo-600 dark:text-indigo-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide">
+                            <BuildingIcon className="w-4 h-4" /> Consolidação de Filiais (Matriz)
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                            Insira o faturamento das filiais para cálculo unificado dos impostos federais (PIS/COFINS/IRPJ/CSLL).
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <CurrencyInput label="Faturamento Filiais (Comércio)" value={fichaFilialComercio} onChange={setFichaFilialComercio} className="bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700" />
+                            <CurrencyInput label="Faturamento Filiais (Indústria)" value={fichaFilialIndustria} onChange={setFichaFilialIndustria} className="bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700" />
+                            <CurrencyInput label="Faturamento Filiais (Serviço)" value={fichaFilialServico} onChange={setFichaFilialServico} className="bg-slate-50 dark:bg-slate-800 p-2 rounded border border-slate-200 dark:border-slate-700" />
+                            {isEquiparacaoHospitalar && (
+                                <CurrencyInput label="Filiais (Hospitalar 8%)" value={fichaFilialServicoHospitalar} onChange={setFichaFilialServicoHospitalar} className="bg-purple-50 dark:bg-purple-900/10 p-2 rounded border border-purple-200 dark:border-purple-800 animate-fade-in" highlight />
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Receitas da Matriz */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <h3 className="font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
                             <CalculatorIcon className="w-4 h-4" /> Receitas da Matriz
                         </h3>
-                        <div className="space-y-3">
-                            <div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="col-span-1 md:col-span-2">
                                 <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Mês de Referência</label>
-                                <input type="month" value={fichaMes} onChange={e => setFichaMes(e.target.value)} className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700" />
+                                <input type="month" value={fichaMes} onChange={e => setFichaMes(e.target.value)} className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white" />
                             </div>
                             <CurrencyInput label="Comércio (Revenda)" value={fichaComercio} onChange={setFichaComercio} />
                             <CurrencyInput label="Indústria" value={fichaIndustria} onChange={setFichaIndustria} />
-                            <CurrencyInput label="Serviços (Geral)" value={fichaServico} onChange={setFichaServico} />
-                            <CurrencyInput label="Serviços (C/ Retenção)" value={fichaServicoRetido} onChange={setFichaServicoRetido} />
-                            <CurrencyInput label="Locação de Bens" value={fichaLocacao} onChange={setFichaLocacao} />
-                            <CurrencyInput label="Receita Financeira" value={fichaRecFinanceira} onChange={setFichaRecFinanceira} className="pt-2 border-t border-sky-200 dark:border-sky-700" />
+                            
+                            <CurrencyInput label={isEquiparacaoHospitalar ? "Serviços Gerais (32% - Sem Equiparação)" : "Serviços (Geral)"} value={fichaServico} onChange={setFichaServico} />
+                            
+                            {isEquiparacaoHospitalar && (
+                                <div className="animate-fade-in">
+                                    <CurrencyInput label="Serviços Hospitalares (8% - Equiparação)" value={fichaServicoHospitalar} onChange={setFichaServicoHospitalar} highlight />
+                                </div>
+                            )}
+
+                            <CurrencyInput label="Serviços (C/ Retenção de ISS)" value={fichaServicoRetido} onChange={setFichaServicoRetido} placeholder="ISS Retido pelo Tomador" />
+                            <CurrencyInput label="Locação de Bens (Sem ISS)" value={fichaLocacao} onChange={setFichaLocacao} />
+                            
+                            <div className="col-span-1 md:col-span-2 pt-4 mt-2 border-t border-slate-100 dark:border-slate-700">
+                                <div className="p-4 bg-sky-50 dark:bg-sky-900/10 rounded-lg border border-sky-100 dark:border-sky-900">
+                                    <CurrencyInput 
+                                        label="Receita Financeira (Aplicações/Juros)" 
+                                        value={fichaRecFinanceira} 
+                                        onChange={setFichaRecFinanceira} 
+                                        highlight
+                                    />
+                                    <p className="text-[10px] text-sky-600 dark:text-sky-400 mt-1">
+                                        * Soma-se integralmente à base de IRPJ/CSLL (não sofre presunção).
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                        <h3 className="font-bold text-indigo-700 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                            <BuildingIcon className="w-4 h-4" /> Faturamento Filiais (Consolidação)
+                    {/* Deduções e Ajustes */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <h3 className="font-bold text-orange-600 dark:text-orange-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
+                            <TagIcon className="w-4 h-4" /> Deduções e Ajustes
                         </h3>
-                        <div className="space-y-3">
-                            <CurrencyInput label="Filiais - Comércio" value={fichaFilialComercio} onChange={setFichaFilialComercio} />
-                            <CurrencyInput label="Filiais - Indústria" value={fichaFilialIndustria} onChange={setFichaFilialIndustria} />
-                            <CurrencyInput label="Filiais - Serviço" value={fichaFilialServico} onChange={setFichaFilialServico} />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Coluna 2: Deduções, Custos e Retenções */}
-                <div className="space-y-4">
-                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
-                        <h3 className="font-bold text-orange-700 dark:text-orange-300 mb-3">Deduções e Ajustes</h3>
-                        <div className="space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <CurrencyInput label="IPI Faturado" value={fichaIpi} onChange={setFichaIpi} />
                             <CurrencyInput label="Devoluções de Vendas" value={fichaDevolucoes} onChange={setFichaDevolucoes} />
-                            <CurrencyInput label="ICMS sobre Vendas (Para dedução PIS/COFINS)" value={fichaIcmsVendas} onChange={setFichaIcmsVendas} />
+                            <CurrencyInput label="ICMS sobre Vendas (Para dedução PIS/COFINS)" value={fichaIcmsVendas} onChange={setFichaIcmsVendas} className="col-span-1 md:col-span-2" />
                             
-                            <div className="pt-2 border-t border-orange-200 dark:border-orange-700">
+                            <div className="col-span-1 md:col-span-2 pt-2 border-t border-orange-100 dark:border-orange-800/30">
                                 <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer mb-2">
                                     <input 
                                         type="checkbox" 
@@ -461,7 +637,6 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                         onChange={e => setIsMonofasicoOption(e.target.checked)} 
                                         className="w-4 h-4 text-sky-600 rounded"
                                     />
-                                    <TagIcon className="w-4 h-4" />
                                     Opção Monofásico?
                                 </label>
                                 {isMonofasicoOption && (
@@ -470,7 +645,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                             label="Valor Receita Monofásica" 
                                             value={fichaMonofasico} 
                                             onChange={setFichaMonofasico}
-                                            className="bg-white dark:bg-slate-800 rounded-lg p-2 border border-slate-200 dark:border-slate-600"
+                                            className="bg-slate-50 dark:bg-slate-700 rounded-lg p-2 border border-slate-200 dark:border-slate-600"
                                         />
                                         <p className="text-[10px] text-slate-500 mt-1">
                                             * Base PIS/COFINS será ajustada (Faturamento Bruto - IPI - Devolução) conforme regra STF/Monofásico.
@@ -480,33 +655,90 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border border-slate-100 dark:border-slate-600">
-                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3">Custos e Despesas</h3>
-                        <div className="space-y-3">
-                            <CurrencyInput label="CMV (Custo Mercadoria)" value={fichaCmv} onChange={setFichaCmv} />
-                            <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
-                            <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
+                {/* COLUNA 2: RESULTADOS (Direita - Sticky) */}
+                <div className="lg:col-span-1">
+                    <div className="sticky top-6 space-y-6">
+                        {/* Resultado Card */}
+                        <div className="bg-slate-800 dark:bg-slate-900 text-white rounded-xl shadow-xl overflow-hidden border border-slate-700">
+                            <div className="p-4 bg-slate-900/50 border-b border-slate-700">
+                                <h3 className="text-lg font-bold flex items-center gap-2 text-sky-400">
+                                    <InfoIcon className="w-5 h-5" /> Resultado da Apuração
+                                </h3>
+                            </div>
+                            
+                            {liveResults ? (
+                                <div className="p-6 space-y-6">
+                                    {liveResults.detalhamento.map((item, idx) => (
+                                        <div key={idx} className="border-b border-slate-700/50 pb-4 last:border-0 last:pb-0">
+                                            <div className="flex justify-between items-start mb-1">
+                                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{item.imposto}</span>
+                                                <span className="text-lg font-bold text-sky-300">
+                                                    {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </span>
+                                            </div>
+                                            <div className="text-[10px] text-slate-500 font-mono">
+                                                BASE: {item.baseCalculo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ({item.aliquota}%)
+                                            </div>
+                                            {item.observacao && <div className="text-[10px] text-slate-600 italic mt-1">{item.observacao}</div>}
+                                            
+                                            {/* Simulação Cotas para IRPJ/CSLL */}
+                                            {item.cotaInfo?.disponivel && (
+                                                <div className="mt-2 bg-slate-700/30 p-2 rounded border border-slate-700">
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={pagarCotas} 
+                                                            onChange={e => setPagarCotas(e.target.checked)}
+                                                            className="rounded border-slate-500 bg-slate-800 text-sky-500 focus:ring-offset-slate-900" 
+                                                        />
+                                                        <span className="text-xs font-bold text-sky-400">PAGAR EM COTAS (3X)</span>
+                                                    </label>
+                                                    {pagarCotas && (
+                                                        <div className="mt-1 pl-5 text-[10px] text-slate-400">
+                                                            1ª Cota: {item.cotaInfo.valorPrimeiraCota.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+
+                                    <div className="pt-4 border-t border-slate-600 mt-4">
+                                        <div className="flex justify-between items-center bg-sky-600 p-4 rounded-lg shadow-lg">
+                                            <span className="text-xs font-bold text-sky-100 uppercase">TOTAL DE IMPOSTOS</span>
+                                            <span className="text-2xl font-black text-white">
+                                                {liveResults.totalImpostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center text-slate-500 italic">
+                                    Preencha os valores para visualizar a apuração.
+                                </div>
+                            )}
                         </div>
-                    </div>
 
-                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800">
-                        <h3 className="font-bold text-green-700 dark:text-green-300 mb-3">Retenções (A Compensar)</h3>
-                        <div className="grid grid-cols-2 gap-3">
-                            <CurrencyInput label="Ret. PIS" value={fichaRetPis} onChange={setFichaRetPis} />
-                            <CurrencyInput label="Ret. COFINS" value={fichaRetCofins} onChange={setFichaRetCofins} />
-                            <CurrencyInput label="Ret. IRPJ" value={fichaRetIrpj} onChange={setFichaRetIrpj} />
-                            <CurrencyInput label="Ret. CSLL" value={fichaRetCsll} onChange={setFichaRetCsll} />
+                        {/* Custos e Retenções (Inputs Secundários) */}
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <h3 className="font-bold text-slate-600 dark:text-slate-400 mb-4 text-xs uppercase tracking-wide">Custos e Retenções</h3>
+                            <div className="space-y-3">
+                                <CurrencyInput label="CMV" value={fichaCmv} onChange={setFichaCmv} />
+                                <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
+                                <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
+                                
+                                <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                                    <CurrencyInput label="Ret. PIS" value={fichaRetPis} onChange={setFichaRetPis} />
+                                    <CurrencyInput label="Ret. COFINS" value={fichaRetCofins} onChange={setFichaRetCofins} />
+                                    <CurrencyInput label="Ret. IRPJ" value={fichaRetIrpj} onChange={setFichaRetIrpj} />
+                                    <CurrencyInput label="Ret. CSLL" value={fichaRetCsll} onChange={setFichaRetCsll} />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div className="mt-8 flex justify-end gap-3">
-                <button onClick={() => setView('details')} className="px-6 py-3 bg-slate-100 dark:bg-slate-700 rounded-lg font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
-                <button onClick={handleSaveFicha} disabled={loading} className="px-8 py-3 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 shadow-lg flex items-center gap-2">
-                    {loading ? 'Salvando...' : <><SaveIcon className="w-5 h-5" /> Salvar Competência</>}
-                </button>
             </div>
         </div>
     );

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, User, SimplesDetalheItem, SimplesItemCalculo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
@@ -258,9 +257,9 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             });
 
             // 2. Processa Filiais (Somando ao total e salvando detalhado)
-            const safeFilialComercio = filialComercio || 0;
-            const safeFilialIndustria = filialIndustria || 0;
-            const safeFilialServico = filialServico || 0;
+            const safeFilialComercio = Number(filialComercio) || 0;
+            const safeFilialIndustria = Number(filialIndustria) || 0;
+            const safeFilialServico = Number(filialServico) || 0;
             
             totalMes += safeFilialComercio + safeFilialIndustria + safeFilialServico;
             
@@ -368,7 +367,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <div className="text-center">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase">Apuração do Mês</p>
                                     <p className="text-xl font-mono font-bold text-slate-900 dark:text-white">
-                                        R$ {(Object.values(faturamentoPorCnae).reduce((acc, curr) => {
+                                        R$ {(Object.values(faturamentoPorCnae).reduce((acc: number, curr) => {
                                             const state = curr as CnaeInputState;
                                             return acc + parseFloat(state.valor.replace(/\./g,'').replace(',','.') || '0');
                                         }, 0) + (filialComercio || 0) + (filialIndustria || 0) + (filialServico || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
