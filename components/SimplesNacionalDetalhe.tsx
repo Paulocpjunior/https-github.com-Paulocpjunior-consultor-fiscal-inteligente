@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalImportResult, User, SimplesDetalheItem, SimplesItemCalculo } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, TagIcon } from './Icons';
+import { ArrowLeftIcon, SaveIcon, UserIcon, HistoryIcon, EyeIcon, DownloadIcon, CalculatorIcon, GlobeIcon, DocumentTextIcon, ShieldIcon, AnimatedCheckIcon, PlusIcon, TrashIcon, TagIcon, BuildingIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 interface SimplesNacionalDetalheProps {
@@ -28,7 +28,7 @@ interface CnaeInputState {
     isExterior: boolean;
 }
 
-const CurrencyInput: React.FC<{ value: number; onChange: (val: number) => void; className?: string; placeholder?: string }> = ({ value, onChange, className, placeholder }) => {
+const CurrencyInput: React.FC<{ value: number; onChange: (val: number) => void; className?: string; placeholder?: string; label?: string }> = ({ value, onChange, className, placeholder, label }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -37,14 +37,17 @@ const CurrencyInput: React.FC<{ value: number; onChange: (val: number) => void; 
     const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(value);
     return (
         <div className={`relative ${className || ''}`}>
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
-            <input 
-                type="text" 
-                value={value === 0 && placeholder ? '' : formatted}
-                placeholder={placeholder}
-                onChange={handleChange} 
-                className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-mono text-right text-sm"
-            />
+            {label && <label className="block text-xs font-bold text-slate-500 mb-1">{label}</label>}
+            <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">R$</span>
+                <input 
+                    type="text" 
+                    value={value === 0 && placeholder ? '' : formatted}
+                    placeholder={placeholder}
+                    onChange={handleChange} 
+                    className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-slate-900 font-bold dark:text-white dark:font-mono text-right text-sm"
+                />
+            </div>
         </div>
     );
 };
@@ -58,7 +61,13 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     // Estados de Apuração Mensal
     const [mesApuracao, setMesApuracao] = useState(new Date());
     const [faturamentoPorCnae, setFaturamentoPorCnae] = useState<Record<string, CnaeInputState>>({});
-    const [faturamentoFiliais, setFaturamentoFiliais] = useState<number>(0);
+    
+    // Filiais Detalhadas
+    const [filialComercio, setFilialComercio] = useState<number>(0);
+    const [filialIndustria, setFilialIndustria] = useState<number>(0);
+    const [filialServico, setFilialServico] = useState<number>(0);
+
+    const [icmsVendas, setIcmsVendas] = useState<number>(0);
     
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
@@ -91,22 +100,18 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         };
 
         // Verifica se já existem dados salvos completos (incluindo itens extras adicionados manualmente)
-        const keysSalvas = Object.keys(detalheMes).filter(k => k !== 'faturamento_filiais');
+        const keysSalvas = Object.keys(detalheMes).filter(k => !k.startsWith('filial_') && k !== 'icms_vendas');
         
         if (keysSalvas.length > 0) {
-            // Se já tem dados salvos, carrega exatamente o que está salvo (preserva itens extras)
             keysSalvas.forEach(key => {
                 novoFaturamentoPorCnae[key] = getOrCreateState(key, detalheMes[key]);
             });
         } else {
-            // Se não tem dados, inicializa com o padrão (Principal + Secundários)
-            
-            // 1. Principal
+            // Inicializa com padrão (Principal + Secundários)
             const keyPrincipal = `principal::0::${empresa.cnae}::${empresa.anexo}`;
             const storedPrincipal = detalheMes[keyPrincipal] || detalheMes[empresa.cnae];
             novoFaturamentoPorCnae[keyPrincipal] = getOrCreateState(keyPrincipal, storedPrincipal);
 
-            // 2. Secundários
             if (empresa.atividadesSecundarias) {
                 empresa.atividadesSecundarias.forEach((ativ, index) => {
                     const keySec = `secundario::${index}::${ativ.cnae}::${ativ.anexo}`;
@@ -119,12 +124,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         setFaturamentoPorCnae(novoFaturamentoPorCnae);
 
         // Carrega Filiais
-        const storedFiliais = detalheMes['faturamento_filiais'];
-        if (storedFiliais) {
-            setFaturamentoFiliais(typeof storedFiliais === 'number' ? storedFiliais : (storedFiliais as SimplesDetalheItem).valor);
-        } else {
-            setFaturamentoFiliais(0);
-        }
+        setFilialComercio(detalheMes['filial_comercio']?.valor || 0);
+        setFilialIndustria(detalheMes['filial_industria']?.valor || 0);
+        setFilialServico(detalheMes['filial_servico']?.valor || 0);
+        
+        // Carrega ICMS
+        setIcmsVendas(detalheMes['icms_vendas']?.valor || 0);
 
         setManualRbtHistory(empresa.faturamentoManual || {});
 
@@ -155,13 +160,17 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             });
         });
 
-        if (faturamentoFiliais > 0) {
-            itensCalculo.push({
-                cnae: 'Filiais',
-                anexo: empresa.anexo,
-                valor: faturamentoFiliais,
-                issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
-            });
+        // Adiciona Filiais ao cálculo (Assume Anexo I para Comércio, II Indústria, III Serviço se não especificado, ou usa o da empresa)
+        if (filialComercio > 0) {
+            itensCalculo.push({ cnae: 'Filial Comércio', anexo: 'I', valor: filialComercio, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false });
+        }
+        if (filialIndustria > 0) {
+            itensCalculo.push({ cnae: 'Filial Indústria', anexo: 'II', valor: filialIndustria, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false });
+        }
+        if (filialServico > 0) {
+            // Assume Anexo III ou o da empresa se for serviço
+            const anexoServico = ['III', 'IV', 'V'].includes(empresa.anexo) ? empresa.anexo : 'III';
+            itensCalculo.push({ cnae: 'Filial Serviço', anexo: anexoServico as any, valor: filialServico, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false });
         }
 
         // Simula a empresa com os dados atuais de input para o cálculo
@@ -172,12 +181,12 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         };
 
         return simplesService.calcularResumoEmpresa(empresaTemp, notas, mesApuracao, { itensCalculo });
-    }, [empresa, notas, mesApuracao, faturamentoPorCnae, faturamentoFiliais, manualRbtHistory, folha12Input]);
+    }, [empresa, notas, mesApuracao, faturamentoPorCnae, filialComercio, filialIndustria, filialServico, manualRbtHistory, folha12Input]);
 
     // Calculate total RBT12 from manual inputs
     const totalRbt12Manual = useMemo(() => {
         let total = 0;
-        const today = new Date(mesApuracao); // Use o mês de apuração como referência para o RBT12 anterior
+        const today = new Date(mesApuracao); 
         for (let i = 1; i <= 12; i++) {
             const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
             const k = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -205,8 +214,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
     };
 
     const handleAddRevenueItem = () => {
-        // Cria uma nova chave única para o item extra
-        // Padrão: extra::timestamp::cnae::anexo
         const id = Date.now();
         const key = `extra::${id}::${empresa.cnae}::${empresa.anexo}`;
         
@@ -230,6 +237,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
             const detalheMes: Record<string, SimplesDetalheItem> = {};
             let totalMes: number = 0;
 
+            // 1. Processa Itens Normais e Extras
             Object.entries(faturamentoPorCnae).forEach(([key, value]) => {
                 const state = value as CnaeInputState;
                 const valString = state.valor.replace(/\./g, '').replace(',', '.') || '0';
@@ -249,17 +257,23 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 };
             });
 
-            const safeFiliais = typeof faturamentoFiliais === 'number' ? faturamentoFiliais : 0;
-            totalMes += safeFiliais;
+            // 2. Processa Filiais (Somando ao total e salvando detalhado)
+            const safeFilialComercio = filialComercio || 0;
+            const safeFilialIndustria = filialIndustria || 0;
+            const safeFilialServico = filialServico || 0;
             
-            detalheMes['faturamento_filiais'] = {
-                valor: safeFiliais,
-                issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false
-            };
+            totalMes += safeFilialComercio + safeFilialIndustria + safeFilialServico;
+            
+            detalheMes['filial_comercio'] = { valor: safeFilialComercio, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
+            detalheMes['filial_industria'] = { valor: safeFilialIndustria, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
+            detalheMes['filial_servico'] = { valor: safeFilialServico, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
+
+            // 3. Salva ICMS Informativo
+            detalheMes['icms_vendas'] = { valor: icmsVendas || 0, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false };
 
             const mesChave = `${mesApuracao.getFullYear()}-${(mesApuracao.getMonth() + 1).toString().padStart(2, '0')}`;
             
-            // Atualiza histórico manual com o total do mês
+            // Atualiza histórico manual com o total do mês (Matriz + Filiais)
             const novoHistorico = { ...manualRbtHistory, [mesChave]: totalMes };
             setManualRbtHistory(novoHistorico);
 
@@ -297,7 +311,6 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                 onShowToast(`Importação com avisos: ${res.errors[0]}`);
             } else {
                 onShowToast(`Importado com sucesso!`);
-                // Force reload logic implicitly via effect or explicit reload if needed
             }
         }
     };
@@ -355,10 +368,10 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 <div className="text-center">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase">Apuração do Mês</p>
                                     <p className="text-xl font-mono font-bold text-slate-900 dark:text-white">
-                                        R$ {Object.values(faturamentoPorCnae).reduce((acc, curr) => {
+                                        R$ {(Object.values(faturamentoPorCnae).reduce((acc, curr) => {
                                             const state = curr as CnaeInputState;
                                             return acc + parseFloat(state.valor.replace(/\./g,'').replace(',','.') || '0');
-                                        }, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        }, 0) + (filialComercio || 0) + (filialIndustria || 0) + (filialServico || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </p>
                                 </div>
                                 <div className="text-center px-4 py-1 bg-sky-50 dark:bg-sky-900/20 rounded-lg border border-sky-100 dark:border-sky-800">
@@ -371,7 +384,7 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                         </div>
 
                         <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase mb-4 flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-2">
-                            <CalculatorIcon className="w-4 h-4 text-sky-600" /> Discriminativo de Receitas por CNAE
+                            <CalculatorIcon className="w-4 h-4 text-sky-600" /> Discriminativo de Receitas por CNAE (Matriz)
                         </h3>
 
                         <div className="space-y-4">
@@ -465,12 +478,39 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
                                 Adicionar Receita / Segregar (ST/Normal)
                             </button>
 
+                            <div className="pt-4 mt-6 border-t border-slate-100 dark:border-slate-700">
+                                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase mb-4 flex items-center gap-2">
+                                    <BuildingIcon className="w-4 h-4 text-sky-600" /> Faturamento Filiais (Consolidação)
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <CurrencyInput 
+                                        label="Filial Comércio"
+                                        value={filialComercio}
+                                        onChange={setFilialComercio}
+                                        className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700"
+                                    />
+                                    <CurrencyInput 
+                                        label="Filial Indústria"
+                                        value={filialIndustria}
+                                        onChange={setFilialIndustria}
+                                        className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700"
+                                    />
+                                    <CurrencyInput 
+                                        label="Filial Serviço"
+                                        value={filialServico}
+                                        onChange={setFilialServico}
+                                        className="bg-slate-50 dark:bg-slate-700/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Faturamento Filiais (Consolidado)</label>
+                                <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Informações Adicionais</h3>
                                 <CurrencyInput 
-                                    value={faturamentoFiliais}
-                                    onChange={setFaturamentoFiliais}
-                                    placeholder="Total Filiais"
+                                    label="ICMS sobre Vendas (Informativo)"
+                                    value={icmsVendas}
+                                    onChange={setIcmsVendas}
+                                    placeholder="Valor destacado em nota"
                                 />
                             </div>
                         </div>

@@ -401,6 +401,9 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             // Itera sobre os itens do mês para somar separadamente
             Object.values(detalhes).forEach((item: any) => {
                 const valorItem = typeof item === 'number' ? item : item.valor;
+                // Ignora campos auxiliares como icms_vendas se estiverem no objeto
+                if (typeof item === 'object' && !item.issRetido && !item.isSup && !item.icmsSt && !item.isMonofasico && !item.isImune && !item.isExterior && valorItem === 0) return;
+
                 const isExt = typeof item === 'object' && item.isExterior === true;
                 
                 if (isExt) mesExterno += valorItem;
@@ -432,6 +435,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     }
 
     // Calcula Fator R (Folha12 / RBT12 Global)
+    // Validação explícita solicitada: Usar Folha12 e RBT12 Global para definir anexo
     let fator_r = rbt12Global > 0 ? (empresa.folha12 / rbt12Global) : 0;
     if (options && options.fatorRManual !== undefined && options.fatorRManual !== null && !isNaN(options.fatorRManual)) {
         fator_r = options.fatorRManual;
@@ -445,11 +449,20 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         
         if (entries.length > 0) {
             entries.forEach(([key, value]) => {
+                if (key === 'icms_vendas') return; // Ignora campo informativo
+
                 const parts = key.split('::');
                 let cnaeCode = '', anexoCode = '';
                 if (parts.length >= 4) {
                     cnaeCode = parts[2];
                     anexoCode = parts[3];
+                } else if (key.startsWith('filial_')) {
+                    const tipo = key.split('_')[1]; // comercio, industria, servico
+                    cnaeCode = `Filial ${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
+                    // Define anexo padrão para filial se não especificado
+                    if (tipo === 'comercio') anexoCode = 'I';
+                    else if (tipo === 'industria') anexoCode = 'II';
+                    else anexoCode = empresa.anexo === 'III_V' ? (fator_r >= 0.28 ? 'III' : 'V') : empresa.anexo;
                 } else {
                     const splitKey = key.split('_');
                     if (splitKey.length >= 2) {
@@ -503,6 +516,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         let anexoAplicado = item.anexo;
         const anexoOriginal = item.anexo;
         
+        // Aplicação do Fator R: Validação para mudar Anexo V para III (ou vice-versa para III_V)
         if (anexoAplicado === 'V') {
             if (fator_r >= 0.28) anexoAplicado = 'III';
         } else if (anexoAplicado === 'III_V') {

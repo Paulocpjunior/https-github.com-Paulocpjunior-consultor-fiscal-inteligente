@@ -4,7 +4,7 @@ import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, LucroInput, Histo
 import * as lucroPresumidoService from '../services/lucroPresumidoService';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { calcularLucro } from '../services/lucroService';
-import { PlusIcon, CalculatorIcon, DownloadIcon, TrashIcon, ArrowLeftIcon, SaveIcon, UserIcon, BuildingIcon, PencilIcon, CloseIcon } from './Icons';
+import { PlusIcon, CalculatorIcon, DownloadIcon, TrashIcon, ArrowLeftIcon, SaveIcon, UserIcon, BuildingIcon, PencilIcon, CloseIcon, TagIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
 
 // Helper to convert Ficha to Input for Calculation Service
@@ -61,7 +61,7 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
 };
 
 // Helper component for Currency Input
-const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string }> = ({ label, value, onChange, className }) => {
+const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean }> = ({ label, value, onChange, className, disabled }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -71,14 +71,15 @@ const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: nu
     
     return (
         <div className={className}>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+            <label className={`block text-xs font-bold uppercase mb-1 ${disabled ? 'text-slate-400' : 'text-slate-500'}`}>{label}</label>
             <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">R$</span>
                 <input 
                     type="text" 
                     value={formatted} 
                     onChange={handleChange} 
-                    className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-mono text-sm font-bold text-slate-800 dark:text-slate-200 text-right"
+                    disabled={disabled}
+                    className={`w-full pl-8 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-mono text-sm font-bold text-right ${disabled ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
                 />
             </div>
         </div>
@@ -110,6 +111,8 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
     // New Ficha State
     const [fichaMes, setFichaMes] = useState(new Date().toISOString().substring(0, 7));
+    
+    // Matriz
     const [fichaComercio, setFichaComercio] = useState(0);
     const [fichaIndustria, setFichaIndustria] = useState(0);
     const [fichaServico, setFichaServico] = useState(0);
@@ -117,14 +120,24 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaLocacao, setFichaLocacao] = useState(0);
     const [fichaRecFinanceira, setFichaRecFinanceira] = useState(0);
     
+    // Filiais (Consolidação)
+    const [fichaFilialComercio, setFichaFilialComercio] = useState(0);
+    const [fichaFilialIndustria, setFichaFilialIndustria] = useState(0);
+    const [fichaFilialServico, setFichaFilialServico] = useState(0);
+    
+    // Deduções e Ajustes
+    const [isMonofasicoOption, setIsMonofasicoOption] = useState(false);
+    const [fichaMonofasico, setFichaMonofasico] = useState(0);
     const [fichaIpi, setFichaIpi] = useState(0);
     const [fichaIcmsVendas, setFichaIcmsVendas] = useState(0); // Para dedução de base
     const [fichaDevolucoes, setFichaDevolucoes] = useState(0);
     
+    // Custos
     const [fichaCmv, setFichaCmv] = useState(0);
     const [fichaFolha, setFichaFolha] = useState(0);
     const [fichaDespesas, setFichaDespesas] = useState(0);
 
+    // Retenções
     const [fichaRetPis, setFichaRetPis] = useState(0);
     const [fichaRetCofins, setFichaRetCofins] = useState(0);
     const [fichaRetIrpj, setFichaRetIrpj] = useState(0);
@@ -220,7 +233,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
         setLoading(true);
         try {
-            const totalFaturamento = fichaComercio + fichaIndustria + fichaServico + fichaServicoRetido + fichaLocacao + fichaRecFinanceira;
+            const totalFaturamento = 
+                fichaComercio + fichaIndustria + fichaServico + fichaServicoRetido + fichaLocacao + fichaRecFinanceira +
+                fichaFilialComercio + fichaFilialIndustria + fichaFilialServico;
             
             // Simulação de cálculo para obter total de impostos
             const tempFicha: FichaFinanceiraRegistro = {
@@ -230,27 +245,37 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 regime: empresa.regimePadrao || 'Presumido',
                 periodoApuracao: 'Mensal',
                 acumuladoAno: 0,
+                
                 faturamentoMesComercio: fichaComercio,
                 faturamentoMesIndustria: fichaIndustria,
                 faturamentoMesServico: fichaServico,
                 faturamentoMesServicoRetido: fichaServicoRetido,
                 faturamentoMesLocacao: fichaLocacao,
                 faturamentoMesServicoHospitalar: 0,
-                faturamentoMonofasico: 0,
+                
+                faturamentoFiliaisComercio: fichaFilialComercio,
+                faturamentoFiliaisIndustria: fichaFilialIndustria,
+                faturamentoFiliaisServico: fichaFilialServico,
+
+                faturamentoMonofasico: isMonofasicoOption ? fichaMonofasico : 0,
                 valorIpi: fichaIpi,
                 valorDevolucoes: fichaDevolucoes,
                 icmsVendas: fichaIcmsVendas,
+                
                 receitaFinanceira: fichaRecFinanceira,
                 faturamentoMesTotal: totalFaturamento,
                 totalGeral: totalFaturamento,
+                
                 despesas: fichaDespesas,
                 despesasDedutiveis: 0,
                 folha: fichaFolha,
                 cmv: fichaCmv,
+                
                 retencaoPis: fichaRetPis,
                 retencaoCofins: fichaRetCofins,
                 retencaoIrpj: fichaRetIrpj,
                 retencaoCsll: fichaRetCsll,
+                
                 totalImpostos: 0, // Será calculado
                 cargaTributaria: 0
             };
@@ -265,7 +290,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             
             // Reset fields
             setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0);
-            setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0);
+            setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0);
+            setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
+            setFichaMonofasico(0); setIsMonofasicoOption(false);
         } catch (e) {
             console.error(e);
         } finally {
@@ -389,7 +416,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 <div className="space-y-4">
                     <div className="bg-sky-50 dark:bg-sky-900/20 p-4 rounded-lg border border-sky-100 dark:border-sky-800">
                         <h3 className="font-bold text-sky-700 dark:text-sky-300 mb-3 flex items-center gap-2">
-                            <CalculatorIcon className="w-4 h-4" /> Receitas Brutas
+                            <CalculatorIcon className="w-4 h-4" /> Receitas da Matriz
                         </h3>
                         <div className="space-y-3">
                             <div>
@@ -405,18 +432,55 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                         </div>
                     </div>
 
-                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
-                        <h3 className="font-bold text-orange-700 dark:text-orange-300 mb-3">Deduções da Receita</h3>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                        <h3 className="font-bold text-indigo-700 dark:text-indigo-300 mb-3 flex items-center gap-2">
+                            <BuildingIcon className="w-4 h-4" /> Faturamento Filiais (Consolidação)
+                        </h3>
                         <div className="space-y-3">
-                            <CurrencyInput label="IPI Faturado" value={fichaIpi} onChange={setFichaIpi} />
-                            <CurrencyInput label="Devoluções de Vendas" value={fichaDevolucoes} onChange={setFichaDevolucoes} />
-                            <CurrencyInput label="ICMS s/ Vendas (Para PIS/COFINS)" value={fichaIcmsVendas} onChange={setFichaIcmsVendas} />
+                            <CurrencyInput label="Filiais - Comércio" value={fichaFilialComercio} onChange={setFichaFilialComercio} />
+                            <CurrencyInput label="Filiais - Indústria" value={fichaFilialIndustria} onChange={setFichaFilialIndustria} />
+                            <CurrencyInput label="Filiais - Serviço" value={fichaFilialServico} onChange={setFichaFilialServico} />
                         </div>
                     </div>
                 </div>
 
-                {/* Coluna 2: Custos e Retenções */}
+                {/* Coluna 2: Deduções, Custos e Retenções */}
                 <div className="space-y-4">
+                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
+                        <h3 className="font-bold text-orange-700 dark:text-orange-300 mb-3">Deduções e Ajustes</h3>
+                        <div className="space-y-3">
+                            <CurrencyInput label="IPI Faturado" value={fichaIpi} onChange={setFichaIpi} />
+                            <CurrencyInput label="Devoluções de Vendas" value={fichaDevolucoes} onChange={setFichaDevolucoes} />
+                            <CurrencyInput label="ICMS sobre Vendas (Para dedução PIS/COFINS)" value={fichaIcmsVendas} onChange={setFichaIcmsVendas} />
+                            
+                            <div className="pt-2 border-t border-orange-200 dark:border-orange-700">
+                                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 cursor-pointer mb-2">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isMonofasicoOption} 
+                                        onChange={e => setIsMonofasicoOption(e.target.checked)} 
+                                        className="w-4 h-4 text-sky-600 rounded"
+                                    />
+                                    <TagIcon className="w-4 h-4" />
+                                    Opção Monofásico?
+                                </label>
+                                {isMonofasicoOption && (
+                                    <div className="animate-fade-in pl-6">
+                                        <CurrencyInput 
+                                            label="Valor Receita Monofásica" 
+                                            value={fichaMonofasico} 
+                                            onChange={setFichaMonofasico}
+                                            className="bg-white dark:bg-slate-800 rounded-lg p-2 border border-slate-200 dark:border-slate-600"
+                                        />
+                                        <p className="text-[10px] text-slate-500 mt-1">
+                                            * Base PIS/COFINS será ajustada (Faturamento Bruto - IPI - Devolução) conforme regra STF/Monofásico.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border border-slate-100 dark:border-slate-600">
                         <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3">Custos e Despesas</h3>
                         <div className="space-y-3">
