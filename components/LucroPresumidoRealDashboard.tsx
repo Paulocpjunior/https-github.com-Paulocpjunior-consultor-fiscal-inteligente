@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, LucroInput, HistoryItem, SearchType, ItemFinanceiroAvulso } from '../types';
 import * as lucroPresumidoService from '../services/lucroPresumidoService';
+import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { calcularLucro } from '../services/lucroService';
 import { PlusIcon, CalculatorIcon, DownloadIcon, TrashIcon, ArrowLeftIcon, SaveIcon, UserIcon, BuildingIcon, PencilIcon, CloseIcon } from './Icons';
 import LoadingSpinner from './LoadingSpinner';
@@ -59,6 +60,31 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
     };
 };
 
+// Helper component for Currency Input
+const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string }> = ({ label, value, onChange, className }) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value.replace(/\D/g, '');
+        const num = parseFloat(raw) / 100;
+        onChange(isNaN(num) ? 0 : num);
+    };
+    const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(value);
+    
+    return (
+        <div className={className}>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{label}</label>
+            <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">R$</span>
+                <input 
+                    type="text" 
+                    value={formatted} 
+                    onChange={handleChange} 
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-mono text-sm font-bold text-slate-800 dark:text-slate-200 text-right"
+                />
+            </div>
+        </div>
+    );
+};
+
 interface LucroPresumidoRealDashboardProps {
     currentUser: User | null;
     externalSelectedId: string | null;
@@ -69,13 +95,40 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [empresas, setEmpresas] = useState<LucroPresumidoEmpresa[]>([]);
     const [selectedEmpresaId, setSelectedEmpresaId] = useState<string | null>(null);
     const [selectedFichaId, setSelectedFichaId] = useState<string | null>(null);
-    const [view, setView] = useState<'list' | 'details' | 'report' | 'new_company'>('list');
+    const [view, setView] = useState<'list' | 'details' | 'report' | 'new_company' | 'new_ficha'>('list');
     const [loading, setLoading] = useState(false);
 
     // New Company Form State
     const [newName, setNewName] = useState('');
     const [newCnpj, setNewCnpj] = useState('');
+    const [newCnae, setNewCnae] = useState('');
     const [newRegime, setNewRegime] = useState<'Presumido' | 'Real'>('Presumido');
+    
+    // CNPJ Verification State
+    const [isCnpjLoading, setIsCnpjLoading] = useState(false);
+    const [cnpjError, setCnpjError] = useState('');
+
+    // New Ficha State
+    const [fichaMes, setFichaMes] = useState(new Date().toISOString().substring(0, 7));
+    const [fichaComercio, setFichaComercio] = useState(0);
+    const [fichaIndustria, setFichaIndustria] = useState(0);
+    const [fichaServico, setFichaServico] = useState(0);
+    const [fichaServicoRetido, setFichaServicoRetido] = useState(0);
+    const [fichaLocacao, setFichaLocacao] = useState(0);
+    const [fichaRecFinanceira, setFichaRecFinanceira] = useState(0);
+    
+    const [fichaIpi, setFichaIpi] = useState(0);
+    const [fichaIcmsVendas, setFichaIcmsVendas] = useState(0); // Para dedução de base
+    const [fichaDevolucoes, setFichaDevolucoes] = useState(0);
+    
+    const [fichaCmv, setFichaCmv] = useState(0);
+    const [fichaFolha, setFichaFolha] = useState(0);
+    const [fichaDespesas, setFichaDespesas] = useState(0);
+
+    const [fichaRetPis, setFichaRetPis] = useState(0);
+    const [fichaRetCofins, setFichaRetCofins] = useState(0);
+    const [fichaRetIrpj, setFichaRetIrpj] = useState(0);
+    const [fichaRetCsll, setFichaRetCsll] = useState(0);
 
     useEffect(() => {
         loadEmpresas();
@@ -103,6 +156,28 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         }
     };
 
+    const handleCnpjVerification = async () => {
+        if (!newCnpj.trim()) {
+            setCnpjError('Digite um CNPJ para verificar.');
+            return;
+        }
+        setIsCnpjLoading(true);
+        setCnpjError('');
+        try {
+            const data = await fetchCnpjFromBrasilAPI(newCnpj);
+            if (data && data.razaoSocial) {
+                setNewName(data.razaoSocial);
+                if (data.cnaePrincipal) {
+                    setNewCnae(data.cnaePrincipal.codigo);
+                }
+            }
+        } catch (e: any) {
+            setCnpjError(e.message || 'Erro ao verificar o CNPJ.');
+        } finally {
+            setIsCnpjLoading(false);
+        }
+    };
+
     const handleSaveNewCompany = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!currentUser) return;
@@ -111,6 +186,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             await lucroPresumidoService.saveEmpresa({
                 nome: newName,
                 cnpj: newCnpj,
+                cnaePrincipal: { codigo: newCnae, descricao: '' },
                 regimePadrao: newRegime,
                 fichaFinanceira: []
             }, currentUser.id);
@@ -118,6 +194,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             setView('list');
             setNewName('');
             setNewCnpj('');
+            setNewCnae('');
         } catch (err) {
             console.error(err);
         } finally {
@@ -133,6 +210,66 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 setSelectedEmpresaId(null);
                 setView('list');
             }
+        }
+    };
+
+    const handleSaveFicha = async () => {
+        if (!selectedEmpresaId) return;
+        const empresa = empresas.find(e => e.id === selectedEmpresaId);
+        if (!empresa) return;
+
+        setLoading(true);
+        try {
+            const totalFaturamento = fichaComercio + fichaIndustria + fichaServico + fichaServicoRetido + fichaLocacao + fichaRecFinanceira;
+            
+            // Simulação de cálculo para obter total de impostos
+            const tempFicha: FichaFinanceiraRegistro = {
+                id: Date.now().toString(),
+                dataRegistro: Date.now(),
+                mesReferencia: fichaMes,
+                regime: empresa.regimePadrao || 'Presumido',
+                periodoApuracao: 'Mensal',
+                acumuladoAno: 0,
+                faturamentoMesComercio: fichaComercio,
+                faturamentoMesIndustria: fichaIndustria,
+                faturamentoMesServico: fichaServico,
+                faturamentoMesServicoRetido: fichaServicoRetido,
+                faturamentoMesLocacao: fichaLocacao,
+                faturamentoMesServicoHospitalar: 0,
+                faturamentoMonofasico: 0,
+                valorIpi: fichaIpi,
+                valorDevolucoes: fichaDevolucoes,
+                icmsVendas: fichaIcmsVendas,
+                receitaFinanceira: fichaRecFinanceira,
+                faturamentoMesTotal: totalFaturamento,
+                totalGeral: totalFaturamento,
+                despesas: fichaDespesas,
+                despesasDedutiveis: 0,
+                folha: fichaFolha,
+                cmv: fichaCmv,
+                retencaoPis: fichaRetPis,
+                retencaoCofins: fichaRetCofins,
+                retencaoIrpj: fichaRetIrpj,
+                retencaoCsll: fichaRetCsll,
+                totalImpostos: 0, // Será calculado
+                cargaTributaria: 0
+            };
+
+            const calculo = calcularLucro(convertFichaToInput(tempFicha, empresa));
+            tempFicha.totalImpostos = calculo.totalImpostos;
+            tempFicha.cargaTributaria = calculo.cargaTributaria;
+
+            await lucroPresumidoService.addFichaFinanceira(selectedEmpresaId, tempFicha);
+            await loadEmpresas(); // Refresh para pegar os novos dados
+            setView('details');
+            
+            // Reset fields
+            setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0);
+            setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -196,12 +333,34 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6">Nova Empresa</h2>
             <form onSubmit={handleSaveNewCompany} className="space-y-4">
                 <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNPJ</label>
+                    <div className="mt-1 flex gap-2">
+                        <input 
+                            type="text" 
+                            value={newCnpj} 
+                            onChange={e => setNewCnpj(e.target.value)} 
+                            placeholder="00.000.000/0001-00"
+                            required 
+                            className="flex-grow p-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500 font-mono" 
+                        />
+                        <button
+                            type="button"
+                            onClick={handleCnpjVerification}
+                            disabled={isCnpjLoading}
+                            className="btn-press flex-shrink-0 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-wait"
+                        >
+                            {isCnpjLoading ? '...' : 'Verificar Receita'}
+                        </button>
+                    </div>
+                    {cnpjError && <p className="mt-1 text-xs text-red-500">{cnpjError}</p>}
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Razão Social</label>
                     <input type="text" value={newName} onChange={e => setNewName(e.target.value)} required className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNPJ</label>
-                    <input type="text" value={newCnpj} onChange={e => setNewCnpj(e.target.value)} required className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500" />
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">CNAE Principal (Opcional)</label>
+                    <input type="text" value={newCnae} onChange={e => setNewCnae(e.target.value)} className="w-full mt-1 p-2 bg-slate-50 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-sky-500" />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Regime Tributário Padrão</label>
@@ -215,6 +374,76 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                     <button type="submit" disabled={loading} className="px-4 py-2 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700">{loading ? 'Salvando...' : 'Salvar Empresa'}</button>
                 </div>
             </form>
+        </div>
+    );
+
+    const renderNewFicha = () => (
+        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-lg shadow-sm animate-fade-in pb-20">
+            <div className="flex items-center gap-4 mb-6">
+                <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
+                <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Nova Competência (Ficha Financeira)</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Coluna 1: Receitas */}
+                <div className="space-y-4">
+                    <div className="bg-sky-50 dark:bg-sky-900/20 p-4 rounded-lg border border-sky-100 dark:border-sky-800">
+                        <h3 className="font-bold text-sky-700 dark:text-sky-300 mb-3 flex items-center gap-2">
+                            <CalculatorIcon className="w-4 h-4" /> Receitas Brutas
+                        </h3>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Mês de Referência</label>
+                                <input type="month" value={fichaMes} onChange={e => setFichaMes(e.target.value)} className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700" />
+                            </div>
+                            <CurrencyInput label="Comércio (Revenda)" value={fichaComercio} onChange={setFichaComercio} />
+                            <CurrencyInput label="Indústria" value={fichaIndustria} onChange={setFichaIndustria} />
+                            <CurrencyInput label="Serviços (Geral)" value={fichaServico} onChange={setFichaServico} />
+                            <CurrencyInput label="Serviços (C/ Retenção)" value={fichaServicoRetido} onChange={setFichaServicoRetido} />
+                            <CurrencyInput label="Locação de Bens" value={fichaLocacao} onChange={setFichaLocacao} />
+                            <CurrencyInput label="Receita Financeira" value={fichaRecFinanceira} onChange={setFichaRecFinanceira} className="pt-2 border-t border-sky-200 dark:border-sky-700" />
+                        </div>
+                    </div>
+
+                    <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg border border-orange-100 dark:border-orange-800">
+                        <h3 className="font-bold text-orange-700 dark:text-orange-300 mb-3">Deduções da Receita</h3>
+                        <div className="space-y-3">
+                            <CurrencyInput label="IPI Faturado" value={fichaIpi} onChange={setFichaIpi} />
+                            <CurrencyInput label="Devoluções de Vendas" value={fichaDevolucoes} onChange={setFichaDevolucoes} />
+                            <CurrencyInput label="ICMS s/ Vendas (Para PIS/COFINS)" value={fichaIcmsVendas} onChange={setFichaIcmsVendas} />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Coluna 2: Custos e Retenções */}
+                <div className="space-y-4">
+                    <div className="bg-slate-50 dark:bg-slate-700/30 p-4 rounded-lg border border-slate-100 dark:border-slate-600">
+                        <h3 className="font-bold text-slate-700 dark:text-slate-300 mb-3">Custos e Despesas</h3>
+                        <div className="space-y-3">
+                            <CurrencyInput label="CMV (Custo Mercadoria)" value={fichaCmv} onChange={setFichaCmv} />
+                            <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
+                            <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
+                        </div>
+                    </div>
+
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-100 dark:border-green-800">
+                        <h3 className="font-bold text-green-700 dark:text-green-300 mb-3">Retenções (A Compensar)</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                            <CurrencyInput label="Ret. PIS" value={fichaRetPis} onChange={setFichaRetPis} />
+                            <CurrencyInput label="Ret. COFINS" value={fichaRetCofins} onChange={setFichaRetCofins} />
+                            <CurrencyInput label="Ret. IRPJ" value={fichaRetIrpj} onChange={setFichaRetIrpj} />
+                            <CurrencyInput label="Ret. CSLL" value={fichaRetCsll} onChange={setFichaRetCsll} />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3">
+                <button onClick={() => setView('details')} className="px-6 py-3 bg-slate-100 dark:bg-slate-700 rounded-lg font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
+                <button onClick={handleSaveFicha} disabled={loading} className="px-8 py-3 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 shadow-lg flex items-center gap-2">
+                    {loading ? 'Salvando...' : <><SaveIcon className="w-5 h-5" /> Salvar Competência</>}
+                </button>
+            </div>
         </div>
     );
 
@@ -236,8 +465,11 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             <CalculatorIcon className="w-5 h-5 text-sky-600" />
                             Fichas Financeiras (Competências)
                         </h3>
-                         <button className="text-sm bg-slate-100 dark:bg-slate-700 px-3 py-1.5 rounded-lg font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600">
-                            + Nova Competência
+                         <button 
+                            onClick={() => setView('new_ficha')}
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors"
+                        >
+                            <PlusIcon className="w-4 h-4" /> Nova Competência
                         </button>
                     </div>
 
@@ -411,6 +643,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             {view === 'list' && renderList()}
             {view === 'new_company' && renderNewCompany()}
             {view === 'details' && renderDetails()}
+            {view === 'new_ficha' && renderNewFicha()}
             {view === 'report' && renderReport()}
         </div>
     );
