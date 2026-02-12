@@ -163,6 +163,11 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaRetIrpj, setFichaRetIrpj] = useState(0);
     const [fichaRetCsll, setFichaRetCsll] = useState(0);
 
+    // Outros Impostos (Informados Manualmente)
+    const [fichaIpiRecolher, setFichaIpiRecolher] = useState(0);
+    const [fichaIcmsProprio, setFichaIcmsProprio] = useState(0);
+    const [fichaIcmsSt, setFichaIcmsSt] = useState(0);
+
     // Configurações Fiscais (Tempo Real)
     const [isEquiparacaoHospitalar, setIsEquiparacaoHospitalar] = useState(false);
     const [isPresuncaoReduzida, setIsPresuncaoReduzida] = useState(false);
@@ -234,6 +239,11 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
             isEquiparacaoHospitalar: isEquiparacaoHospitalar,
             isPresuncaoReduzida16: isPresuncaoReduzida,
+
+            // Novos campos informados
+            ipiRecolher: fichaIpiRecolher,
+            icmsProprioRecolher: fichaIcmsProprio,
+            icmsStRecolher: fichaIcmsSt
         };
 
         return calcularLucro(liveInput);
@@ -244,7 +254,8 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         fichaCmv, fichaFolha, fichaDespesas,
         issTipo, issAliquota,
         fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
-        isEquiparacaoHospitalar, isPresuncaoReduzida
+        isEquiparacaoHospitalar, isPresuncaoReduzida,
+        fichaIpiRecolher, fichaIcmsProprio, fichaIcmsSt
     ]);
 
     const loadEmpresas = async () => {
@@ -369,7 +380,11 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 cargaTributaria: liveResults.cargaTributaria,
                 
                 isEquiparacaoHospitalar: isEquiparacaoHospitalar,
-                isPresuncaoReduzida16: isPresuncaoReduzida
+                isPresuncaoReduzida16: isPresuncaoReduzida,
+
+                ipiRecolher: fichaIpiRecolher,
+                icmsProprioRecolher: fichaIcmsProprio,
+                icmsStRecolher: fichaIcmsSt
             };
 
             await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
@@ -381,6 +396,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0); setFichaFilialServicoHospitalar(0);
             setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
             setFichaMonofasico(0); setIsMonofasicoOption(false);
+            setFichaIpiRecolher(0); setFichaIcmsProprio(0); setFichaIcmsSt(0);
         } catch (e) {
             console.error(e);
         } finally {
@@ -653,6 +669,36 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Novo Bloco: Impostos Estaduais e IPI (Apuração Manual) */}
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <h3 className="font-bold text-indigo-600 dark:text-indigo-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
+                            <BriefcaseIcon className="w-4 h-4" /> Apuração de ICMS e IPI (Saldos Devedores)
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                            Informe os valores finais apurados (Guias a Pagar) para compor o fluxo de caixa tributário total.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <CurrencyInput 
+                                label="ICMS Próprio (A Recolher)" 
+                                value={fichaIcmsProprio} 
+                                onChange={setFichaIcmsProprio} 
+                                className="bg-indigo-50 dark:bg-indigo-900/10 p-2 rounded border border-indigo-100 dark:border-indigo-800"
+                            />
+                            <CurrencyInput 
+                                label="ICMS ST (A Recolher)" 
+                                value={fichaIcmsSt} 
+                                onChange={setFichaIcmsSt} 
+                                className="bg-indigo-50 dark:bg-indigo-900/10 p-2 rounded border border-indigo-100 dark:border-indigo-800"
+                            />
+                            <CurrencyInput 
+                                label="IPI (A Recolher)" 
+                                value={fichaIpiRecolher} 
+                                onChange={setFichaIpiRecolher} 
+                                className="bg-indigo-50 dark:bg-indigo-900/10 p-2 rounded border border-indigo-100 dark:border-indigo-800"
+                            />
                         </div>
                     </div>
                 </div>
