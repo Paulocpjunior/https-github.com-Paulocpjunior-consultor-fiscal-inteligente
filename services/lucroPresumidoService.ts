@@ -52,8 +52,6 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
                 const cloudEmpresas = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LucroPresumidoEmpresa));
                 
                 // Se conseguiu buscar da nuvem, atualiza o cache local (apenas para modo offline)
-                // Nota: O cache local não filtra por usuário da mesma forma que a nuvem, cuidado com dados sensíveis em máquinas compartilhadas.
-                // Aqui mantemos simples: salva o que veio da nuvem.
                 if (cloudEmpresas.length > 0) {
                     const local = getLocalEmpresas();
                     const merged = [...cloudEmpresas];
@@ -64,7 +62,6 @@ export const getEmpresas = async (currentUser?: User | null): Promise<LucroPresu
                     return cloudEmpresas;
                 }
             } catch (err: any) {
-                // Silently fallback if permission denied or network error
                 if (err.code !== 'permission-denied' && err.code !== 'failed-precondition') {
                     console.debug("Firebase fetch warning (Lucro):", err.message);
                 }
@@ -87,26 +84,21 @@ export const saveEmpresa = async (empresa: any, userId: string): Promise<LucroPr
     // Garante ID
     const id = empresa.id || generateUUID();
     
-    // Explicit construction to avoid any unexpected fields
     const newEmpresaData: LucroPresumidoEmpresa = { 
         ...empresa, 
         id,
         fichaFinanceira: empresa.fichaFinanceira || [], 
         createdBy: userId,
-        // Tenta pegar o email do Auth atual se disponível
         createdByEmail: auth?.currentUser?.email || undefined
     };
 
     // 1. Tenta salvar na Nuvem (Fonte da Verdade)
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
-            // Garante que o createdBy seja o UID do Auth atual para consistência
             newEmpresaData.createdBy = auth.currentUser.uid;
             newEmpresaData.createdByEmail = auth.currentUser.email || undefined;
 
             const payload = sanitizePayload(newEmpresaData);
-            
-            // Usa setDoc com o ID específico para criar ou substituir
             await setDoc(doc(db, 'lucro_empresas', id), payload);
         } catch (e: any) { 
             // Silent fallback
@@ -131,16 +123,14 @@ export const updateEmpresa = async (id: string, data: Partial<LucroPresumidoEmpr
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'lucro_empresas', id);
-            const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any; // Remove campos imutáveis
+            const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any; 
             
-            // Reinsere createdBy para satisfazer regras de segurança E garante que o email esteja atualizado caso falte
             const payload = sanitizePayload({ 
                 ...safeData, 
                 createdBy: auth.currentUser.uid,
-                createdByEmail: auth.currentUser.email // Atualiza o email caso não exista ou tenha mudado (opcional)
+                createdByEmail: auth.currentUser.email 
             });
             
-            // Use setDoc with merge: true to avoid issues with non-existent docs (or create them if permitted)
             await setDoc(docRef, payload, { merge: true });
         } catch (e: any) { 
             // Silent fallback
@@ -175,10 +165,9 @@ export const deleteEmpresa = async (id: string): Promise<boolean> => {
     return true;
 };
 
-// Função Crítica: Garante que o histórico financeiro seja anexado corretamente na nuvem
 export const addFichaFinanceira = async (empresaId: string, registro: FichaFinanceiraRegistro): Promise<LucroPresumidoEmpresa | null> => {
     
-    // 1. Se estiver online, busca o documento atualizado primeiro para não perder histórico de outras sessões
+    // 1. Se estiver online, busca o documento atualizado primeiro para não perder histórico
     if (isFirebaseConfigured && db && auth?.currentUser) {
         try {
             const docRef = doc(db, 'lucro_empresas', empresaId);
@@ -188,20 +177,17 @@ export const addFichaFinanceira = async (empresaId: string, registro: FichaFinan
                 const empresaData = docSnap.data() as LucroPresumidoEmpresa;
                 const currentFicha = empresaData.fichaFinanceira || [];
                 
-                // Remove registro existente do mesmo mês (se houver) para substituir pelo novo
                 const fichaAtualizada = currentFicha.filter(f => f.mesReferencia !== registro.mesReferencia);
                 fichaAtualizada.push(registro);
 
-                // Ordena por data (opcional, mas bom para organização)
                 fichaAtualizada.sort((a, b) => a.mesReferencia.localeCompare(b.mesReferencia));
 
                 await updateDoc(docRef, { 
                     fichaFinanceira: sanitizePayload(fichaAtualizada),
-                    createdBy: auth.currentUser.uid, // Re-assert ownership
-                    createdByEmail: auth.currentUser.email // Ensure email is present
+                    createdBy: auth.currentUser.uid,
+                    createdByEmail: auth.currentUser.email
                 });
                 
-                // Atualiza local também para refletir
                 const localEmpresas = getLocalEmpresas();
                 const idx = localEmpresas.findIndex(e => e.id === empresaId);
                 if (idx !== -1) {
@@ -212,14 +198,13 @@ export const addFichaFinanceira = async (empresaId: string, registro: FichaFinan
                 return { ...empresaData, fichaFinanceira: fichaAtualizada };
             }
         } catch (e: any) {
-            // Silent fallback for permission or network errors
             if (e.code !== 'permission-denied') {
                 console.debug("Firestore: Falha ao salvar ficha na nuvem:", e.message);
             }
         }
     }
 
-    // 2. Fallback Local (apenas se offline ou erro na nuvem)
+    // 2. Fallback Local
     const localEmpresas = getLocalEmpresas();
     const index = localEmpresas.findIndex(e => e.id === empresaId);
     

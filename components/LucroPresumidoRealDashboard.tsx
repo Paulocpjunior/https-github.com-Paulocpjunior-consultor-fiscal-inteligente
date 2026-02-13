@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LucroPresumidoEmpresa, User, FichaFinanceiraRegistro, LucroInput, HistoryItem, SearchType, ItemFinanceiroAvulso } from '../types';
 import * as lucroPresumidoService from '../services/lucroPresumidoService';
@@ -205,9 +204,10 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             selectedEmpresa.fichaFinanceira.forEach(f => {
                 const [fAno, fMes] = f.mesReferencia.split('-');
                 const fMesNum = parseInt(fMes);
+                const fAnoNum = parseInt(fAno);
                 
                 // Soma se for do mesmo ano, mesmo trimestre, e estritamente ANTERIOR ao mês atual
-                if (parseInt(fAno) === ano && fMesNum >= quarterStart && fMesNum < mes) {
+                if (fAnoNum === ano && fMesNum >= quarterStart && fMesNum < mes) {
                     accIrpj += (f.retencaoIrpj || 0);
                     accCsll += (f.retencaoCsll || 0);
                 }
@@ -332,7 +332,6 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const handleEditFicha = () => {
         if (!selectedFicha) return;
         setView('new_ficha');
-        // O useEffect vai popular os dados com base no selectedFichaId que já está setado
     };
 
     // Live Calculation Logic
@@ -427,7 +426,6 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         }
     };
 
-    // ... (Mantendo métodos de CNPJ e Company) ...
     const handleCnpjVerification = async () => {
         if (!newCnpj.trim()) { setCnpjError('Digite um CNPJ para verificar.'); return; }
         setIsCnpjLoading(true); setCnpjError('');
@@ -537,18 +535,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             const savedFicha = await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
             await loadEmpresas();
             
-            // Após salvar, se for edição ou novo, vamos para a visualização do relatório para conferência
-            // Em vez de ir para 'details' e resetar tudo.
-            
-            // Se savedFicha retornou a empresa atualizada, encontramos a ficha salva nela
             if (savedFicha) {
-                // Encontrar o ID da ficha que acabamos de salvar (pelo mês, pois o ID pode ser novo)
                 const novaFicha = savedFicha.fichaFinanceira.find(f => f.mesReferencia === fichaMes);
                 if (novaFicha) {
                     setSelectedFichaId(novaFicha.id);
                     setView('report');
                 } else {
-                    setView('details'); // Fallback
+                    setView('details');
                 }
             } else {
                 setView('details');
@@ -1013,4 +1006,268 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         </div>
     );
 
-    // ... (rest of the component)
+    const renderDetails = () => {
+        if (!selectedEmpresa) return null;
+        return (
+            <div className="space-y-6 animate-fade-in">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setView('list')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">{selectedEmpresa.nome}</h2>
+                        <p className="text-slate-500 dark:text-slate-400 font-mono text-sm">{selectedEmpresa.cnpj}</p>
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                            <CalculatorIcon className="w-5 h-5 text-sky-600" />
+                            Fichas Financeiras (Competências)
+                        </h3>
+                         <button 
+                            onClick={handleCreateNewFicha}
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors"
+                        >
+                            <PlusIcon className="w-4 h-4" /> Nova Competência
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {selectedEmpresa.fichaFinanceira && selectedEmpresa.fichaFinanceira.length > 0 ? selectedEmpresa.fichaFinanceira.map(ficha => (
+                             <div key={ficha.id} onClick={() => { setSelectedFichaId(ficha.id); setView('report'); }} className="cursor-pointer bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-sky-400 transition-all">
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className="font-bold text-slate-800 dark:text-white capitalize">{new Date(ficha.mesReferencia + '-02').toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${ficha.periodoApuracao === 'Trimestral' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300'}`}>
+                                        {ficha.periodoApuracao || 'Mensal'}
+                                    </span>
+                                </div>
+                                <div className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
+                                    <div className="flex justify-between"><span>Faturamento:</span> <span className="font-mono text-slate-900 dark:text-slate-200 font-bold">{ficha.faturamentoMesTotal.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                    <div className="flex justify-between"><span>Impostos:</span> <span className="font-mono">{ficha.totalImpostos.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                </div>
+                             </div>
+                        )) : (
+                            <p className="text-slate-500 col-span-3 text-center py-4">Nenhuma ficha financeira registrada.</p>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderReport = () => {
+        if (!selectedFicha || !selectedEmpresa) return null;
+        
+        const financeiro = {
+            cmv: selectedFicha.cmv || 0,
+            folha: selectedFicha.folha || 0,
+            despesas: (selectedFicha.despesas || 0) + (selectedFicha.despesasDedutiveis || 0),
+        };
+        const itensAvulsos = selectedFicha.itensAvulsos || [];
+        const resultadoCalculado = calcularLucro(convertFichaToInput(selectedFicha, selectedEmpresa));
+        const [ano, mes] = selectedFicha.mesReferencia.split('-');
+        const dateObj = new Date(parseInt(ano), parseInt(mes) - 1, 1);
+        const mesExtenso = dateObj.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+
+        // Cálculos para exibição de Bases no Relatório
+        const baseIrpjCsll = selectedFicha.faturamentoMesTotal - (selectedFicha.valorIpi || 0) - (selectedFicha.valorDevolucoes || 0);
+        // Base PIS/COFINS Estimada (Pode variar se for Real ou Presumido, mas aqui mostramos a base líquida de ICMS para referência visual)
+        const basePisCofins = baseIrpjCsll - (selectedFicha.icmsVendas || 0);
+
+        return (
+            <div className="space-y-6 animate-fade-in pb-10">
+                <div className="flex items-center justify-between gap-4 print:hidden">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Relatório de Apuração</h2>
+                    </div>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleEditFicha}
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-bold rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                        >
+                            <PencilIcon className="w-4 h-4" /> Editar Competência
+                        </button>
+                        <button 
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors"
+                            onClick={() => window.print()}
+                        >
+                            <DownloadIcon className="w-4 h-4" /> Gerar PDF
+                        </button>
+                    </div>
+                </div>
+
+                {/* PDF Template Container */}
+                <div className="bg-white text-slate-800 p-0 md:p-8 max-w-4xl mx-auto rounded-none md:rounded-xl shadow-none md:shadow-lg overflow-hidden">
+                    
+                    {/* Header Report */}
+                    <div className="flex justify-between items-start border-b-4 border-sky-600 pb-6 mb-8">
+                        <div>
+                            <h1 className="text-3xl font-black text-slate-800 tracking-tight">MEMÓRIA DE APURAÇÃO</h1>
+                            <p className="text-sky-600 font-bold text-sm uppercase tracking-widest mt-1">SP ASSESSORIA CONTÁBIL • AUDITORIA E PLANEJAMENTO</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] text-slate-400 uppercase font-bold">Enquadramento Aplicado</p>
+                            <p className="text-xl font-black text-sky-800 uppercase leading-none">{selectedFicha.regime} {selectedFicha.periodoApuracao === 'Trimestral' ? '/ Trimestral' : ''}</p>
+                            <p className="text-sm font-bold text-slate-500 uppercase mt-1">{mesExtenso}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-50 rounded-2xl p-6 mb-8 border border-slate-100">
+                        <div>
+                            <p className="text-[10px] text-slate-400 uppercase font-bold mb-1">Empresa / Contribuinte</p>
+                            <h2 className="text-xl font-black text-slate-800">{selectedEmpresa.nome}</h2>
+                            <span className="inline-block bg-sky-100 text-sky-800 text-xs font-mono font-bold px-2 py-1 rounded mt-1">{selectedEmpresa.cnpj}</span>
+                        </div>
+                        <div className="bg-sky-600 text-white px-6 py-4 rounded-xl text-center shadow-lg transform -rotate-1">
+                            <p className="text-[10px] font-bold opacity-80 uppercase">Carga Tributária Efetiva</p>
+                            <p className="text-3xl font-black">{resultadoCalculado.cargaTributaria.toFixed(2)}%</p>
+                            <p className="text-[9px] font-bold opacity-80 uppercase">Sobre Faturamento Bruto</p>
+                        </div>
+                    </div>
+
+                    <div className="mb-6 flex items-center gap-2">
+                        <div className="bg-sky-800 text-white p-2 rounded-lg">
+                            <BuildingIcon className="w-5 h-5" />
+                        </div>
+                        <h3 className="text-lg font-black text-slate-800 uppercase">1. Fluxo Operacional de Receitas e Custos</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* Receitas */}
+                        <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
+                            <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Receitas Operacionais Brutas</h4>
+                            <div className="space-y-2">
+                                {selectedFicha.faturamentoMesComercio > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Comércio (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesComercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesIndustria > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Indústria (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesIndustria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesServico > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Próprio (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesServicoRetido > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Retido (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServicoRetido.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesLocacao > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Locação de Bens (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesLocacao.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesServicoHospitalar > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços Hospitalares (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServicoHospitalar.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.receitaFinanceira > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>(+) Receita Financeira:</span><span>R$ {selectedFicha.receitaFinanceira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                
+                                {/* Deduções e Bases */}
+                                {(selectedFicha.valorIpi > 0 || selectedFicha.valorDevolucoes > 0) && (
+                                    <div className="pt-2 mt-2 border-t border-dashed border-slate-200">
+                                        {selectedFicha.valorIpi > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução IPI:</span><span>R$ {selectedFicha.valorIpi.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.valorDevolucoes > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução Devoluções:</span><span>R$ {selectedFicha.valorDevolucoes.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between text-base font-black text-slate-800 border-t pt-4 mt-2">
+                                    <span>Base Cálculo IRPJ/CSLL:</span>
+                                    <span>R$ {baseIrpjCsll.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                </div>
+
+                                {selectedFicha.icmsVendas > 0 && (
+                                    <div className="flex justify-between text-xs font-bold text-blue-400 italic mt-1">
+                                        <span>(-) Ded. ICMS s/ Vendas (STF):</span>
+                                        <span>R$ {selectedFicha.icmsVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    </div>
+                                )}
+
+                                <div className="flex justify-between text-sm font-black text-slate-700 mt-2">
+                                    <span>Base Cálculo PIS/COFINS:</span>
+                                    <span>R$ {basePisCofins.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Custos, Gastos e IMPOSTOS */}
+                        <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
+                            <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Custos, Gastos e Impostos</h4>
+                            <div className="space-y-4">
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Custo de Mercadoria (CMV):</span><span>R$ {financeiro.cmv.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Folha e Encargos Sociais:</span><span>R$ {financeiro.folha.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Despesas Operacionais:</span><span>R$ {financeiro.despesas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                
+                                {itensAvulsos.filter(i => i.tipo === 'despesa').length > 0 && (
+                                    <div className="flex justify-between text-sm font-bold text-slate-600">
+                                        <span>(+) Outras Despesas:</span>
+                                        <span>R$ {itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    </div>
+                                )}
+
+                                {/* Detalhamento de Impostos - Lista Completa */}
+                                <div className="pt-4 mt-2 border-t border-slate-100 space-y-2">
+                                    {resultadoCalculado.detalhamento.map((det, idx) => (
+                                        <div key={idx} className="flex justify-between text-sm font-bold text-amber-600">
+                                            <span>{det.imposto}:</span>
+                                            <span>R$ {det.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    ))}
+                                    {resultadoCalculado.detalhamento.length === 0 && (
+                                        <p className="text-xs text-slate-400 italic">Nenhum imposto apurado.</p>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-between text-base font-black text-sky-900 border-t border-sky-100 pt-4 mt-2">
+                                    <span>Total Desembolsos:</span>
+                                    <span>R$ {(financeiro.cmv + financeiro.folha + financeiro.despesas + itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0) + resultadoCalculado.totalImpostos).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* SEÇÃO EXTRA: DADOS TRIMESTRAIS ACUMULADOS (Se houver) */}
+                        {selectedFicha.dadosTrimestrais && selectedFicha.periodoApuracao === 'Trimestral' && (
+                            <div className="bg-sky-50/50 border-2 border-sky-100 rounded-[2rem] p-8 shadow-sm col-span-1 lg:col-span-2">
+                                <h4 className="text-xs font-black text-sky-600 uppercase mb-4 border-b border-sky-100 pb-2 flex items-center gap-2">
+                                    <InfoIcon className="w-4 h-4" /> Memória de Cálculo - Acumulado Trimestral (Meses Anteriores)
+                                </h4>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
+                                    {selectedFicha.dadosTrimestrais.comercio > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Comércio Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.comercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.industria > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Indústria Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.industria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.servico > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Serviços Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {(selectedFicha.dadosTrimestrais.servicoHospitalar || 0) > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Hospitalar Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servicoHospitalar?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.financeira > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Rec. Fin. Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.financeira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 italic">
+                                    * Estes valores foram somados à receita do mês atual para o cálculo da base trimestral do IRPJ e CSLL (Adicional de 10% sobre excedente de R$ 60.000,00).
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="pb-10">
+            {view === 'list' && renderList()}
+            {view === 'new_company' && renderNewCompany()}
+            {view === 'details' && renderDetails()}
+            {view === 'new_ficha' && renderNewFicha()}
+            {view === 'report' && renderReport()}
+        </div>
+    );
+};
+
+export default LucroPresumidoRealDashboard;
