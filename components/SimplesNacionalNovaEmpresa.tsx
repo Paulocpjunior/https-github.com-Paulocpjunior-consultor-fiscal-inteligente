@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { SimplesNacionalAnexo, SimplesNacionalAtividade, CnaeSuggestion } from '../types';
+import { SimplesNacionalAnexo, SimplesNacionalAtividade, CnaeSuggestion, SimplesNacionalEmpresa } from '../types';
 import { fetchCnpjFromBrasilAPI } from '../services/externalApiService';
 import { sugerirAnexoPorCnae } from '../services/simplesNacionalService';
 import { fetchCnaeSuggestions, fetchCnaeDescription } from '../services/geminiService';
@@ -12,6 +12,7 @@ interface SimplesNacionalNovaEmpresaProps {
     onSave: (nome: string, cnpj: string, cnae: string, anexo: SimplesNacionalAnexo | 'auto', atividadesSecundarias?: SimplesNacionalAtividade[]) => void;
     onCancel: () => void;
     onShowToast?: (message: string) => void;
+    initialData?: SimplesNacionalEmpresa | null;
 }
 
 const anexoDescriptions: Record<SimplesNacionalAnexo, string> = {
@@ -23,7 +24,7 @@ const anexoDescriptions: Record<SimplesNacionalAnexo, string> = {
     'III_V': 'Serviços com Fator R (III/V automático)',
 };
 
-const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({ onSave, onCancel, onShowToast }) => {
+const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({ onSave, onCancel, onShowToast, initialData }) => {
     const [nome, setNome] = useState('');
     const [cnpj, setCnpj] = useState('');
     const [cnae, setCnae] = useState('');
@@ -50,6 +51,17 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     // Estado para Validação de CNAE (Modal)
     const [isValidatingCnae, setIsValidatingCnae] = useState<string | null>(null); 
     const [cnaeAnalysis, setCnaeAnalysis] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (initialData) {
+            setNome(initialData.nome);
+            setCnpj(initialData.cnpj);
+            setCnae(initialData.cnae);
+            setAnexo(initialData.anexo);
+            setAtividadesSecundarias(initialData.atividadesSecundarias || []);
+            setNomeFantasia(initialData.nomeFantasia || '');
+        }
+    }, [initialData]);
 
     useEffect(() => {
       if (anexo === 'auto' && cnae.trim().length >= 2) {
@@ -135,7 +147,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         }
         setError('');
         onSave(nome, cnpj, cnae, anexo, atividadesSecundarias);
-        if (onShowToast) onShowToast("Empresa salva com sucesso!");
+        if (onShowToast && !initialData) onShowToast("Empresa salva com sucesso!");
     };
 
     const handleCnpjVerification = async () => {
@@ -213,7 +225,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
         <div className="max-w-2xl mx-auto animate-fade-in pb-10 relative">
              <div className="p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-6">
-                    Cadastrar Nova Empresa
+                    {initialData ? 'Editar Empresa' : 'Cadastrar Nova Empresa'}
                 </h2>
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div>
@@ -412,7 +424,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
                             type="submit"
                             className="btn-press px-6 py-2 bg-sky-600 text-white font-semibold rounded-lg hover:bg-sky-700"
                         >
-                            Salvar Empresa
+                            {initialData ? 'Salvar Alterações' : 'Salvar Empresa'}
                         </button>
                     </div>
                 </form>

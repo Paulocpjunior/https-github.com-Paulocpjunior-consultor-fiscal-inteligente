@@ -2,7 +2,7 @@
 import { SimplesNacionalAnexo, SimplesNacionalEmpresa, SimplesNacionalNota, SimplesNacionalResumo, SimplesHistoricoCalculo, SimplesCalculoMensal, SimplesNacionalImportResult, SimplesNacionalAtividade, DetalhamentoAnexo, SimplesItemCalculo, User, SimplesDetalheItem } from '../types';
 import { extractDocumentData, extractPgdasDataFromPdf } from './geminiService';
 import { db, isFirebaseConfigured, auth } from './firebaseConfig';
-import { collection, getDocs, doc, updateDoc, setDoc, addDoc, getDoc, query, where, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, setDoc, addDoc, getDoc, query, where } from 'firebase/firestore';
 
 const STORAGE_KEY_EMPRESAS = 'simples_nacional_empresas';
 const STORAGE_KEY_NOTAS = 'simples_nacional_notas';
@@ -173,22 +173,6 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
     }
 
     return index !== -1 ? localEmpresas[index] : null;
-};
-
-export const deleteEmpresa = async (id: string): Promise<boolean> => {
-    if (isFirebaseConfigured && db) {
-        try {
-            await deleteDoc(doc(db, 'simples_empresas', id));
-        } catch(e) {
-            console.error("Erro ao deletar da nuvem", e);
-        }
-    }
-    
-    const localEmpresas = getLocalEmpresas();
-    const filtered = localEmpresas.filter(e => e.id !== id);
-    saveLocalEmpresas(filtered);
-
-    return true;
 };
 
 export const getAllNotas = async (user?: User | null): Promise<Record<string, SimplesNacionalNota[]>> => {

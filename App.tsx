@@ -101,6 +101,7 @@ const App: React.FC = () => {
   const [simplesEmpresas, setSimplesEmpresas] = useState<SimplesNacionalEmpresa[]>([]);
   const [simplesNotas, setSimplesNotas] = useState<Record<string, SimplesNacionalNota[]>>({});
   const [selectedSimplesEmpresaId, setSelectedSimplesEmpresaId] = useState<string | null>(null);
+  const [simplesEmpresaToEdit, setSimplesEmpresaToEdit] = useState<SimplesNacionalEmpresa | null>(null);
   
   // Lucro Presumido/Real State (ID para navegação via histórico)
   const [selectedLucroEmpresaId, setSelectedLucroEmpresaId] = useState<string | null>(null);
@@ -454,27 +455,36 @@ const App: React.FC = () => {
   // Simples Nacional Handlers
   const handleSaveSimplesEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: any, atividadesSecundarias?: any[]) => {
       if (!currentUser) return;
-      const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias || [], currentUser.id);
-      setSimplesEmpresas(prev => [...prev, newEmpresa]);
-      if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
-      setSimplesView('dashboard');
-      setToastMessage("Empresa cadastrada com sucesso!");
-      
-      // Add to History
-      addHistory({
-          queries: [nome],
-          type: SearchType.SIMPLES_NACIONAL,
-          mode: 'single',
-          entityId: newEmpresa.id
-      });
-  };
 
-  const handleDeleteSimplesEmpresa = async (id: string) => {
-      if (window.confirm("Tem certeza que deseja excluir esta empresa do Simples Nacional?")) {
-          await simplesService.deleteEmpresa(id);
-          setSimplesEmpresas(prev => prev.filter(e => e.id !== id));
-          setToastMessage("Empresa excluída com sucesso.");
+      if (simplesEmpresaToEdit) {
+          // UPDATE MODE
+          const finalAnexo = anexo === 'auto' ? simplesService.sugerirAnexoPorCnae(cnae) : anexo;
+          const dataToUpdate: Partial<SimplesNacionalEmpresa> = {
+              nome, cnpj, cnae, anexo: finalAnexo, atividadesSecundarias: atividadesSecundarias || []
+          };
+          
+          await simplesService.updateEmpresa(simplesEmpresaToEdit.id, dataToUpdate);
+          
+          // Optimistic update
+          setSimplesEmpresas(prev => prev.map(e => e.id === simplesEmpresaToEdit.id ? { ...e, ...dataToUpdate } : e));
+          setToastMessage("Empresa atualizada com sucesso!");
+      } else {
+          // CREATE MODE
+          const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias || [], currentUser.id);
+          setSimplesEmpresas(prev => [...prev, newEmpresa]);
+          if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
+          setToastMessage("Empresa cadastrada com sucesso!");
+          
+          // Add to History
+          addHistory({
+              queries: [nome],
+              type: SearchType.SIMPLES_NACIONAL,
+              mode: 'single',
+              entityId: newEmpresa.id
+          });
       }
+      setSimplesView('dashboard');
+      setSimplesEmpresaToEdit(null);
   };
 
   const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
@@ -589,6 +599,7 @@ const App: React.FC = () => {
                                     setUserNotes('');
                                     if (type === SearchType.SIMPLES_NACIONAL) {
                                         setSimplesView('dashboard');
+                                        setSimplesEmpresaToEdit(null);
                                         loadSimplesData(currentUser);
                                     }
                                     if (type === SearchType.LUCRO_PRESUMIDO_REAL) {
@@ -835,16 +846,18 @@ const App: React.FC = () => {
                                     empresas={simplesEmpresas} 
                                     notas={simplesNotas}
                                     onSelectEmpresa={(id, view) => { setSelectedSimplesEmpresaId(id); setSimplesView(view); }} 
-                                    onAddNew={() => setSimplesView('nova')}
+                                    onAddNew={() => { setSimplesEmpresaToEdit(null); setSimplesView('nova'); }}
+                                    onEdit={(empresa) => { setSimplesEmpresaToEdit(empresa); setSimplesView('nova'); }}
                                     onShowToast={(msg) => setToastMessage(msg)}
-                                    onDelete={handleDeleteSimplesEmpresa}
+                                    currentUser={currentUser}
                                 />
                             )}
                             {simplesView === 'nova' && (
                                 <SimplesNacionalNovaEmpresa 
                                     onSave={handleSaveSimplesEmpresa} 
-                                    onCancel={() => setSimplesView('dashboard')} 
+                                    onCancel={() => { setSimplesView('dashboard'); setSimplesEmpresaToEdit(null); }} 
                                     onShowToast={(msg) => setToastMessage(msg)}
+                                    initialData={simplesEmpresaToEdit}
                                 />
                             )}
                             {simplesView === 'detalhe' && selectedEmpresa && (

@@ -2,19 +2,19 @@
 import React, { useMemo } from 'react';
 import { SimplesNacionalEmpresa, SimplesNacionalNota, User } from '../types';
 import * as simplesService from '../services/simplesNacionalService';
-import { PlusIcon, InfoIcon, ShieldIcon, TrashIcon } from './Icons';
+import { PlusIcon, InfoIcon, ShieldIcon, PencilIcon } from './Icons';
 
 interface SimplesNacionalDashboardProps {
     empresas: SimplesNacionalEmpresa[];
     notas: Record<string, SimplesNacionalNota[]>;
     onSelectEmpresa: (id: string, view: 'detalhe' | 'cliente') => void;
     onAddNew: () => void;
+    onEdit: (empresa: SimplesNacionalEmpresa) => void;
     currentUser?: User | null;
     onShowToast?: (msg: string) => void;
-    onDelete?: (id: string) => void;
 }
 
-const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew, currentUser, onShowToast, onDelete }) => {
+const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ empresas, notas, onSelectEmpresa, onAddNew, onEdit, currentUser, onShowToast }) => {
     
     const empresasComResumo = useMemo(() => {
         return empresas.map(empresa => {
@@ -107,28 +107,18 @@ const SimplesNacionalDashboard: React.FC<SimplesNacionalDashboardProps> = ({ emp
                                             {e.resumo.das_mensal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
                                         <td className="px-6 py-4 text-right font-mono">{e.resumo.das.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                        <td className="px-6 py-4 text-center whitespace-nowrap">
-                                            <div className="flex items-center justify-center space-x-2">
-                                                <button onClick={() => onSelectEmpresa(e.id, 'detalhe')} className="font-medium text-sky-600 dark:text-sky-400 hover:underline">
-                                                    Painel
-                                                </button>
-                                                <span className="text-slate-300 dark:text-slate-600">|</span>
-                                                <button onClick={() => onSelectEmpresa(e.id, 'cliente')} className="font-medium text-sky-600 dark:text-sky-400 hover:underline">
-                                                    Cliente
-                                                </button>
-                                                {onDelete && (
-                                                    <>
-                                                        <span className="text-slate-300 dark:text-slate-600">|</span>
-                                                        <button 
-                                                            onClick={() => onDelete(e.id)} 
-                                                            className="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                                            title="Excluir Empresa"
-                                                        >
-                                                            <TrashIcon className="w-4 h-4" />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
+                                        <td className="px-6 py-4 text-center space-x-2 whitespace-nowrap">
+                                            <button onClick={() => onSelectEmpresa(e.id, 'detalhe')} className="font-medium text-sky-600 dark:text-sky-400 hover:underline">
+                                                Painel
+                                            </button>
+                                            <span className="text-slate-300 dark:text-slate-600">|</span>
+                                            <button onClick={() => onSelectEmpresa(e.id, 'cliente')} className="font-medium text-sky-600 dark:text-sky-400 hover:underline">
+                                                Cliente
+                                            </button>
+                                            <span className="text-slate-300 dark:text-slate-600">|</span>
+                                            <button onClick={() => onEdit(e)} className="font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800" title="Editar Empresa">
+                                                <PencilIcon className="w-4 h-4 inline" />
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
