@@ -563,8 +563,15 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             }
             else {
                 if (item.issRetido || item.isSup) {
-                    if (anexoAplicado === 'V') percentualReducao += 23.5;
-                    else if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
+                    if (anexoAplicado === 'V') {
+                        // REGRA ESPECÍFICA SOLICITADA PARA ANEXO V COM RETENÇÃO
+                        // Se houver retenção no Anexo V, a dedução é fixa em 23.5% da alíquota efetiva.
+                        // (Resultado = Alíquota Efetiva * 23.5% -> Subtrai isso).
+                        percentualReducao += 23.5;
+                    } else {
+                        // Regra Padrão (usa a tabela de repartição)
+                        if (reparticao['ISS']) percentualReducao += reparticao['ISS'];
+                    }
                 }
                 if (item.icmsSt && reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (item.isMonofasico) {

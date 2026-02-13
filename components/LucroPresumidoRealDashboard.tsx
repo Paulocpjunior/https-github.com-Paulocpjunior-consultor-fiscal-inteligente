@@ -61,7 +61,7 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
 };
 
 // Helper component for Currency Input
-const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean; placeholder?: string; highlight?: boolean }> = ({ label, value, onChange, className, disabled, placeholder, highlight }) => {
+const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean; placeholder?: string; highlight?: boolean; subtitle?: string }> = ({ label, value, onChange, className, disabled, placeholder, highlight, subtitle }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -86,6 +86,7 @@ const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: nu
                           'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
                 />
             </div>
+            {subtitle && <p className="text-[9px] text-sky-600 dark:text-sky-400 mt-1 text-right font-bold">{subtitle}</p>}
         </div>
     );
 };
@@ -129,8 +130,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
     // New Ficha State
     const [fichaMes, setFichaMes] = useState(new Date().toISOString().substring(0, 7));
+    const [periodoApuracao, setPeriodoApuracao] = useState<'Mensal' | 'Trimestral'>('Mensal');
     
-    // Matriz
+    // Matriz (Mês Atual)
     const [fichaComercio, setFichaComercio] = useState(0);
     const [fichaIndustria, setFichaIndustria] = useState(0);
     const [fichaServico, setFichaServico] = useState(0);
@@ -139,17 +141,24 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaRecFinanceira, setFichaRecFinanceira] = useState(0);
     const [fichaServicoHospitalar, setFichaServicoHospitalar] = useState(0);
     
+    // Acumulado Trimestre (Meses Anteriores do Trimestre)
+    const [acumuladoComercio, setAcumuladoComercio] = useState(0);
+    const [acumuladoIndustria, setAcumuladoIndustria] = useState(0);
+    const [acumuladoServico, setAcumuladoServico] = useState(0);
+    const [acumuladoServicoHospitalar, setAcumuladoServicoHospitalar] = useState(0);
+    const [acumuladoFinanceira, setAcumuladoFinanceira] = useState(0);
+
     // Filiais (Consolidação)
     const [fichaFilialComercio, setFichaFilialComercio] = useState(0);
     const [fichaFilialIndustria, setFichaFilialIndustria] = useState(0);
     const [fichaFilialServico, setFichaFilialServico] = useState(0);
-    const [fichaFilialServicoHospitalar, setFichaFilialServicoHospitalar] = useState(0); // Added for hospital consolidation
+    const [fichaFilialServicoHospitalar, setFichaFilialServicoHospitalar] = useState(0); 
     
     // Deduções e Ajustes
     const [isMonofasicoOption, setIsMonofasicoOption] = useState(false);
     const [fichaMonofasico, setFichaMonofasico] = useState(0);
     const [fichaIpi, setFichaIpi] = useState(0);
-    const [fichaIcmsVendas, setFichaIcmsVendas] = useState(0); // Para dedução de base
+    const [fichaIcmsVendas, setFichaIcmsVendas] = useState(0); 
     const [fichaDevolucoes, setFichaDevolucoes] = useState(0);
     
     // Custos
@@ -175,6 +184,38 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [issAliquota, setIssAliquota] = useState(5);
     const [pagarCotas, setPagarCotas] = useState(false);
 
+    const selectedEmpresa = useMemo(() => empresas.find(e => e.id === selectedEmpresaId), [empresas, selectedEmpresaId]);
+
+    // CÁLCULO DE RETENÇÕES DE MESES ANTERIORES NO TRIMESTRE
+    const retencoesAcumuladas = useMemo(() => {
+        if (!selectedEmpresa || periodoApuracao !== 'Trimestral') return { irpj: 0, csll: 0 };
+        
+        const [anoStr, mesStr] = fichaMes.split('-');
+        const ano = parseInt(anoStr);
+        const mes = parseInt(mesStr);
+        
+        // Define início do trimestre (1=Jan/Feb/Mar, 4=Apr/May/Jun, etc)
+        const quarterStart = Math.floor((mes - 1) / 3) * 3 + 1;
+        
+        let accIrpj = 0;
+        let accCsll = 0;
+
+        if (selectedEmpresa.fichaFinanceira) {
+            selectedEmpresa.fichaFinanceira.forEach(f => {
+                const [fAno, fMes] = f.mesReferencia.split('-');
+                const fMesNum = parseInt(fMes);
+                
+                // Soma se for do mesmo ano, mesmo trimestre, e estritamente ANTERIOR ao mês atual
+                if (parseInt(fAno) === ano && fMesNum >= quarterStart && fMesNum < mes) {
+                    accIrpj += (f.retencaoIrpj || 0);
+                    accCsll += (f.retencaoCsll || 0);
+                }
+            });
+        }
+        
+        return { irpj: accIrpj, csll: accCsll };
+    }, [selectedEmpresa, fichaMes, periodoApuracao]);
+
     useEffect(() => {
         loadEmpresas();
     }, [currentUser]);
@@ -189,7 +230,99 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         }
     }, [externalSelectedId, empresas]);
 
-    const selectedEmpresa = useMemo(() => empresas.find(e => e.id === selectedEmpresaId), [empresas, selectedEmpresaId]);
+    // POPULAR FORMULÁRIO QUANDO ENTRAR EM MODO DE EDIÇÃO
+    useEffect(() => {
+        if (view === 'new_ficha' && selectedFichaId && selectedEmpresa) {
+            const ficha = selectedEmpresa.fichaFinanceira.find(f => f.id === selectedFichaId);
+            if (ficha) {
+                // Popula os campos com os dados da ficha salva
+                setFichaMes(ficha.mesReferencia);
+                setPeriodoApuracao(ficha.periodoApuracao);
+                
+                // Matriz
+                setFichaComercio(ficha.faturamentoMesComercio);
+                setFichaIndustria(ficha.faturamentoMesIndustria);
+                setFichaServico(ficha.faturamentoMesServico);
+                setFichaServicoRetido(ficha.faturamentoMesServicoRetido);
+                setFichaLocacao(ficha.faturamentoMesLocacao);
+                setFichaServicoHospitalar(ficha.faturamentoMesServicoHospitalar);
+                setFichaRecFinanceira(ficha.receitaFinanceira);
+
+                // Filiais
+                setFichaFilialComercio(ficha.faturamentoFiliaisComercio || 0);
+                setFichaFilialIndustria(ficha.faturamentoFiliaisIndustria || 0);
+                setFichaFilialServico(ficha.faturamentoFiliaisServico || 0);
+                setFichaFilialServicoHospitalar(ficha.faturamentoFiliaisServicoHospitalar || 0);
+
+                // Acumulados Trimestrais
+                if (ficha.dadosTrimestrais) {
+                    setAcumuladoComercio(ficha.dadosTrimestrais.comercio || 0);
+                    setAcumuladoIndustria(ficha.dadosTrimestrais.industria || 0);
+                    setAcumuladoServico(ficha.dadosTrimestrais.servico || 0);
+                    setAcumuladoServicoHospitalar(ficha.dadosTrimestrais.servicoHospitalar || 0);
+                    setAcumuladoFinanceira(ficha.dadosTrimestrais.financeira || 0);
+                }
+
+                // Ajustes e Deduções
+                setFichaIpi(ficha.valorIpi || 0);
+                setFichaDevolucoes(ficha.valorDevolucoes || 0);
+                setFichaIcmsVendas(ficha.icmsVendas || 0);
+                
+                if (ficha.faturamentoMonofasico > 0) {
+                    setIsMonofasicoOption(true);
+                    setFichaMonofasico(ficha.faturamentoMonofasico);
+                } else {
+                    setIsMonofasicoOption(false);
+                    setFichaMonofasico(0);
+                }
+
+                // Custos
+                setFichaCmv(ficha.cmv || 0);
+                setFichaFolha(ficha.folha || 0);
+                setFichaDespesas(ficha.despesas || 0);
+
+                // Retenções
+                setFichaRetPis(ficha.retencaoPis || 0);
+                setFichaRetCofins(ficha.retencaoCofins || 0);
+                setFichaRetIrpj(ficha.retencaoIrpj || 0);
+                setFichaRetCsll(ficha.retencaoCsll || 0);
+
+                // Impostos Manuais
+                setFichaIpiRecolher(ficha.ipiRecolher || 0);
+                setFichaIcmsProprio(ficha.icmsProprioRecolher || 0);
+                setFichaIcmsSt(ficha.icmsStRecolher || 0);
+
+                // Configurações
+                setIsEquiparacaoHospitalar(ficha.isEquiparacaoHospitalar || false);
+                setIsPresuncaoReduzida(ficha.isPresuncaoReduzida16 || false);
+            }
+        }
+    }, [view, selectedFichaId, selectedEmpresa]);
+
+    const resetForm = () => {
+        setFichaMes(new Date().toISOString().substring(0, 7));
+        setPeriodoApuracao('Mensal');
+        setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0); setFichaServicoHospitalar(0);
+        setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0); setFichaFilialServicoHospitalar(0);
+        setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
+        setFichaMonofasico(0); setIsMonofasicoOption(false);
+        setFichaIpiRecolher(0); setFichaIcmsProprio(0); setFichaIcmsSt(0);
+        setAcumuladoComercio(0); setAcumuladoIndustria(0); setAcumuladoServico(0); setAcumuladoServicoHospitalar(0); setAcumuladoFinanceira(0);
+        setIsEquiparacaoHospitalar(false); setIsPresuncaoReduzida(false);
+        setFichaRecFinanceira(0);
+    };
+
+    const handleCreateNewFicha = () => {
+        setSelectedFichaId(null);
+        resetForm();
+        setView('new_ficha');
+    };
+
+    const handleEditFicha = () => {
+        if (!selectedFicha) return;
+        setView('new_ficha');
+        // O useEffect vai popular os dados com base no selectedFichaId que já está setado
+    };
 
     // Live Calculation Logic
     const liveResults = useMemo(() => {
@@ -197,7 +330,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
         const liveInput: LucroInput = {
             regimeSelecionado: selectedEmpresa.regimePadrao || 'Presumido',
-            periodoApuracao: 'Trimestral', // Defaulting to Trimestral for the "Resultado" view to enable Cotas simulation, could be toggled
+            periodoApuracao: periodoApuracao,
             mesReferencia: fichaMes,
             
             faturamentoComercio: fichaComercio,
@@ -213,8 +346,17 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 servico: fichaFilialServico,
                 servicoRetido: 0,
                 locacao: 0,
-                servicoHospitalar: fichaFilialServicoHospitalar // Included in calculation
+                servicoHospitalar: fichaFilialServicoHospitalar
             },
+
+            acumuladoTrimestre: periodoApuracao === 'Trimestral' ? {
+                comercio: acumuladoComercio,
+                industria: acumuladoIndustria,
+                servico: acumuladoServico,
+                servicoHospitalar: acumuladoServicoHospitalar,
+                financeira: acumuladoFinanceira,
+                mesesConsiderados: []
+            } : undefined,
 
             faturamentoMonofasico: isMonofasicoOption ? fichaMonofasico : 0,
             valorIpi: fichaIpi,
@@ -232,15 +374,16 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 aliquota: issAliquota
             },
             
+            // SOMA AUTOMÁTICA DE RETENÇÕES:
+            // O valor enviado para cálculo é: (Retenção do Mês Inputada) + (Retenções de meses anteriores do Trimestre)
             retencaoPis: fichaRetPis,
             retencaoCofins: fichaRetCofins,
-            retencaoIrpj: fichaRetIrpj,
-            retencaoCsll: fichaRetCsll,
+            retencaoIrpj: fichaRetIrpj + retencoesAcumuladas.irpj,
+            retencaoCsll: fichaRetCsll + retencoesAcumuladas.csll,
 
             isEquiparacaoHospitalar: isEquiparacaoHospitalar,
             isPresuncaoReduzida16: isPresuncaoReduzida,
 
-            // Novos campos informados
             ipiRecolher: fichaIpiRecolher,
             icmsProprioRecolher: fichaIcmsProprio,
             icmsStRecolher: fichaIcmsSt
@@ -248,14 +391,17 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
         return calcularLucro(liveInput);
     }, [
-        selectedEmpresa, fichaMes, fichaComercio, fichaIndustria, fichaServico, fichaServicoRetido, fichaLocacao, fichaRecFinanceira, fichaServicoHospitalar,
+        selectedEmpresa, fichaMes, periodoApuracao, 
+        fichaComercio, fichaIndustria, fichaServico, fichaServicoRetido, fichaLocacao, fichaRecFinanceira, fichaServicoHospitalar,
+        acumuladoComercio, acumuladoIndustria, acumuladoServico, acumuladoServicoHospitalar, acumuladoFinanceira,
         fichaFilialComercio, fichaFilialIndustria, fichaFilialServico, fichaFilialServicoHospitalar,
         isMonofasicoOption, fichaMonofasico, fichaIpi, fichaDevolucoes, fichaIcmsVendas,
         fichaCmv, fichaFolha, fichaDespesas,
         issTipo, issAliquota,
         fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
         isEquiparacaoHospitalar, isPresuncaoReduzida,
-        fichaIpiRecolher, fichaIcmsProprio, fichaIcmsSt
+        fichaIpiRecolher, fichaIcmsProprio, fichaIcmsSt,
+        retencoesAcumuladas
     ]);
 
     const loadEmpresas = async () => {
@@ -270,67 +416,41 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         }
     };
 
+    // ... (Mantendo métodos de CNPJ e Company) ...
     const handleCnpjVerification = async () => {
-        if (!newCnpj.trim()) {
-            setCnpjError('Digite um CNPJ para verificar.');
-            return;
-        }
-        setIsCnpjLoading(true);
-        setCnpjError('');
+        if (!newCnpj.trim()) { setCnpjError('Digite um CNPJ para verificar.'); return; }
+        setIsCnpjLoading(true); setCnpjError('');
         try {
             const data = await fetchCnpjFromBrasilAPI(newCnpj);
             if (data && data.razaoSocial) {
                 setNewName(data.razaoSocial);
-                if (data.cnaePrincipal) {
-                    setNewCnae(data.cnaePrincipal.codigo);
-                }
+                if (data.cnaePrincipal) setNewCnae(data.cnaePrincipal.codigo);
             }
-        } catch (e: any) {
-            setCnpjError(e.message || 'Erro ao verificar o CNPJ.');
-        } finally {
-            setIsCnpjLoading(false);
-        }
+        } catch (e: any) { setCnpjError(e.message || 'Erro ao verificar o CNPJ.'); } 
+        finally { setIsCnpjLoading(false); }
     };
 
     const handleSaveNewCompany = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!currentUser) return;
-        setLoading(true);
+        e.preventDefault(); if (!currentUser) return; setLoading(true);
         try {
             await lucroPresumidoService.saveEmpresa({
-                nome: newName,
-                cnpj: newCnpj,
-                cnaePrincipal: { codigo: newCnae, descricao: '' },
-                regimePadrao: newRegime,
-                fichaFinanceira: []
+                nome: newName, cnpj: newCnpj, cnaePrincipal: { codigo: newCnae, descricao: '' },
+                regimePadrao: newRegime, fichaFinanceira: []
             }, currentUser.id);
-            await loadEmpresas();
-            setView('list');
-            setNewName('');
-            setNewCnpj('');
-            setNewCnae('');
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
+            await loadEmpresas(); setView('list'); setNewName(''); setNewCnpj(''); setNewCnae('');
+        } catch (err) { console.error(err); } finally { setLoading(false); }
     };
 
     const handleDeleteCompany = async (id: string) => {
         if (window.confirm('Tem certeza que deseja excluir esta empresa?')) {
             await lucroPresumidoService.deleteEmpresa(id);
             loadEmpresas();
-            if (selectedEmpresaId === id) {
-                setSelectedEmpresaId(null);
-                setView('list');
-            }
+            if (selectedEmpresaId === id) { setSelectedEmpresaId(null); setView('list'); }
         }
     };
 
     const handleSaveFicha = async () => {
-        if (!selectedEmpresa) return;
-        if (!liveResults) return;
-
+        if (!selectedEmpresa || !liveResults) return;
         setLoading(true);
         try {
             const totalFaturamento = 
@@ -338,11 +458,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 fichaFilialComercio + fichaFilialIndustria + fichaFilialServico + fichaFilialServicoHospitalar;
             
             const tempFicha: FichaFinanceiraRegistro = {
-                id: Date.now().toString(),
+                // Se estiver editando (selectedFichaId existe), usa o ID existente, senão cria novo
+                id: selectedFichaId || Date.now().toString(),
                 dataRegistro: Date.now(),
                 mesReferencia: fichaMes,
                 regime: selectedEmpresa.regimePadrao || 'Presumido',
-                periodoApuracao: 'Mensal', // Saving as Monthly record primarily
+                periodoApuracao: periodoApuracao,
                 acumuladoAno: 0,
                 
                 faturamentoMesComercio: fichaComercio,
@@ -356,6 +477,15 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 faturamentoFiliaisIndustria: fichaFilialIndustria,
                 faturamentoFiliaisServico: fichaFilialServico,
                 faturamentoFiliaisServicoHospitalar: fichaFilialServicoHospitalar,
+
+                dadosTrimestrais: periodoApuracao === 'Trimestral' ? {
+                    comercio: acumuladoComercio,
+                    industria: acumuladoIndustria,
+                    servico: acumuladoServico,
+                    servicoHospitalar: acumuladoServicoHospitalar,
+                    financeira: acumuladoFinanceira,
+                    mesesConsiderados: []
+                } : undefined,
 
                 faturamentoMonofasico: isMonofasicoOption ? fichaMonofasico : 0,
                 valorIpi: fichaIpi,
@@ -387,16 +517,26 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 icmsStRecolher: fichaIcmsSt
             };
 
-            await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
-            await loadEmpresas(); 
-            setView('details');
+            const savedFicha = await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
+            await loadEmpresas();
             
-            // Reset fields
-            setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0); setFichaServicoHospitalar(0);
-            setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0); setFichaFilialServicoHospitalar(0);
-            setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
-            setFichaMonofasico(0); setIsMonofasicoOption(false);
-            setFichaIpiRecolher(0); setFichaIcmsProprio(0); setFichaIcmsSt(0);
+            // Após salvar, se for edição ou novo, vamos para a visualização do relatório para conferência
+            // Em vez de ir para 'details' e resetar tudo.
+            
+            // Se savedFicha retornou a empresa atualizada, encontramos a ficha salva nela
+            if (savedFicha) {
+                // Encontrar o ID da ficha que acabamos de salvar (pelo mês, pois o ID pode ser novo)
+                const novaFicha = savedFicha.fichaFinanceira.find(f => f.mesReferencia === fichaMes);
+                if (novaFicha) {
+                    setSelectedFichaId(novaFicha.id);
+                    setView('report');
+                } else {
+                    setView('details'); // Fallback
+                }
+            } else {
+                setView('details');
+            }
+            
         } catch (e) {
             console.error(e);
         } finally {
@@ -516,7 +656,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 </div>
                 <div>
                     <button onClick={handleSaveFicha} disabled={loading} className="px-6 py-2 bg-sky-600 text-white rounded-lg font-bold hover:bg-sky-700 shadow-lg flex items-center gap-2">
-                        {loading ? 'Salvando...' : <><SaveIcon className="w-5 h-5" /> Salvar Competência</>}
+                        {loading ? 'Salvando...' : <><SaveIcon className="w-5 h-5" /> {selectedFichaId ? 'Salvar Alterações' : 'Salvar Competência'}</>}
                     </button>
                 </div>
             </div>
@@ -601,23 +741,81 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             <CalculatorIcon className="w-4 h-4" /> Receitas da Matriz
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="col-span-1 md:col-span-2">
-                                <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Mês de Referência</label>
-                                <input type="month" value={fichaMes} onChange={e => setFichaMes(e.target.value)} className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white" />
+                            <div className="col-span-1 md:col-span-2 flex gap-4 items-end">
+                                <div className="flex-grow">
+                                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1">Mês de Referência</label>
+                                    <input type="month" value={fichaMes} onChange={e => setFichaMes(e.target.value)} className="w-full p-2 rounded border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-white" />
+                                </div>
+                                <div className="bg-slate-100 dark:bg-slate-700 p-1 rounded-lg flex items-center h-[42px]">
+                                    <button 
+                                        onClick={() => setPeriodoApuracao('Mensal')}
+                                        className={`px-3 h-full text-xs font-bold rounded transition-all ${periodoApuracao === 'Mensal' ? 'bg-white dark:bg-slate-600 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                                    >
+                                        Estimativa Mensal
+                                    </button>
+                                    <button 
+                                        onClick={() => setPeriodoApuracao('Trimestral')}
+                                        className={`px-3 h-full text-xs font-bold rounded transition-all ${periodoApuracao === 'Trimestral' ? 'bg-white dark:bg-slate-600 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                                    >
+                                        Encerramento Trimestral
+                                    </button>
+                                </div>
                             </div>
-                            <CurrencyInput label="Comércio (Revenda)" value={fichaComercio} onChange={setFichaComercio} />
-                            <CurrencyInput label="Indústria" value={fichaIndustria} onChange={setFichaIndustria} />
-                            
-                            <CurrencyInput label={isEquiparacaoHospitalar ? "Serviços Gerais (32% - Sem Equiparação)" : "Serviços (Geral)"} value={fichaServico} onChange={setFichaServico} />
-                            
-                            {isEquiparacaoHospitalar && (
-                                <div className="animate-fade-in">
-                                    <CurrencyInput label="Serviços Hospitalares (8% - Equiparação)" value={fichaServicoHospitalar} onChange={setFichaServicoHospitalar} highlight />
+
+                            {/* Inputs Específicos para Fechamento Trimestral (Acumulado) */}
+                            {periodoApuracao === 'Trimestral' && (
+                                <div className="col-span-1 md:col-span-2 bg-sky-50 dark:bg-sky-900/20 p-4 rounded-lg border border-sky-200 dark:border-sky-800 animate-fade-in">
+                                    <h4 className="text-xs font-bold text-sky-800 dark:text-sky-300 uppercase mb-2 flex items-center gap-2">
+                                        <InfoIcon className="w-4 h-4" /> Dados Anteriores do Trimestre (Acumulado)
+                                    </h4>
+                                    <p className="text-[10px] text-sky-600 dark:text-sky-400 mb-3">
+                                        Informe a soma da receita bruta dos meses anteriores deste trimestre para o cálculo correto do Adicional do IRPJ (10% sobre o excedente de R$ 60.000,00 no trimestre).
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        <CurrencyInput label="Acumulado Comércio" value={acumuladoComercio} onChange={setAcumuladoComercio} className="bg-white dark:bg-slate-800 p-2 rounded border border-sky-100 dark:border-sky-900" />
+                                        <CurrencyInput label="Acumulado Indústria" value={acumuladoIndustria} onChange={setAcumuladoIndustria} className="bg-white dark:bg-slate-800 p-2 rounded border border-sky-100 dark:border-sky-900" />
+                                        <CurrencyInput label="Acumulado Serviços" value={acumuladoServico} onChange={setAcumuladoServico} className="bg-white dark:bg-slate-800 p-2 rounded border border-sky-100 dark:border-sky-900" />
+                                        {isEquiparacaoHospitalar && (
+                                            <CurrencyInput label="Acumulado Hosp. (8%)" value={acumuladoServicoHospitalar} onChange={setAcumuladoServicoHospitalar} className="bg-purple-50 dark:bg-purple-900/10 p-2 rounded border border-purple-200 dark:border-purple-800" />
+                                        )}
+                                        <CurrencyInput label="Acumulado Financeira" value={acumuladoFinanceira} onChange={setAcumuladoFinanceira} className="bg-white dark:bg-slate-800 p-2 rounded border border-sky-100 dark:border-sky-900" />
+                                    </div>
                                 </div>
                             )}
 
-                            <CurrencyInput label="Serviços (C/ Retenção de ISS)" value={fichaServicoRetido} onChange={setFichaServicoRetido} placeholder="ISS Retido pelo Tomador" />
-                            <CurrencyInput label="Locação de Bens (Sem ISS)" value={fichaLocacao} onChange={setFichaLocacao} />
+                            <CurrencyInput label="Comércio (Revenda)" value={fichaComercio} onChange={setFichaComercio} />
+                            <CurrencyInput label="Indústria" value={fichaIndustria} onChange={setFichaIndustria} />
+                            
+                            <div className="col-span-1 md:col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Serviços e Locação</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <CurrencyInput 
+                                        label={isEquiparacaoHospitalar ? "Serviços (ISS A Pagar / Próprio - Sem Equip.)" : "Serviços (ISS A Pagar / Próprio)"} 
+                                        value={fichaServico} 
+                                        onChange={setFichaServico}
+                                        className="bg-white dark:bg-slate-800"
+                                    />
+                                    
+                                    <CurrencyInput 
+                                        label="Serviços (ISS Retido na Fonte)" 
+                                        value={fichaServicoRetido} 
+                                        onChange={setFichaServicoRetido} 
+                                        placeholder="ISS Retido pelo Tomador" 
+                                    />
+                                    
+                                    <CurrencyInput 
+                                        label="Locação de Bens (Não Incide ISS)" 
+                                        value={fichaLocacao} 
+                                        onChange={setFichaLocacao} 
+                                    />
+
+                                    {isEquiparacaoHospitalar && (
+                                        <div className="animate-fade-in">
+                                            <CurrencyInput label="Serviços Hospitalares (8% - Equiparação)" value={fichaServicoHospitalar} onChange={setFichaServicoHospitalar} highlight />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                             
                             <div className="col-span-1 md:col-span-2 pt-4 mt-2 border-t border-slate-100 dark:border-slate-700">
                                 <div className="p-4 bg-sky-50 dark:bg-sky-900/10 rounded-lg border border-sky-100 dark:border-sky-900">
@@ -769,17 +967,30 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
                         {/* Custos e Retenções (Inputs Secundários) */}
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <h3 className="font-bold text-slate-600 dark:text-slate-400 mb-4 text-xs uppercase tracking-wide">Custos e Retenções</h3>
+                            <h3 className="font-bold text-slate-600 dark:text-slate-400 mb-4 text-xs uppercase tracking-wide">Custos e Retenções (Mês Vigente)</h3>
                             <div className="space-y-3">
                                 <CurrencyInput label="CMV" value={fichaCmv} onChange={setFichaCmv} />
                                 <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
                                 <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
                                 
-                                <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                                <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-4">
                                     <CurrencyInput label="Ret. PIS" value={fichaRetPis} onChange={setFichaRetPis} />
                                     <CurrencyInput label="Ret. COFINS" value={fichaRetCofins} onChange={setFichaRetCofins} />
-                                    <CurrencyInput label="Ret. IRPJ" value={fichaRetIrpj} onChange={setFichaRetIrpj} />
-                                    <CurrencyInput label="Ret. CSLL" value={fichaRetCsll} onChange={setFichaRetCsll} />
+                                    
+                                    <CurrencyInput 
+                                        label="Ret. IRPJ" 
+                                        value={fichaRetIrpj} 
+                                        onChange={setFichaRetIrpj}
+                                        subtitle={retencoesAcumuladas.irpj > 0 ? `+ R$ ${retencoesAcumuladas.irpj.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (Ant. Trimestre)` : undefined}
+                                        highlight={retencoesAcumuladas.irpj > 0}
+                                    />
+                                    <CurrencyInput 
+                                        label="Ret. CSLL" 
+                                        value={fichaRetCsll} 
+                                        onChange={setFichaRetCsll}
+                                        subtitle={retencoesAcumuladas.csll > 0 ? `+ R$ ${retencoesAcumuladas.csll.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (Ant. Trimestre)` : undefined}
+                                        highlight={retencoesAcumuladas.csll > 0}
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -808,7 +1019,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             Fichas Financeiras (Competências)
                         </h3>
                          <button 
-                            onClick={() => setView('new_ficha')}
+                            onClick={handleCreateNewFicha}
                             className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors"
                         >
                             <PlusIcon className="w-4 h-4" /> Nova Competência
@@ -820,7 +1031,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                              <div key={ficha.id} onClick={() => { setSelectedFichaId(ficha.id); setView('report'); }} className="cursor-pointer bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border border-slate-200 dark:border-slate-600 hover:border-sky-400 transition-all">
                                 <div className="flex justify-between items-start mb-2">
                                     <span className="font-bold text-slate-800 dark:text-white capitalize">{new Date(ficha.mesReferencia + '-02').toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span>
-                                    <span className="text-xs bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300 px-2 py-0.5 rounded-full">{ficha.regime}</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full ${ficha.periodoApuracao === 'Trimestral' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-sky-100 dark:bg-sky-900 text-sky-700 dark:text-sky-300'}`}>
+                                        {ficha.periodoApuracao || 'Mensal'}
+                                    </span>
                                 </div>
                                 <div className="space-y-1 text-sm text-slate-600 dark:text-slate-400">
                                     <div className="flex justify-between"><span>Faturamento:</span> <span className="font-mono text-slate-900 dark:text-slate-200 font-bold">{ficha.faturamentoMesTotal.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
@@ -857,9 +1070,25 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
         return (
             <div className="space-y-6 animate-fade-in pb-10">
-                <div className="flex items-center gap-4 print:hidden">
-                    <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Relatório de Apuração</h2>
+                <div className="flex items-center justify-between gap-4 print:hidden">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setView('details')} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full"><ArrowLeftIcon className="w-5 h-5" /></button>
+                        <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Relatório de Apuração</h2>
+                    </div>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleEditFicha}
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 font-bold rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors"
+                        >
+                            <PencilIcon className="w-4 h-4" /> Editar Competência
+                        </button>
+                        <button 
+                            className="btn-press flex items-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 transition-colors"
+                            onClick={() => window.print()}
+                        >
+                            <DownloadIcon className="w-4 h-4" /> Gerar PDF
+                        </button>
+                    </div>
                 </div>
 
                 {/* PDF Template Container */}
@@ -873,7 +1102,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                         </div>
                         <div className="text-right">
                             <p className="text-[10px] text-slate-400 uppercase font-bold">Enquadramento Aplicado</p>
-                            <p className="text-xl font-black text-sky-800 uppercase leading-none">{selectedFicha.regime}</p>
+                            <p className="text-xl font-black text-sky-800 uppercase leading-none">{selectedFicha.regime} {selectedFicha.periodoApuracao === 'Trimestral' ? '/ Trimestral' : ''}</p>
                             <p className="text-sm font-bold text-slate-500 uppercase mt-1">{mesExtenso}</p>
                         </div>
                     </div>
@@ -972,6 +1201,50 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                 </div>
                             </div>
                         </div>
+
+                        {/* SEÇÃO EXTRA: DADOS TRIMESTRAIS ACUMULADOS (Se houver) */}
+                        {selectedFicha.dadosTrimestrais && selectedFicha.periodoApuracao === 'Trimestral' && (
+                            <div className="bg-sky-50/50 border-2 border-sky-100 rounded-[2rem] p-8 shadow-sm col-span-1 lg:col-span-2">
+                                <h4 className="text-xs font-black text-sky-600 uppercase mb-4 border-b border-sky-100 pb-2 flex items-center gap-2">
+                                    <InfoIcon className="w-4 h-4" /> Memória de Cálculo - Acumulado Trimestral (Meses Anteriores)
+                                </h4>
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
+                                    {selectedFicha.dadosTrimestrais.comercio > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Comércio Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.comercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.industria > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Indústria Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.industria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.servico > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Serviços Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {(selectedFicha.dadosTrimestrais.servicoHospitalar || 0) > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Hospitalar Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servicoHospitalar?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                    {selectedFicha.dadosTrimestrais.financeira > 0 && (
+                                        <div>
+                                            <span className="block text-slate-500 text-[10px] uppercase font-bold">Rec. Fin. Ant.</span>
+                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.financeira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 italic">
+                                    * Estes valores foram somados à receita do mês atual para o cálculo da base trimestral do IRPJ e CSLL (Adicional de 10% sobre excedente de R$ 60.000,00).
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
