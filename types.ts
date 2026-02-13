@@ -328,6 +328,7 @@ export interface FichaFinanceiraRegistro {
 
     isEquiparacaoHospitalar?: boolean;
     isPresuncaoReduzida16?: boolean;
+    issConfig?: IssConfig;
     itensAvulsos?: ItemFinanceiroAvulso[];
     
     totalImpostos: number;
