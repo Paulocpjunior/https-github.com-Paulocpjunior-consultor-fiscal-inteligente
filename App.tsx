@@ -469,6 +469,14 @@ const App: React.FC = () => {
       });
   };
 
+  const handleDeleteSimplesEmpresa = async (id: string) => {
+      if (window.confirm("Tem certeza que deseja excluir esta empresa do Simples Nacional?")) {
+          await simplesService.deleteEmpresa(id);
+          setSimplesEmpresas(prev => prev.filter(e => e.id !== id));
+          setToastMessage("Empresa excluída com sucesso.");
+      }
+  };
+
   const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
       try {
           const result = await simplesService.parseAndSaveNotas(empresaId, file);
@@ -829,6 +837,7 @@ const App: React.FC = () => {
                                     onSelectEmpresa={(id, view) => { setSelectedSimplesEmpresaId(id); setSimplesView(view); }} 
                                     onAddNew={() => setSimplesView('nova')}
                                     onShowToast={(msg) => setToastMessage(msg)}
+                                    onDelete={handleDeleteSimplesEmpresa}
                                 />
                             )}
                             {simplesView === 'nova' && (
