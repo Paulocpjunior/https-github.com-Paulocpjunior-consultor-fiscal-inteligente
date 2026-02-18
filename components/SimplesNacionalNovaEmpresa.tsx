@@ -146,7 +146,21 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
             return;
         }
         setError('');
-        onSave(nome, cnpj, cnae, anexo, atividadesSecundarias);
+
+        // Lógica de Salvamento Inteligente:
+        // Se o usuário preencheu o campo de CNAE Secundário mas esqueceu de clicar no botão "+",
+        // nós adicionamos automaticamente para ele antes de salvar.
+        let atividadesParaSalvar = [...atividadesSecundarias];
+        
+        if (newAtividadeCnae.trim()) {
+            atividadesParaSalvar.push({
+                cnae: newAtividadeCnae,
+                anexo: newAtividadeAnexo
+            });
+        }
+
+        onSave(nome, cnpj, cnae, anexo, atividadesParaSalvar);
+        
         if (onShowToast && !initialData) onShowToast("Empresa salva com sucesso!");
     };
 
