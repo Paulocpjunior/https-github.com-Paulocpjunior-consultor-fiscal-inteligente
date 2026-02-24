@@ -56,7 +56,12 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
 
         ipiRecolher: ficha.ipiRecolher,
         icmsProprioRecolher: ficha.icmsProprioRecolher,
-        icmsStRecolher: ficha.icmsStRecolher
+        icmsStRecolher: ficha.icmsStRecolher,
+
+        ajustesLucroRealAdicoes: ficha.ajustesLucroRealAdicoes,
+        ajustesLucroRealExclusoes: ficha.ajustesLucroRealExclusoes,
+        saldoCredorIcms: ficha.saldoCredorIcms,
+        saldoCredorIpi: ficha.saldoCredorIpi
     };
 };
 
@@ -177,6 +182,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaIcmsProprio, setFichaIcmsProprio] = useState(0);
     const [fichaIcmsSt, setFichaIcmsSt] = useState(0);
 
+    // Ajustes Lucro Real e Saldos Credores
+    const [ajustesLucroRealAdicoes, setAjustesLucroRealAdicoes] = useState(0);
+    const [ajustesLucroRealExclusoes, setAjustesLucroRealExclusoes] = useState(0);
+    const [saldoCredorIcms, setSaldoCredorIcms] = useState(0);
+    const [saldoCredorIpi, setSaldoCredorIpi] = useState(0);
+
     // Configurações Fiscais (Tempo Real)
     const [isEquiparacaoHospitalar, setIsEquiparacaoHospitalar] = useState(false);
     const [isPresuncaoReduzida, setIsPresuncaoReduzida] = useState(false);
@@ -293,6 +304,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 setFichaIcmsProprio(ficha.icmsProprioRecolher || 0);
                 setFichaIcmsSt(ficha.icmsStRecolher || 0);
 
+                // Ajustes Lucro Real e Saldos Credores
+                setAjustesLucroRealAdicoes(ficha.ajustesLucroRealAdicoes || 0);
+                setAjustesLucroRealExclusoes(ficha.ajustesLucroRealExclusoes || 0);
+                setSaldoCredorIcms(ficha.saldoCredorIcms || 0);
+                setSaldoCredorIpi(ficha.saldoCredorIpi || 0);
+
                 // Configurações
                 setIsEquiparacaoHospitalar(ficha.isEquiparacaoHospitalar || false);
                 setIsPresuncaoReduzida(ficha.isPresuncaoReduzida16 || false);
@@ -318,6 +335,8 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
         setFichaMonofasico(0); setIsMonofasicoOption(false);
         setFichaIpiRecolher(0); setFichaIcmsProprio(0); setFichaIcmsSt(0);
+        setAjustesLucroRealAdicoes(0); setAjustesLucroRealExclusoes(0);
+        setSaldoCredorIcms(0); setSaldoCredorIpi(0);
         setAcumuladoComercio(0); setAcumuladoIndustria(0); setAcumuladoServico(0); setAcumuladoServicoHospitalar(0); setAcumuladoFinanceira(0);
         setIsEquiparacaoHospitalar(false); setIsPresuncaoReduzida(false);
         setFichaRecFinanceira(0);
@@ -396,7 +415,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
             ipiRecolher: fichaIpiRecolher,
             icmsProprioRecolher: fichaIcmsProprio,
-            icmsStRecolher: fichaIcmsSt
+            icmsStRecolher: fichaIcmsSt,
+
+            ajustesLucroRealAdicoes: ajustesLucroRealAdicoes,
+            ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
+            saldoCredorIcms: saldoCredorIcms,
+            saldoCredorIpi: saldoCredorIpi
         };
 
         return calcularLucro(liveInput);
@@ -411,6 +435,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
         isEquiparacaoHospitalar, isPresuncaoReduzida,
         fichaIpiRecolher, fichaIcmsProprio, fichaIcmsSt,
+        ajustesLucroRealAdicoes, ajustesLucroRealExclusoes, saldoCredorIcms, saldoCredorIpi,
         retencoesAcumuladas
     ]);
 
@@ -529,7 +554,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
                 ipiRecolher: fichaIpiRecolher,
                 icmsProprioRecolher: fichaIcmsProprio,
-                icmsStRecolher: fichaIcmsSt
+                icmsStRecolher: fichaIcmsSt,
+
+                ajustesLucroRealAdicoes: ajustesLucroRealAdicoes,
+                ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
+                saldoCredorIcms: saldoCredorIcms,
+                saldoCredorIpi: saldoCredorIpi
             };
 
             const savedFicha = await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
@@ -906,6 +936,43 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             />
                         </div>
                     </div>
+
+                    {/* Novo Bloco: Ajustes Lucro Real e Saldos Credores */}
+                    {selectedEmpresa?.regimePadrao === 'Real' && (
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 animate-fade-in">
+                            <h3 className="font-bold text-emerald-600 dark:text-emerald-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
+                                <CalculatorIcon className="w-4 h-4" /> Ajustes Lucro Real e Saldos Credores
+                            </h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <CurrencyInput 
+                                    label="Adições (LALUR/LACS)" 
+                                    value={ajustesLucroRealAdicoes} 
+                                    onChange={setAjustesLucroRealAdicoes} 
+                                    className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded border border-emerald-100 dark:border-emerald-800"
+                                />
+                                <CurrencyInput 
+                                    label="Exclusões (LALUR/LACS)" 
+                                    value={ajustesLucroRealExclusoes} 
+                                    onChange={setAjustesLucroRealExclusoes} 
+                                    className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded border border-emerald-100 dark:border-emerald-800"
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <CurrencyInput 
+                                    label="Saldo Credor ICMS (Mês Anterior)" 
+                                    value={saldoCredorIcms} 
+                                    onChange={setSaldoCredorIcms} 
+                                    className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
+                                />
+                                <CurrencyInput 
+                                    label="Saldo Credor IPI (Mês Anterior)" 
+                                    value={saldoCredorIpi} 
+                                    onChange={setSaldoCredorIpi} 
+                                    className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
+                                />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* COLUNA 2: RESULTADOS (Direita - Sticky) */}

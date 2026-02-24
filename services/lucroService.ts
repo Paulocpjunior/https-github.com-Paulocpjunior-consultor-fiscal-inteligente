@@ -307,12 +307,14 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
 
     // ADICIONAR IMPOSTOS INFORMATIVOS (MANUAIS) AO RESULTADO FINAL
     if (input.icmsProprioRecolher && input.icmsProprioRecolher > 0) {
+        const saldoIcms = input.saldoCredorIcms || 0;
+        const icmsPagar = Math.max(0, input.icmsProprioRecolher - saldoIcms);
         detalhamento.push({
             imposto: 'ICMS Próprio',
             baseCalculo: 0,
             aliquota: 0,
-            valor: input.icmsProprioRecolher,
-            observacao: 'Valor informado (Apuração Fiscal)'
+            valor: icmsPagar,
+            observacao: saldoIcms > 0 ? `Abatido Saldo Credor de ${fmt(saldoIcms)}` : 'Valor informado (Apuração Fiscal)'
         });
     }
     if (input.icmsStRecolher && input.icmsStRecolher > 0) {
@@ -325,12 +327,14 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
         });
     }
     if (input.ipiRecolher && input.ipiRecolher > 0) {
+        const saldoIpi = input.saldoCredorIpi || 0;
+        const ipiPagar = Math.max(0, input.ipiRecolher - saldoIpi);
         detalhamento.push({
             imposto: 'IPI',
             baseCalculo: 0,
             aliquota: 0,
-            valor: input.ipiRecolher,
-            observacao: 'Valor informado (Apuração Fiscal)'
+            valor: ipiPagar,
+            observacao: saldoIpi > 0 ? `Abatido Saldo Credor de ${fmt(saldoIpi)}` : 'Valor informado (Apuração Fiscal)'
         });
     }
 
@@ -433,30 +437,31 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
     
     const despesasTotaisDedutiveis = input.despesasOperacionais + input.despesasDedutiveis + extraDespesasDedutiveis;
     const lucroContabil = totalReceitas - input.custoMercadoriaVendida - input.folhaPagamento - despesasTotaisDedutiveis;
+    const lucroReal = lucroContabil + (input.ajustesLucroRealAdicoes || 0) - (input.ajustesLucroRealExclusoes || 0);
     
-    if (lucroContabil > 0) {
-        let valorIrpj = lucroContabil * ALIQ_IRPJ;
+    if (lucroReal > 0) {
+        let valorIrpj = lucroReal * ALIQ_IRPJ;
         const limiteAdicional = input.periodoApuracao === 'Trimestral' ? LIMITE_ADICIONAL_TRIMESTRAL : LIMITE_ADICIONAL_MENSAL;
-        if (lucroContabil > limiteAdicional) valorIrpj += (lucroContabil - limiteAdicional) * ADICIONAL_IRPJ;
+        if (lucroReal > limiteAdicional) valorIrpj += (lucroReal - limiteAdicional) * ADICIONAL_IRPJ;
         
         detalhamento.push({
             imposto: `IRPJ (Lucro Real ${input.periodoApuracao})`,
-            baseCalculo: lucroContabil,
+            baseCalculo: lucroReal,
             aliquota: ALIQ_IRPJ * 100,
             valor: Math.max(0, valorIrpj - (input.retencaoIrpj || 0)),
-            observacao: `Lucro Tributável Real. Isenção Adicional: ${fmt(limiteAdicional)}`
+            observacao: `Lucro Tributável Real (Ajustado). Isenção Adicional: ${fmt(limiteAdicional)}`
         });
 
         detalhamento.push({
             imposto: `CSLL (Lucro Real ${input.periodoApuracao})`,
-            baseCalculo: lucroContabil,
+            baseCalculo: lucroReal,
             aliquota: ALIQ_CSLL * 100,
-            valor: Math.max(0, (lucroContabil * ALIQ_CSLL) - (input.retencaoCsll || 0))
+            valor: Math.max(0, (lucroReal * ALIQ_CSLL) - (input.retencaoCsll || 0))
         });
     } else {
         detalhamento.push({
             imposto: 'IRPJ/CSLL (Lucro Real)',
-            baseCalculo: lucroContabil,
+            baseCalculo: lucroReal,
             aliquota: 0,
             valor: 0,
             observacao: 'Prejuízo Fiscal no Período'
@@ -465,13 +470,17 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
 
     // ADICIONAR IMPOSTOS INFORMATIVOS (MANUAIS) AO RESULTADO FINAL
     if (input.icmsProprioRecolher && input.icmsProprioRecolher > 0) {
-        detalhamento.push({ imposto: 'ICMS Próprio', baseCalculo: 0, aliquota: 0, valor: input.icmsProprioRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
+        const saldoIcms = input.saldoCredorIcms || 0;
+        const icmsPagar = Math.max(0, input.icmsProprioRecolher - saldoIcms);
+        detalhamento.push({ imposto: 'ICMS Próprio', baseCalculo: 0, aliquota: 0, valor: icmsPagar, observacao: saldoIcms > 0 ? `Abatido Saldo Credor de ${fmt(saldoIcms)}` : 'Valor informado (Apuração Fiscal)' });
     }
     if (input.icmsStRecolher && input.icmsStRecolher > 0) {
         detalhamento.push({ imposto: 'ICMS ST', baseCalculo: 0, aliquota: 0, valor: input.icmsStRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
     }
     if (input.ipiRecolher && input.ipiRecolher > 0) {
-        detalhamento.push({ imposto: 'IPI', baseCalculo: 0, aliquota: 0, valor: input.ipiRecolher, observacao: 'Valor informado (Apuração Fiscal)' });
+        const saldoIpi = input.saldoCredorIpi || 0;
+        const ipiPagar = Math.max(0, input.ipiRecolher - saldoIpi);
+        detalhamento.push({ imposto: 'IPI', baseCalculo: 0, aliquota: 0, valor: ipiPagar, observacao: saldoIpi > 0 ? `Abatido Saldo Credor de ${fmt(saldoIpi)}` : 'Valor informado (Apuração Fiscal)' });
     }
 
     const totalImpostos = detalhamento.reduce((acc, item) => acc + item.valor, 0);

@@ -326,6 +326,11 @@ export interface FichaFinanceiraRegistro {
     icmsProprioRecolher?: number;
     icmsStRecolher?: number;
 
+    ajustesLucroRealAdicoes?: number;
+    ajustesLucroRealExclusoes?: number;
+    saldoCredorIcms?: number;
+    saldoCredorIpi?: number;
+
     isEquiparacaoHospitalar?: boolean;
     isPresuncaoReduzida16?: boolean;
     issConfig?: IssConfig;
@@ -441,4 +446,9 @@ export interface LucroInput {
     ipiRecolher?: number;
     icmsProprioRecolher?: number;
     icmsStRecolher?: number;
+
+    ajustesLucroRealAdicoes?: number;
+    ajustesLucroRealExclusoes?: number;
+    saldoCredorIcms?: number;
+    saldoCredorIpi?: number;
 }
