@@ -66,7 +66,7 @@ const SimplesNacionalNovaEmpresa: React.FC<SimplesNacionalNovaEmpresaProps> = ({
     useEffect(() => {
       if (anexo === 'auto' && cnae.trim().length >= 2) {
         const suggestedAnexo = sugerirAnexoPorCnae(cnae);
-        const anexoDescription = anexoDescriptions[suggestedAnexo] || 'Anexo desconhecido';
+        const anexoDescription = (anexoDescriptions as Record<string, string>)[suggestedAnexo] || 'Anexo desconhecido';
         setSuggestionMessage(`Sugestão automática: ${anexoDescription}`);
       } else {
         setSuggestionMessage(null);

@@ -938,11 +938,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                     </div>
 
                     {/* Novo Bloco: Ajustes Lucro Real e Saldos Credores */}
-                    {selectedEmpresa?.regimePadrao === 'Real' && (
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 animate-fade-in">
-                            <h3 className="font-bold text-emerald-600 dark:text-emerald-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
-                                <CalculatorIcon className="w-4 h-4" /> Ajustes Lucro Real e Saldos Credores
-                            </h3>
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 animate-fade-in">
+                        <h3 className="font-bold text-emerald-600 dark:text-emerald-400 mb-4 flex items-center gap-2 text-sm uppercase tracking-wide border-b border-slate-100 dark:border-slate-700 pb-2">
+                            <CalculatorIcon className="w-4 h-4" /> Ajustes e Saldos Credores
+                        </h3>
+                        
+                        {selectedEmpresa?.regimePadrao === 'Real' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <CurrencyInput 
                                     label="Adições (LALUR/LACS)" 
@@ -957,22 +958,23 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded border border-emerald-100 dark:border-emerald-800"
                                 />
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <CurrencyInput 
-                                    label="Saldo Credor ICMS (Mês Anterior)" 
-                                    value={saldoCredorIcms} 
-                                    onChange={setSaldoCredorIcms} 
-                                    className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
-                                />
-                                <CurrencyInput 
-                                    label="Saldo Credor IPI (Mês Anterior)" 
-                                    value={saldoCredorIpi} 
-                                    onChange={setSaldoCredorIpi} 
-                                    className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
-                                />
-                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <CurrencyInput 
+                                label="Saldo Credor ICMS (Mês Anterior)" 
+                                value={saldoCredorIcms} 
+                                onChange={setSaldoCredorIcms} 
+                                className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
+                            />
+                            <CurrencyInput 
+                                label="Saldo Credor IPI (Mês Anterior)" 
+                                value={saldoCredorIpi} 
+                                onChange={setSaldoCredorIpi} 
+                                className="bg-slate-50 dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600"
+                            />
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 {/* COLUNA 2: RESULTADOS (Direita - Sticky) */}
@@ -1237,6 +1239,15 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     <span>Base Cálculo PIS/COFINS:</span>
                                     <span>R$ {basePisCofins.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
                                 </div>
+
+                                {/* Ajustes Lucro Real */}
+                                {selectedFicha.regime === 'Real' && (selectedFicha.ajustesLucroRealAdicoes || 0 > 0 || selectedFicha.ajustesLucroRealExclusoes || 0 > 0) && (
+                                    <div className="pt-2 mt-2 border-t border-emerald-100">
+                                        <h5 className="text-[10px] font-black text-emerald-600 uppercase mb-1">Ajustes Lucro Real (LALUR)</h5>
+                                        {selectedFicha.ajustesLucroRealAdicoes || 0 > 0 && <div className="flex justify-between text-xs font-bold text-emerald-600"><span>(+) Adições:</span><span>R$ {selectedFicha.ajustesLucroRealAdicoes?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.ajustesLucroRealExclusoes || 0 > 0 && <div className="flex justify-between text-xs font-bold text-red-500"><span>(-) Exclusões:</span><span>R$ {selectedFicha.ajustesLucroRealExclusoes?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -1248,6 +1259,15 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                 <div className="flex justify-between text-sm font-bold text-slate-600"><span>Folha e Encargos Sociais:</span><span>R$ {financeiro.folha.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 <div className="flex justify-between text-sm font-bold text-slate-600"><span>Despesas Operacionais:</span><span>R$ {financeiro.despesas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
                                 
+                                {/* Saldos Credores */}
+                                {(selectedFicha.saldoCredorIcms || 0 > 0 || selectedFicha.saldoCredorIpi || 0 > 0) && (
+                                    <div className="pt-2 mt-2 border-t border-slate-100">
+                                        <h5 className="text-[10px] font-black text-slate-400 uppercase mb-1">Saldos Credores Compensados</h5>
+                                        {selectedFicha.saldoCredorIcms || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. ICMS Anterior:</span><span>R$ {selectedFicha.saldoCredorIcms?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.saldoCredorIpi || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. IPI Anterior:</span><span>R$ {selectedFicha.saldoCredorIpi?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                    </div>
+                                )}
+
                                 {itensAvulsos.filter(i => i.tipo === 'despesa').length > 0 && (
                                     <div className="flex justify-between text-sm font-bold text-slate-600">
                                         <span>(+) Outras Despesas:</span>

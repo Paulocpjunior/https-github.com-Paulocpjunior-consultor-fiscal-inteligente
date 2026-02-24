@@ -159,6 +159,7 @@ export interface SimplesNacionalEmpresa {
     faturamentoManual?: Record<string, number>;
     faturamentoMensalDetalhado?: Record<string, any>; // Key: MM-YYYY, Value: Record<string (cnae_anexo), number | SimplesDetalheItem>
     historicoCalculos?: SimplesHistoricoCalculo[];
+    nomeFantasia?: string;
     createdBy?: string;
     createdByEmail?: string;
 }
