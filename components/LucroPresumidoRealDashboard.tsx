@@ -185,6 +185,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     // Ajustes Lucro Real e Saldos Credores
     const [ajustesLucroRealAdicoes, setAjustesLucroRealAdicoes] = useState(0);
     const [ajustesLucroRealExclusoes, setAjustesLucroRealExclusoes] = useState(0);
+    const [itensAdicionaisExtra, setItensAdicionaisExtra] = useState(0);
     const [saldoCredorIcms, setSaldoCredorIcms] = useState(0);
     const [saldoCredorIpi, setSaldoCredorIpi] = useState(0);
 
@@ -309,6 +310,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 setAjustesLucroRealExclusoes(ficha.ajustesLucroRealExclusoes || 0);
                 setSaldoCredorIcms(ficha.saldoCredorIcms || 0);
                 setSaldoCredorIpi(ficha.saldoCredorIpi || 0);
+                
+                const extraReceitas = (ficha.itensAvulsos || []).filter(i => i.tipo === 'receita' && i.descricao === 'Itens Adicionais - (Extra Operacionais)').reduce((a, b) => a + b.valor, 0);
+                setItensAdicionaisExtra(extraReceitas);
 
                 // Configurações
                 setIsEquiparacaoHospitalar(ficha.isEquiparacaoHospitalar || false);
@@ -420,7 +424,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             ajustesLucroRealAdicoes: ajustesLucroRealAdicoes,
             ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
             saldoCredorIcms: saldoCredorIcms,
-            saldoCredorIpi: saldoCredorIpi
+            saldoCredorIpi: saldoCredorIpi,
+            itensAvulsos: itensAdicionaisExtra > 0 ? [{
+                id: 'extra',
+                descricao: 'Itens Adicionais - (Extra Operacionais)',
+                valor: itensAdicionaisExtra,
+                tipo: 'receita'
+            }] : []
         };
 
         return calcularLucro(liveInput);
@@ -435,7 +445,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
         isEquiparacaoHospitalar, isPresuncaoReduzida,
         fichaIpiRecolher, fichaIcmsProprio, fichaIcmsSt,
-        ajustesLucroRealAdicoes, ajustesLucroRealExclusoes, saldoCredorIcms, saldoCredorIpi,
+        ajustesLucroRealAdicoes, ajustesLucroRealExclusoes, saldoCredorIcms, saldoCredorIpi, itensAdicionaisExtra,
         retencoesAcumuladas
     ]);
 
@@ -559,7 +569,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 ajustesLucroRealAdicoes: ajustesLucroRealAdicoes,
                 ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
                 saldoCredorIcms: saldoCredorIcms,
-                saldoCredorIpi: saldoCredorIpi
+                saldoCredorIpi: saldoCredorIpi,
+                itensAvulsos: itensAdicionaisExtra > 0 ? [{
+                    id: 'extra',
+                    descricao: 'Itens Adicionais - (Extra Operacionais)',
+                    valor: itensAdicionaisExtra,
+                    tipo: 'receita'
+                }] : []
             };
 
             const savedFicha = await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
@@ -944,7 +960,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                         </h3>
                         
                         {selectedEmpresa?.regimePadrao === 'Real' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <CurrencyInput 
                                     label="Adições (LALUR/LACS)" 
                                     value={ajustesLucroRealAdicoes} 
@@ -955,6 +971,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     label="Exclusões (LALUR/LACS)" 
                                     value={ajustesLucroRealExclusoes} 
                                     onChange={setAjustesLucroRealExclusoes} 
+                                    className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded border border-emerald-100 dark:border-emerald-800"
+                                />
+                                <CurrencyInput 
+                                    label="Itens Adicionais (Extra Operacionais)" 
+                                    value={itensAdicionaisExtra} 
+                                    onChange={setItensAdicionaisExtra} 
                                     className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded border border-emerald-100 dark:border-emerald-800"
                                 />
                             </div>
@@ -1214,6 +1236,12 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                 {selectedFicha.faturamentoMesLocacao > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Locação de Bens (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesLocacao.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
                                 {selectedFicha.faturamentoMesServicoHospitalar > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços Hospitalares (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServicoHospitalar.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
                                 {selectedFicha.receitaFinanceira > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>(+) Receita Financeira:</span><span>R$ {selectedFicha.receitaFinanceira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {itensAvulsos.filter(i => i.tipo === 'receita').length > 0 && (
+                                    <div className="flex justify-between text-sm font-bold text-emerald-600">
+                                        <span>(+) Itens Adicionais (Extra Operacionais):</span>
+                                        <span>R$ {itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    </div>
+                                )}
                                 
                                 {/* Deduções e Bases */}
                                 {(selectedFicha.valorIpi > 0 || selectedFicha.valorDevolucoes > 0) && (
@@ -1232,6 +1260,13 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     <div className="flex justify-between text-xs font-bold text-blue-400 italic mt-1">
                                         <span>(-) Ded. ICMS s/ Vendas (STF):</span>
                                         <span>R$ {selectedFicha.icmsVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    </div>
+                                )}
+
+                                {selectedFicha.faturamentoMonofasico > 0 && (
+                                    <div className="flex justify-between text-xs font-bold text-blue-400 italic mt-1">
+                                        <span>(-) Receita Monofásica (PIS/COFINS):</span>
+                                        <span>R$ {selectedFicha.faturamentoMonofasico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
                                     </div>
                                 )}
 
@@ -1265,6 +1300,17 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                         <h5 className="text-[10px] font-black text-slate-400 uppercase mb-1">Saldos Credores Compensados</h5>
                                         {selectedFicha.saldoCredorIcms || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. ICMS Anterior:</span><span>R$ {selectedFicha.saldoCredorIcms?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
                                         {selectedFicha.saldoCredorIpi || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. IPI Anterior:</span><span>R$ {selectedFicha.saldoCredorIpi?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                    </div>
+                                )}
+
+                                {/* Retenções na Fonte */}
+                                {(selectedFicha.retencaoPis > 0 || selectedFicha.retencaoCofins > 0 || selectedFicha.retencaoIrpj > 0 || selectedFicha.retencaoCsll > 0) && (
+                                    <div className="pt-2 mt-2 border-t border-slate-100">
+                                        <h5 className="text-[10px] font-black text-slate-400 uppercase mb-1">Retenções na Fonte (Deduções Federais)</h5>
+                                        {selectedFicha.retencaoPis > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>PIS Retido:</span><span>R$ {selectedFicha.retencaoPis.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.retencaoCofins > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>COFINS Retido:</span><span>R$ {selectedFicha.retencaoCofins.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.retencaoIrpj > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>IRPJ Retido:</span><span>R$ {selectedFicha.retencaoIrpj.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.retencaoCsll > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>CSLL Retido:</span><span>R$ {selectedFicha.retencaoCsll.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
                                     </div>
                                 )}
 

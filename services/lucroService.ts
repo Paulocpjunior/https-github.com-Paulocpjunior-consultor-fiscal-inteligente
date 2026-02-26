@@ -212,14 +212,14 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_PIS_CUMULATIVO) - retencaoPis),
-            observacao: icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)})` : `Base: Receita Bruta Efetiva`
+            observacao: (icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)}). ` : `Base: Receita Bruta Efetiva. `) + (retencaoPis > 0 ? `Retenção abatida: ${fmt(retencaoPis)}` : '')
         });
         detalhamento.push({
             imposto: 'COFINS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_COFINS_CUMULATIVO) - retencaoCofins),
-            observacao: icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)})` : `Base: Receita Bruta Efetiva`
+            observacao: (icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)}). ` : `Base: Receita Bruta Efetiva. `) + (retencaoCofins > 0 ? `Retenção abatida: ${fmt(retencaoCofins)}` : '')
         });
     }
 
@@ -280,7 +280,7 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             valor: Math.max(0, valorIrpj - retencaoIrpj),
             observacao: (aplicouLc224 
                 ? `LC 224/25. Base Bruta${obsHosp}${obsReduzida}.${obsTrimestre}` 
-                : `Base Bruta (Inclui Monofásicos)${obsHosp}${obsReduzida}.${obsTrimestre}`) + ` Isenção: ${fmt(limiteAdicional)}`
+                : `Base Bruta (Inclui Monofásicos)${obsHosp}${obsReduzida}.${obsTrimestre}`) + ` Isenção: ${fmt(limiteAdicional)}` + (retencaoIrpj > 0 ? `. Retenção abatida: ${fmt(retencaoIrpj)}` : '')
         });
     }
 
@@ -299,9 +299,9 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
             baseCalculo: baseCsllTotal,
             aliquota: ALIQ_CSLL * 100,
             valor: Math.max(0, (baseCsllTotal * ALIQ_CSLL) - retencaoCsll),
-            observacao: aplicouLc224
+            observacao: (aplicouLc224
                 ? `LC 224/25.${obsHosp}.${obsTrimestre}`
-                : `Base Bruta (Inclui Monofásicos)${obsHosp}.${obsTrimestre}`
+                : `Base Bruta (Inclui Monofásicos)${obsHosp}.${obsTrimestre}`) + (retencaoCsll > 0 ? `. Retenção abatida: ${fmt(retencaoCsll)}` : '')
         });
     }
 
@@ -403,7 +403,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         baseCalculo: basePisCofins,
         aliquota: ALIQ_PIS_NAO_CUMULATIVO * 100,
         valor: Math.max(0, (basePisCofins * ALIQ_PIS_NAO_CUMULATIVO) - (baseCredito * ALIQ_PIS_NAO_CUMULATIVO) - (input.retencaoPis || 0)),
-        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.`
+        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.` + (input.retencaoPis ? ` Retenção abatida: ${fmt(input.retencaoPis)}` : '')
     });
 
     detalhamento.push({
@@ -411,7 +411,7 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
         baseCalculo: basePisCofins,
         aliquota: ALIQ_COFINS_NAO_CUMULATIVO * 100,
         valor: Math.max(0, (basePisCofins * ALIQ_COFINS_NAO_CUMULATIVO) - (baseCredito * ALIQ_COFINS_NAO_CUMULATIVO) - (input.retencaoCofins || 0)),
-        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.`
+        observacao: `Mensal - Crédito sobre despesas. Deduzido ICMS.` + (input.retencaoCofins ? ` Retenção abatida: ${fmt(input.retencaoCofins)}` : '')
     });
 
     // PIS/COFINS sobre Receita Financeira (Regime Não-Cumulativo)
@@ -449,14 +449,15 @@ const calcularLucroReal = (input: LucroInput): LucroResult => {
             baseCalculo: lucroReal,
             aliquota: ALIQ_IRPJ * 100,
             valor: Math.max(0, valorIrpj - (input.retencaoIrpj || 0)),
-            observacao: `Lucro Tributável Real (Ajustado). Isenção Adicional: ${fmt(limiteAdicional)}`
+            observacao: `Lucro Tributável Real (Ajustado). Isenção Adicional: ${fmt(limiteAdicional)}` + (input.retencaoIrpj ? `. Retenção abatida: ${fmt(input.retencaoIrpj)}` : '')
         });
 
         detalhamento.push({
             imposto: `CSLL (Lucro Real ${input.periodoApuracao})`,
             baseCalculo: lucroReal,
             aliquota: ALIQ_CSLL * 100,
-            valor: Math.max(0, (lucroReal * ALIQ_CSLL) - (input.retencaoCsll || 0))
+            valor: Math.max(0, (lucroReal * ALIQ_CSLL) - (input.retencaoCsll || 0)),
+            observacao: input.retencaoCsll ? `Retenção abatida: ${fmt(input.retencaoCsll)}` : undefined
         });
     } else {
         detalhamento.push({
