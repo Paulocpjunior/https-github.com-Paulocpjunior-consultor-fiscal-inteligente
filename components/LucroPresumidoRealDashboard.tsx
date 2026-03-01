@@ -170,6 +170,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [fichaCmv, setFichaCmv] = useState(0);
     const [fichaFolha, setFichaFolha] = useState(0);
     const [fichaDespesas, setFichaDespesas] = useState(0);
+    const [fichaDespesasDedutiveis, setFichaDespesasDedutiveis] = useState(0);
 
     // Retenções
     const [fichaRetPis, setFichaRetPis] = useState(0);
@@ -293,6 +294,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 setFichaCmv(ficha.cmv || 0);
                 setFichaFolha(ficha.folha || 0);
                 setFichaDespesas(ficha.despesas || 0);
+                setFichaDespesasDedutiveis(ficha.despesasDedutiveis || 0);
 
                 // Retenções
                 setFichaRetPis(ficha.retencaoPis || 0);
@@ -336,7 +338,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         setPeriodoApuracao('Mensal');
         setFichaComercio(0); setFichaIndustria(0); setFichaServico(0); setFichaServicoRetido(0); setFichaLocacao(0); setFichaServicoHospitalar(0);
         setFichaFilialComercio(0); setFichaFilialIndustria(0); setFichaFilialServico(0); setFichaFilialServicoHospitalar(0);
-        setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaIcmsVendas(0);
+        setFichaIpi(0); setFichaDevolucoes(0); setFichaCmv(0); setFichaFolha(0); setFichaDespesas(0); setFichaDespesasDedutiveis(0); setFichaIcmsVendas(0);
         setFichaMonofasico(0); setIsMonofasicoOption(false);
         setFichaIpiRecolher(0); setFichaIcmsProprio(0); setFichaIcmsSt(0);
         setAjustesLucroRealAdicoes(0); setAjustesLucroRealExclusoes(0);
@@ -398,7 +400,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
             receitaFinanceira: fichaRecFinanceira,
             despesasOperacionais: fichaDespesas,
-            despesasDedutiveis: 0,
+            despesasDedutiveis: fichaDespesasDedutiveis,
             folhaPagamento: fichaFolha,
             custoMercadoriaVendida: fichaCmv,
             
@@ -440,7 +442,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         acumuladoComercio, acumuladoIndustria, acumuladoServico, acumuladoServicoHospitalar, acumuladoFinanceira,
         fichaFilialComercio, fichaFilialIndustria, fichaFilialServico, fichaFilialServicoHospitalar,
         isMonofasicoOption, fichaMonofasico, fichaIpi, fichaDevolucoes, fichaIcmsVendas,
-        fichaCmv, fichaFolha, fichaDespesas,
+        fichaCmv, fichaFolha, fichaDespesas, fichaDespesasDedutiveis,
         issTipo, issAliquota,
         fichaRetPis, fichaRetCofins, fichaRetIrpj, fichaRetCsll,
         isEquiparacaoHospitalar, isPresuncaoReduzida,
@@ -541,7 +543,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 totalGeral: totalFaturamento,
                 
                 despesas: fichaDespesas,
-                despesasDedutiveis: 0,
+                despesasDedutiveis: fichaDespesasDedutiveis,
                 folha: fichaFolha,
                 cmv: fichaCmv,
                 
@@ -1069,6 +1071,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                 <CurrencyInput label="CMV" value={fichaCmv} onChange={setFichaCmv} />
                                 <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
                                 <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
+                                <CurrencyInput label="Despesas Dedutíveis (PIS/COFINS)" value={fichaDespesasDedutiveis} onChange={setFichaDespesasDedutiveis} />
                                 
                                 <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-4">
                                     <CurrencyInput label="Ret. PIS" value={fichaRetPis} onChange={setFichaRetPis} />

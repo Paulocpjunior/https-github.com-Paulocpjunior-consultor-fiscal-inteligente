@@ -202,7 +202,7 @@ export const login = async (email: string, password: string): Promise<{ user: Us
             }
 
             if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password'].includes(error.code)) {
-                throw new Error('Usuário não encontrado ou senha incorreta no Banco de Dados Online.');
+                throw new Error('E-mail ou senha incorretos.');
             }
             throw new Error(`Falha de login: ${error.message}`);
         }
