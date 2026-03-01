@@ -22,7 +22,7 @@ export const fetchFiscalData = async (
     aliquotaIss?: string,
     userNotes?: string
 ): Promise<SearchResult> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   
   // Build context string from optional inputs
   let contextParts = [];
@@ -57,16 +57,16 @@ export const fetchFiscalData = async (
   
   Substitua 0.00 pelas alíquotas estimadas percentuais (ex: 13.45). Se for serviço, estadual é 0 e municipal > 0. Se for mercadoria, municipal é 0.`;
   
-  let tools: any[] = [];
+  let config: any = { temperature: 0.4 };
   if ([SearchType.REFORMA_TRIBUTARIA, SearchType.SERVICO, SearchType.CFOP, SearchType.NCM].includes(type)) {
-      tools = [{ googleSearch: {} }];
+      config.tools = [{ googleSearch: {} }];
   }
 
   try {
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
-      config: { tools, temperature: 0.4 }
+      config: config
     });
 
     let text = response.text || 'Não foi possível gerar a análise.';
@@ -109,7 +109,7 @@ export const fetchFiscalData = async (
 };
 
 export const fetchComparison = async (type: SearchType, query1: string, query2: string): Promise<ComparisonResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Compare ${type}: "${query1}" vs "${query2}".`;
     try {
         const response = await ai.models.generateContent({
@@ -128,7 +128,7 @@ export const fetchComparison = async (type: SearchType, query1: string, query2: 
 };
 
 export const fetchSimilarServices = async (query: string): Promise<SimilarService[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Liste 4 códigos da LC 116/03 similares a: "${query}". JSON Array: [{ "code": "X.XX", "description": "..." }]`;
     try {
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt });
@@ -137,7 +137,7 @@ export const fetchSimilarServices = async (query: string): Promise<SimilarServic
 };
 
 export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestion[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Sugira 5 CNAEs válidos para: "${query}". JSON Array: [{ "code": "XXXX-X/XX", "description": "..." }]`;
     try {
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
@@ -146,7 +146,7 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
 };
 
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
     try {
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
@@ -155,7 +155,7 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
 };
 
 export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEmpresa, resumo: SimplesNacionalResumo, question: string): Promise<SearchResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const context = `Empresa: ${empresa.nome}, CNAE: ${empresa.cnae}, Anexo: ${empresa.anexo}, RBT12: ${resumo.rbt12}, Aliq: ${resumo.aliq_eff}%`;
     const prompt = `Contexto: ${context}. Pergunta: "${question}"`;
     try {
@@ -165,7 +165,7 @@ export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEm
 };
 
 export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Analise detalhadamente o CNAE ${cnae} para o Simples Nacional.
     Estruture a resposta com os seguintes tópicos em Markdown:
     1. **Descrição Oficial**: A descrição completa.
@@ -181,7 +181,7 @@ export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> 
 };
 
 export const fetchCnaeTaxDetails = async (cnae: string, manualRates?: { icms: string; pisCofins: string; iss: string }): Promise<CnaeTaxDetail[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     let prompt = `Para CNAE ${cnae}, gere tabela JSON impostos (ICMS, ISS, PIS, COFINS) Regime Geral. 
     Retorne: JSON Array: [{ "tributo": "...", "incidencia": "...", "aliquotaMedia": "...", "baseLegal": "..." }]`;
 
@@ -197,7 +197,7 @@ export const fetchCnaeTaxDetails = async (cnae: string, manualRates?: { icms: st
 };
 
 export const extractDocumentData = async (base64Data: string, mimeType: string = 'application/pdf'): Promise<any[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Analise este documento (PDF, Excel, Imagem ou XML) para extrair dados financeiros de notas fiscais ou faturamento.
     
     **Objetivo:** Extrair uma lista de transações/notas.
@@ -232,7 +232,7 @@ export const extractInvoiceDataFromPdf = async (base64Pdf: string): Promise<any[
 }
 
 export const extractPgdasDataFromPdf = async (base64Pdf: string): Promise<any> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `Analise este PDF, que deve ser um **Extrato PGDAS-D** ou **Declaração do Simples Nacional**.
     
     **Missão:** Extrair o histórico de receita bruta dos últimos 12 meses (RBT12).

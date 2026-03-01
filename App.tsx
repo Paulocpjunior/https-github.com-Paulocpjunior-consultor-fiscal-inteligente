@@ -691,7 +691,7 @@ const App: React.FC = () => {
                                         {isLoading ? (
                                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                            <span>Consultar IA</span>
+                                            <span>Pesquisar IA</span>
                                         )}
                                     </button>
                                 </div>
