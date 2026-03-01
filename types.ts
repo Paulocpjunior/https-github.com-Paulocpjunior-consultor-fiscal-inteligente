@@ -107,6 +107,7 @@ export interface HistoryItem {
     aliquotaIss?: string;
     userNotes?: string;
     entityId?: string; // For navigation to saved entities
+    resultSnippet?: string;
 }
 
 export interface CnpjData {

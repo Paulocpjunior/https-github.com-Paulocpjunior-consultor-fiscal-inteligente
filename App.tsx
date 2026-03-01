@@ -365,7 +365,8 @@ const App: React.FC = () => {
               addHistory({
                   queries: [currentQuery1, currentQuery2],
                   type: currentSearchType,
-                  mode: 'compare'
+                  mode: 'compare',
+                  resultSnippet: data.text.substring(0, 50) + '...'
               });
           }
       } else {
@@ -396,7 +397,8 @@ const App: React.FC = () => {
                   aliquotaIcms: currentIcms,
                   aliquotaPisCofins: currentPisCofins,
                   aliquotaIss: currentIss,
-                  userNotes: currentUserNotes
+                  userNotes: currentUserNotes,
+                  resultSnippet: data.text.substring(0, 50) + '...'
               });
           }
       }
@@ -428,7 +430,8 @@ const App: React.FC = () => {
               queries: [query],
               type: SearchType.REFORMA_TRIBUTARIA,
               mode: 'single',
-              reformaQuery: query
+              reformaQuery: query,
+              resultSnippet: data.text.substring(0, 50) + '...'
           });
       } catch (err) {
           const msg = getFriendlyErrorMessage(err);

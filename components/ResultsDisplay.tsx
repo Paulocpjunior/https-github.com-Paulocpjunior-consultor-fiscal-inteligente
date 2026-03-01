@@ -158,6 +158,31 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                     <FormattedText text={result.text} />
                 </div>
 
+                {/* Grounding Sources Section */}
+                {result.sources && result.sources.length > 0 && (
+                    <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                            <ExternalLinkIcon className="w-4 h-4 text-sky-500" />
+                            Fontes Consultadas
+                        </h3>
+                        <ul className="space-y-2">
+                            {result.sources.map((source, idx) => (
+                                <li key={idx} className="flex items-start gap-2">
+                                    <span className="text-sky-500 mt-1">•</span>
+                                    <a 
+                                        href={source.web.uri} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-sky-600 dark:text-sky-400 hover:underline break-words font-medium"
+                                    >
+                                        {source.web.title || source.web.uri}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
+
                 {/* IBPT Calculator Section */}
                 {[SearchType.NCM, SearchType.SERVICO, SearchType.CFOP].includes(searchType) && (
                     <IbptCalculator initialRates={result.ibpt} queryCode={result.query} />

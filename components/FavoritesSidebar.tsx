@@ -167,7 +167,12 @@ const FavoritesSidebar: React.FC<FavoritesSidebarProps> = ({
                                         </p>
                                         <TypeBadge type={item.type} mini />
                                     </div>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{formatTimestamp(item.timestamp)}</p>
+                                    {item.resultSnippet && (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                            {item.resultSnippet}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{formatTimestamp(item.timestamp)}</p>
                                 </button>
                                 <button 
                                     onClick={() => onHistoryRemove(item.id)} 
