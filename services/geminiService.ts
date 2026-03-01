@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
-const MODEL_NAME = 'gemini-3-pro-preview';
+const MODEL_NAME = 'gemini-3.1-pro-preview';
 
 const cleanJsonString = (str: string) => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
