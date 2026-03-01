@@ -43,11 +43,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             if (email.toLowerCase().includes('junior@spassessoriacontabil.com.br') && msg.includes('Senha incorreta')) {
                 msg += " (Dica: Se for o primeiro acesso, a senha padrão é 123456)";
             }
-            
-            // UX para usuários que acham que têm conta mas não têm na nuvem
-            if (msg.includes('Usuário não encontrado') && isFirebaseConfigured) {
-                msg = "Usuário não encontrado no Banco de Dados Online. Se você criou uma conta anteriormente, por favor, cadastre-se novamente para sincronizar com a nuvem.";
-            }
 
             setError(msg);
         } finally {
