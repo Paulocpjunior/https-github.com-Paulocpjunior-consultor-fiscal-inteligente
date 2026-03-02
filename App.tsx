@@ -6,6 +6,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import LoginScreen from './components/LoginScreen';
 import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
+import ReformaNews from './components/ReformaNews';
 import FavoritesSidebar from './components/FavoritesSidebar';
 import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
 import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa';
@@ -978,7 +979,7 @@ const App: React.FC = () => {
                     )}
 
                     {![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
-                        <NewsAlerts />
+                        searchType === SearchType.REFORMA_TRIBUTARIA ? <ReformaNews /> : <NewsAlerts />
                     )}
                     
                     {/* Allow tax alerts/results to show for Simples/Lucro if a search was performed */}

@@ -182,6 +182,15 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     } catch (e) { return []; }
 };
 
+export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
+    try {
+        const ai = getAI();
+        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
+        return JSON.parse(cleanJsonString(response.text || '[]'));
+    } catch (e) { return []; }
+};
+
 export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEmpresa, resumo: SimplesNacionalResumo, question: string): Promise<SearchResult> => {
     const ai = getAI();
     const context = `Empresa: ${empresa.nome}, CNAE: ${empresa.cnae}, Anexo: ${empresa.anexo}, RBT12: ${resumo.rbt12}, Aliq: ${resumo.aliq_eff}%`;
