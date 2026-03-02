@@ -2,13 +2,13 @@
 import { GoogleGenAI } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
-const MODEL_NAME = 'gemini-3.1-pro-preview';
+const MODEL_NAME = 'gemini-3-flash-preview';
 
 const cleanJsonString = (str: string) => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
-const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
+const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
     let lastError: any;
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -16,9 +16,9 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> =>
         } catch (error: any) {
             lastError = error;
             const message = error?.message || '';
-            // Retry on 503 (Service Unavailable) or 429 (Rate Limit)
-            if (message.includes('503') || message.includes('429') || message.includes('Service Unavailable') || message.includes('Quota exceeded')) {
-                const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            // Retry on 503 (Service Unavailable), 429 (Rate Limit), or 500 (Internal Server Error)
+            if (message.includes('503') || message.includes('429') || message.includes('500') || message.includes('Service Unavailable') || message.includes('Quota exceeded')) {
+                const delay = Math.pow(2, i) * 1500 + Math.random() * 1000;
                 console.warn(`Gemini API error (${message}). Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
