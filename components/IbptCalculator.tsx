@@ -116,16 +116,20 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
 
     if (calcMode === 'detailed') {
         // Detailed Mode
-        const pisVal = calculateTax(detailedRates.pis);
-        const cofinsVal = calculateTax(detailedRates.cofins);
+        estadualVal = calculateTax(detailedRates.icms);
+        
+        // Deduct ICMS from PIS/COFINS base (STF ruling)
+        const basePisCofins = Math.max(0, productValue - estadualVal);
+        const pisVal = basePisCofins * (detailedRates.pis / 100);
+        const cofinsVal = basePisCofins * (detailedRates.cofins / 100);
+        
         const ipiVal = calculateTax(detailedRates.ipi);
         federalVal = pisVal + cofinsVal + ipiVal;
         
-        estadualVal = calculateTax(detailedRates.icms);
         municipalVal = calculateTax(detailedRates.iss);
         
         totalBurden = federalVal + estadualVal + municipalVal;
-        totalPercentage = detailedRates.pis + detailedRates.cofins + detailedRates.ipi + detailedRates.icms + detailedRates.iss;
+        totalPercentage = productValue > 0 ? (totalBurden / productValue) * 100 : 0;
     } else if (calcMode === 'reforma') {
         // Reforma Tributaria Mode
         const cbsVal = calculateTax(reformaRates.cbs);
@@ -319,7 +323,14 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                                     {calcMode === 'reforma' ? 'Federal (CBS + IS)' : 'Federal (IPI, PIS, COFINS)'}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-medium">
-                                    {calcMode === 'detailed' ? `PIS: ${detailedRates.pis}% | COFINS: ${detailedRates.cofins}% | IPI: ${detailedRates.ipi}%` : 
+                                    {calcMode === 'detailed' ? (
+                                        <>
+                                            PIS: {detailedRates.pis}% | COFINS: {detailedRates.cofins}% | IPI: {detailedRates.ipi}%
+                                            <span className="block text-sky-600/70 dark:text-sky-400/70 mt-0.5">
+                                                *Base PIS/COFINS reduzida do ICMS
+                                            </span>
+                                        </>
+                                    ) : 
                                      calcMode === 'reforma' ? `CBS: ${reformaRates.cbs}% | IS: ${reformaRates.is}%` :
                                      `Agregado IBPT ${origin === 'nacional' ? 'Nacional' : 'Importado'}`}
                                 </p>
