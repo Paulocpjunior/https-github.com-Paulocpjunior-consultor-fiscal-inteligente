@@ -8,6 +8,27 @@ const cleanJsonString = (str: string) => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
+const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
+    let lastError: any;
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn();
+        } catch (error: any) {
+            lastError = error;
+            const message = error?.message || '';
+            // Retry on 503 (Service Unavailable) or 429 (Rate Limit)
+            if (message.includes('503') || message.includes('429') || message.includes('Service Unavailable') || message.includes('Quota exceeded')) {
+                const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+                console.warn(`Gemini API error (${message}). Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw lastError;
+};
+
 const getAI = () => {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -70,11 +91,11 @@ export const fetchFiscalData = async (
 
   try {
     const ai = getAI();
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
       config: config
-    });
+    }));
 
     let text = response.text || 'Não foi possível gerar a análise.';
     let ibptData = undefined;
@@ -119,11 +140,11 @@ export const fetchComparison = async (type: SearchType, query1: string, query2: 
     const ai = getAI();
     const prompt = `Compare ${type}: "${query1}" vs "${query2}".`;
     try {
-        const response = await ai.models.generateContent({
+        const response = await withRetry(() => ai.models.generateContent({
             model: MODEL_NAME,
             contents: prompt,
             config: { tools: [{ googleSearch: {} }] }
-        });
+        }));
         return {
             summary: response.text || 'Comparativo indisponível',
             result1: { text: 'Ver resumo comparativo', sources: [], query: query1 },
@@ -138,7 +159,7 @@ export const fetchSimilarServices = async (query: string): Promise<SimilarServic
     try {
         const ai = getAI();
         const prompt = `Liste 4 códigos da LC 116/03 similares a: "${query}". JSON Array: [{ "code": "X.XX", "description": "..." }]`;
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
@@ -147,7 +168,7 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
     try {
         const ai = getAI();
         const prompt = `Sugira 5 CNAEs válidos para: "${query}". JSON Array: [{ "code": "XXXX-X/XX", "description": "..." }]`;
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
@@ -156,7 +177,7 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     try {
         const ai = getAI();
         const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
@@ -166,7 +187,7 @@ export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEm
     const context = `Empresa: ${empresa.nome}, CNAE: ${empresa.cnae}, Anexo: ${empresa.anexo}, RBT12: ${resumo.rbt12}, Aliq: ${resumo.aliq_eff}%`;
     const prompt = `Contexto: ${context}. Pergunta: "${question}"`;
     try {
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt }));
         return { text: response.text || '', query: question, sources: [] };
     } catch (e: any) { throw e; }
 };
@@ -182,7 +203,7 @@ export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> 
     5. **Atividades NÃO Compreendidas**: Lista do que NÃO engloba.`;
     
     try {
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return { text: response.text || '', query: cnae, sources: [] };
     } catch (e: any) { throw e; }
 };
@@ -198,7 +219,7 @@ export const fetchCnaeTaxDetails = async (cnae: string, manualRates?: { icms: st
             ICMS: ${manualRates.icms || 'Padrão'}, PIS/COFINS: ${manualRates.pisCofins || 'Padrão'}, ISS: ${manualRates.iss || 'Padrão'}.`;
         }
 
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
@@ -223,13 +244,13 @@ export const extractDocumentData = async (base64Data: string, mimeType: string =
     Exemplo: [{ "data": "2023-10-25", "valor": 1500.50, "descricao": "Consultoria TI", "origem": "Cliente X" }]`;
     
     try {
-        const response = await ai.models.generateContent({ 
+        const response = await withRetry(() => ai.models.generateContent({ 
             model: MODEL_NAME, 
             contents: [
                 { inlineData: { mimeType: mimeType, data: base64Data } }, 
                 { text: prompt }
             ] 
-        });
+        }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e: any) { throw new Error("Erro na extração IA: " + e.message); }
 };
@@ -258,7 +279,7 @@ export const extractPgdasDataFromPdf = async (base64Pdf: string): Promise<any> =
         
         Se não encontrar dados compatíveis com um extrato do Simples Nacional, retorne [].`;
 
-        const response = await ai.models.generateContent({ model: MODEL_NAME, contents: [{ inlineData: { mimeType: "application/pdf", data: base64Pdf } }, { text: prompt }] });
+        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: [{ inlineData: { mimeType: "application/pdf", data: base64Pdf } }, { text: prompt }] }));
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
