@@ -304,6 +304,10 @@ const App: React.FC = () => {
           return "Erro de conexão. Verifique sua internet.";
       }
 
+      if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY')) {
+          return "A chave da API do Gemini não foi configurada. Por favor, configure a variável de ambiente GEMINI_API_KEY na plataforma.";
+      }
+
       return message || "Ocorreu um erro inesperado ao comunicar com a API.";
   };
 
@@ -366,7 +370,7 @@ const App: React.FC = () => {
                   queries: [currentQuery1, currentQuery2],
                   type: currentSearchType,
                   mode: 'compare',
-                  resultSnippet: data.text.substring(0, 50) + '...'
+                  resultSnippet: data.summary.substring(0, 50) + '...'
               });
           }
       } else {
@@ -694,120 +698,120 @@ const App: React.FC = () => {
                                         {isLoading ? (
                                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                                         ) : (
-                                            <span>Pesquisar IA</span>
+                                            <span>Consultar IA</span>
                                         )}
                                     </button>
                                 </div>
 
-                                {/* Optional User Notes for CFOP */}
-                                {searchType === SearchType.CFOP && (
-                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1">
-                                            Notas / Observações (Opcional)
-                                            <Tooltip content="Adicione contexto específico para a análise da IA.">
-                                                <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
-                                            </Tooltip>
-                                        </label>
-                                        <textarea
-                                            value={userNotes}
-                                            onChange={(e) => setUserNotes(e.target.value)}
-                                            className="w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal resize-none h-20 focus:ring-2 focus:ring-sky-500 outline-none"
-                                            placeholder="Ex: Operação com mercadoria sujeita a ST no destino..."
-                                        />
-                                    </div>
-                                )}
-
-                                {/* Optional Context Inputs for Service Analysis */}
-                                {searchType === SearchType.SERVICO && (
-                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Município Prestador</label>
-                                            <input type="text" value={municipio} onChange={e => setMunicipio(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: São Paulo" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Tomador (Opcional)</label>
-                                            <input type="text" value={alias} onChange={e => setAlias(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: Empresa X" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase">Regime (Opcional)</label>
-                                            <select value={regimeTributario} onChange={e => setRegimeTributario(e.target.value)} className="w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-slate-900 font-bold dark:text-white dark:font-normal">
-                                                <option value="">Selecione</option>
-                                                <option value="simples">Simples Nacional</option>
-                                                <option value="lucro_presumido">Lucro Presumido</option>
-                                                <option value="lucro_real">Lucro Real</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                {/* Optional Tax Rates */}
+                                {/* Advanced Context Options */}
                                 {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO].includes(searchType) && (
-                                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
-                                        <p className="text-xs font-bold text-sky-600 dark:text-sky-400 mb-2 uppercase flex items-center gap-2">
-                                            Refinar Análise com Alíquotas (Opcional)
-                                            <Tooltip content="Informe as alíquotas para um cálculo mais preciso dos impostos.">
-                                                <InfoIcon className="w-4 h-4 text-sky-400 cursor-help" />
-                                            </Tooltip>
-                                        </p>
-                                        <div className="grid grid-cols-3 gap-4">
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                                                    ICMS (%)
-                                                    <Tooltip content="Alíquota do ICMS (Imposto sobre Circulação de Mercadorias).">
+                                    <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-700">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                                                <CalculatorIcon className="w-4 h-4 text-sky-500" />
+                                                Contexto Adicional para IA
+                                            </h3>
+                                            <span className="text-[10px] bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded-full font-bold uppercase">Opcional</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            {/* Column 1: Notes */}
+                                            <div className="md:col-span-2">
+                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">
+                                                    Notas / Observações da Operação
+                                                    <Tooltip content="Adicione contexto específico para a análise da IA.">
                                                         <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
                                                     </Tooltip>
                                                 </label>
-                                                <input 
-                                                    type="number" 
-                                                    min="0" 
-                                                    max="100"
-                                                    value={aliquotaIcms} 
-                                                    onChange={e => { setAliquotaIcms(e.target.value); if(validationErrors.aliquotaIcms) setValidationErrors({...validationErrors, aliquotaIcms: ''}); }}
-                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaIcms ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                                                    placeholder="0.00" 
-                                                    aria-label="Alíquota ICMS"
+                                                <textarea
+                                                    value={userNotes}
+                                                    onChange={(e) => setUserNotes(e.target.value)}
+                                                    className="w-full p-3 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 font-bold dark:text-white dark:font-normal resize-none h-[108px] focus:ring-2 focus:ring-sky-500 outline-none transition-all"
+                                                    placeholder="Ex: Operação com mercadoria sujeita a ST no destino, venda para consumidor final não contribuinte..."
                                                 />
-                                                {validationErrors.aliquotaIcms && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIcms}</p>}
                                             </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                                                    PIS/COFINS (%)
-                                                    <Tooltip content="Alíquota combinada de PIS e COFINS.">
-                                                        <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
-                                                    </Tooltip>
-                                                </label>
-                                                <input 
-                                                    type="number" 
-                                                    min="0" 
-                                                    max="100"
-                                                    value={aliquotaPisCofins} 
-                                                    onChange={e => { setAliquotaPisCofins(e.target.value); if(validationErrors.aliquotaPisCofins) setValidationErrors({...validationErrors, aliquotaPisCofins: ''}); }}
-                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaPisCofins ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                                                    placeholder="0.00" 
-                                                    aria-label="Alíquota PIS e COFINS"
-                                                />
-                                                {validationErrors.aliquotaPisCofins && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaPisCofins}</p>}
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                                                    ISS (%)
-                                                    <Tooltip content="Alíquota do ISS (Imposto Sobre Serviços).">
-                                                        <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
-                                                    </Tooltip>
-                                                </label>
-                                                <input 
-                                                    type="number" 
-                                                    min="0" 
-                                                    max="100"
-                                                    value={aliquotaIss} 
-                                                    onChange={e => { setAliquotaIss(e.target.value); if(validationErrors.aliquotaIss) setValidationErrors({...validationErrors, aliquotaIss: ''}); }}
-                                                    className={`w-full mt-1 p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded text-slate-900 font-bold dark:text-white dark:font-normal ${validationErrors.aliquotaIss ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                                                    placeholder="0.00" 
-                                                    aria-label="Alíquota ISS"
-                                                />
-                                                {validationErrors.aliquotaIss && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIss}</p>}
+
+                                            {/* Column 2: Specific Rates */}
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1.5">
+                                                        ICMS (%)
+                                                        <Tooltip content="Alíquota do ICMS.">
+                                                            <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                        </Tooltip>
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max="100"
+                                                        value={aliquotaIcms} 
+                                                        onChange={e => { setAliquotaIcms(e.target.value); if(validationErrors.aliquotaIcms) setValidationErrors({...validationErrors, aliquotaIcms: ''}); }}
+                                                        className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaIcms ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                        placeholder="0.00" 
+                                                    />
+                                                    {validationErrors.aliquotaIcms && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIcms}</p>}
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1.5">
+                                                        PIS/COFINS (%)
+                                                        <Tooltip content="Alíquota combinada.">
+                                                            <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                        </Tooltip>
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max="100"
+                                                        value={aliquotaPisCofins} 
+                                                        onChange={e => { setAliquotaPisCofins(e.target.value); if(validationErrors.aliquotaPisCofins) setValidationErrors({...validationErrors, aliquotaPisCofins: ''}); }}
+                                                        className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaPisCofins ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                        placeholder="0.00" 
+                                                    />
+                                                    {validationErrors.aliquotaPisCofins && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaPisCofins}</p>}
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1.5">
+                                                        ISS (%)
+                                                        <Tooltip content="Alíquota do ISS.">
+                                                            <InfoIcon className="w-3 h-3 text-slate-400 cursor-help" />
+                                                        </Tooltip>
+                                                    </label>
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        max="100"
+                                                        value={aliquotaIss} 
+                                                        onChange={e => { setAliquotaIss(e.target.value); if(validationErrors.aliquotaIss) setValidationErrors({...validationErrors, aliquotaIss: ''}); }}
+                                                        className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaIss ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                                        placeholder="0.00" 
+                                                    />
+                                                    {validationErrors.aliquotaIss && <p className="text-[10px] text-red-500 mt-1">{validationErrors.aliquotaIss}</p>}
+                                                </div>
                                             </div>
                                         </div>
+
+                                        {/* Service Specific Context */}
+                                        {searchType === SearchType.SERVICO && (
+                                            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase">Município Prestador</label>
+                                                    <input type="text" value={municipio} onChange={e => setMunicipio(e.target.value)} className="w-full mt-1 p-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: São Paulo" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase">Tomador (Opcional)</label>
+                                                    <input type="text" value={alias} onChange={e => setAlias(e.target.value)} className="w-full mt-1 p-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal" placeholder="Ex: Empresa X" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-500 uppercase">Regime (Opcional)</label>
+                                                    <select value={regimeTributario} onChange={e => setRegimeTributario(e.target.value)} className="w-full mt-1 p-2 text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal">
+                                                        <option value="">Selecione</option>
+                                                        <option value="simples">Simples Nacional</option>
+                                                        <option value="lucro_presumido">Lucro Presumido</option>
+                                                        <option value="lucro_real">Lucro Real</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -916,7 +920,7 @@ const App: React.FC = () => {
                             />
                         )}
 
-                        {result && searchType !== SearchType.REFORMA_TRIBUTARIA && (
+                        {(result || error) && searchType !== SearchType.REFORMA_TRIBUTARIA && (
                             <ResultsDisplay 
                                 result={result} 
                                 error={error} 

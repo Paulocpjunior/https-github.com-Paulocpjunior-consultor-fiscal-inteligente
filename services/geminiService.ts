@@ -22,8 +22,6 @@ export const fetchFiscalData = async (
     aliquotaIss?: string,
     userNotes?: string
 ): Promise<SearchResult> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  
   // Build context string from optional inputs
   let contextParts = [];
   if (municipio) contextParts.push(`Município Prestador: ${municipio}`);
@@ -63,6 +61,7 @@ export const fetchFiscalData = async (
   }
 
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,

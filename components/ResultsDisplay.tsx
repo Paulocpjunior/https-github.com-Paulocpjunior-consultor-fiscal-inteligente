@@ -1,9 +1,9 @@
-
 import React, { useState } from 'react';
 import { FormattedText } from './FormattedText';
 import { type SearchResult, SearchType } from '../types';
 import { DownloadIcon, ExternalLinkIcon, LightBulbIcon, StarIcon, CalculatorIcon } from './Icons';
 import IbptCalculator from './IbptCalculator';
+import { motion } from 'motion/react';
 
 interface ResultsDisplayProps {
     result: SearchResult | null;
@@ -25,10 +25,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
     const handleToggleFavoriteClick = () => {
         onToggleFavorite();
         setAnimateFavorite(true);
-        setTimeout(() => setAnimateFavorite(false), 300); // Reset animation class
-        if (onShowToast) {
-            // Message is actually set in parent state, this just ensures visual feedback loop is complete if needed
-        }
+        setTimeout(() => setAnimateFavorite(false), 300);
     };
 
     const handleExportPDF = async () => {
@@ -44,17 +41,9 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 return;
             }
             
-            // Force light theme for PDF capture to ensure contrast
-            const wasDark = document.documentElement.classList.contains('dark');
-            if (wasDark) {
-                // Temporarily remove dark class for capture if needed, 
-                // but html2canvas backgroundColor option usually handles it.
-                // Better to explicitly set white background in html2canvas.
-            }
-
             const canvas = await html2canvas(element, { 
                 scale: 2,
-                backgroundColor: '#ffffff', // Force white background for PDF
+                backgroundColor: '#ffffff',
                 logging: false,
                 useCORS: true
             });
@@ -74,13 +63,11 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
             let position = 0;
             const pageHeight = pdf.internal.pageSize.getHeight();
 
-            // Add Header
             pdf.setFontSize(10);
             pdf.setTextColor(100);
             pdf.text('Consultor Fiscal Inteligente - Análise Gerada por IA', 10, 10);
 
-            // Add Image
-            pdf.addImage(imgData, 'PNG', 0, position + 15, pdfWidth, pdfHeight); // Offset for header
+            pdf.addImage(imgData, 'PNG', 0, position + 15, pdfWidth, pdfHeight);
             heightLeft -= (pageHeight - 15);
 
             while (heightLeft > 0) {
@@ -90,7 +77,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
                 heightLeft -= pageHeight;
             }
             
-            // Add Footer
             const pageCount = pdf.getNumberOfPages();
             for(let i = 1; i <= pageCount; i++) {
                 pdf.setPage(i);
@@ -110,10 +96,14 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
 
     if (error) {
         return (
-            <div className="mt-6 p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg text-red-700 font-bold dark:text-red-300">
+            <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 p-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded-lg text-red-700 font-bold dark:text-red-300"
+            >
                 <p className="font-bold">Ocorreu um erro</p>
                 <p>{error}</p>
-            </div>
+            </motion.div>
         );
     }
 
@@ -122,132 +112,164 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, error, onStartC
     }
 
     return (
-        <div className="animate-fade-in">
-            <div id={`result-content-${result.query}`} className="mt-6 p-8 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+        <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="space-y-6"
+        >
+            <div id={`result-content-${result.query}`} className="mt-6 p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                 {/* Header visible in PDF */}
-                <div className="mb-4 border-b border-slate-100 dark:border-slate-700 pb-4">
-                     <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                        Resultado da Análise
-                    </h2>
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-400 dark:font-normal">
-                        Consulta: <span className="font-bold text-sky-700 dark:text-sky-400">{result.query}</span>
-                    </p>
+                <div className="mb-6 border-b border-slate-100 dark:border-slate-700 pb-6">
+                     <div className="flex justify-between items-start">
+                        <div>
+                            <h2 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+                                Resultado da Análise
+                            </h2>
+                            <p className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1">
+                                Consulta: <span className="font-bold text-sky-700 dark:text-sky-400">{result.query}</span>
+                            </p>
+                        </div>
+                        <div className="flex gap-2 no-print">
+                            <button 
+                                onClick={handleToggleFavoriteClick}
+                                className={`p-2 rounded-lg border transition-all ${isFavorite ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400 hover:text-slate-600'}`}
+                                title={isFavorite ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
+                            >
+                                <StarIcon className={`w-5 h-5 ${animateFavorite ? 'animate-ping' : ''}`} solid={isFavorite} />
+                            </button>
+                            <button 
+                                onClick={handleExportPDF}
+                                disabled={isExporting}
+                                className="p-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all disabled:opacity-50"
+                                title="Exportar PDF"
+                            >
+                                {isExporting ? <div className="w-5 h-5 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" /> : <DownloadIcon className="w-5 h-5" />}
+                            </button>
+                        </div>
+                     </div>
                 </div>
 
                 {/* Optional Context Display */}
                 {result.context && (result.context.aliquotaIcms || result.context.aliquotaPisCofins || result.context.aliquotaIss || result.context.userNotes) && (
-                    <div className="mb-6 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-slate-200 dark:border-slate-600 flex items-start gap-3">
-                         <CalculatorIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mt-0.5 flex-shrink-0" />
+                    <div className="mb-8 p-4 bg-sky-50/50 dark:bg-sky-900/10 rounded-xl border border-sky-100 dark:border-sky-800/50 flex items-start gap-4">
+                         <div className="p-2 bg-sky-100 dark:bg-sky-900/30 rounded-lg text-sky-600 dark:text-sky-400">
+                            <CalculatorIcon className="w-5 h-5" />
+                         </div>
                          <div className="flex-grow">
-                             <p className="text-sm font-bold text-slate-900 dark:text-slate-200">Contexto Tributário Considerado:</p>
-                             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm font-bold text-slate-800 dark:text-slate-300 dark:font-normal">
-                                 {result.context.aliquotaIss && <span>• ISS: <strong>{result.context.aliquotaIss}%</strong></span>}
-                                 {result.context.aliquotaIcms && <span>• ICMS: <strong>{result.context.aliquotaIcms}%</strong></span>}
-                                 {result.context.aliquotaPisCofins && <span>• PIS/COFINS: <strong>{result.context.aliquotaPisCofins}%</strong></span>}
+                             <p className="text-sm font-bold text-slate-900 dark:text-slate-200 uppercase tracking-wider">Contexto Tributário Considerado</p>
+                             <div className="flex flex-wrap gap-x-6 gap-y-2 mt-2 text-sm font-bold text-slate-800 dark:text-slate-300">
+                                 {result.context.aliquotaIss && <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-sky-500" /> ISS: <strong className="text-sky-700 dark:text-sky-400">{result.context.aliquotaIss}%</strong></span>}
+                                 {result.context.aliquotaIcms && <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-sky-500" /> ICMS: <strong className="text-sky-700 dark:text-sky-400">{result.context.aliquotaIcms}%</strong></span>}
+                                 {result.context.aliquotaPisCofins && <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-sky-500" /> PIS/COFINS: <strong className="text-sky-700 dark:text-sky-400">{result.context.aliquotaPisCofins}%</strong></span>}
                              </div>
                              {result.context.userNotes && (
-                                <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 italic border-l-2 border-sky-300 dark:border-sky-500 pl-2">
-                                    "{result.context.userNotes}"
-                                </p>
+                                <div className="mt-4 p-3 bg-white/50 dark:bg-slate-900/50 rounded-lg border-l-4 border-sky-400 dark:border-sky-600">
+                                    <p className="text-sm text-slate-700 dark:text-slate-300 italic">
+                                        "{result.context.userNotes}"
+                                    </p>
+                                </div>
                              )}
                          </div>
                     </div>
                 )}
 
-                <div className="prose prose-slate dark:prose-invert max-w-none text-slate-900 font-bold dark:text-slate-300 dark:font-normal">
+                <div className="prose prose-slate dark:prose-invert max-w-none">
                     <FormattedText text={result.text} />
                 </div>
 
                 {/* Grounding Sources Section */}
                 {result.sources && result.sources.length > 0 && (
-                    <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-3 flex items-center gap-2">
+                    <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-700">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2 uppercase tracking-widest">
                             <ExternalLinkIcon className="w-4 h-4 text-sky-500" />
                             Fontes Consultadas
                         </h3>
-                        <ul className="space-y-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {result.sources.map((source, idx) => (
-                                <li key={idx} className="flex items-start gap-2">
-                                    <span className="text-sky-500 mt-1">•</span>
-                                    <a 
-                                        href={source.web.uri} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="text-sm text-sky-600 dark:text-sky-400 hover:underline break-words font-medium"
-                                    >
-                                        {source.web.title || source.web.uri}
-                                    </a>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-
-                {/* IBPT Calculator Section */}
-                {[SearchType.NCM, SearchType.SERVICO, SearchType.CFOP].includes(searchType) && (
-                    <IbptCalculator initialRates={result.ibpt} queryCode={result.query} />
-                )}
-
-                {searchType === SearchType.SERVICO && (
-                    <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border-l-4 border-sky-500 dark:border-sky-400">
-                        <div className="flex items-start">
-                            <ExternalLinkIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mr-3 mt-0.5 flex-shrink-0" />
-                            <div>
-                                <p className="text-sm font-bold text-slate-800 dark:text-slate-300 dark:font-normal mb-1">
-                                    Para mais detalhes e a lista completa, consulte a fonte oficial:
-                                </p>
                                 <a 
-                                    href="https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm" 
+                                    key={idx}
+                                    href={source.web.uri} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
-                                    className="font-bold text-sky-700 dark:text-sky-400 hover:underline text-sm break-words"
+                                    className="group flex items-center p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-xl hover:border-sky-300 dark:hover:border-sky-700 transition-all"
                                 >
-                                    Lei Complementar Nº 116, de 31 de Julho de 2003 (Lista de Serviços)
+                                    <div className="w-8 h-8 flex-shrink-0 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:text-sky-500 transition-colors">
+                                        <ExternalLinkIcon className="w-4 h-4" />
+                                    </div>
+                                    <div className="ml-3 overflow-hidden">
+                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300 group-hover:text-sky-600 dark:group-hover:text-sky-400 truncate transition-colors">
+                                            {source.web.title || source.web.uri}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 truncate">
+                                            {source.web.uri}
+                                        </p>
+                                    </div>
                                 </a>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 )}
             </div>
+
+            {/* IBPT Calculator Section */}
+            {[SearchType.NCM, SearchType.SERVICO, SearchType.CFOP].includes(searchType) && (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                >
+                    <IbptCalculator 
+                        initialRates={result.ibpt} 
+                        queryCode={result.query} 
+                        contextRates={result.context ? {
+                            icms: result.context.aliquotaIcms,
+                            pisCofins: result.context.aliquotaPisCofins,
+                            iss: result.context.aliquotaIss
+                        } : undefined}
+                    />
+                </motion.div>
+            )}
+
+            {searchType === SearchType.SERVICO && (
+                <div className="p-4 bg-sky-50 dark:bg-sky-900/10 rounded-xl border-l-4 border-sky-500">
+                    <div className="flex items-start">
+                        <ExternalLinkIcon className="w-5 h-5 text-sky-600 dark:text-sky-400 mr-3 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-300 mb-1">
+                                Para mais detalhes e a lista completa, consulte a fonte oficial:
+                            </p>
+                            <a 
+                                href="https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-sm text-sky-600 dark:text-sky-400 hover:underline font-bold"
+                            >
+                                Lei Complementar nº 116/2003
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
             
-            <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap justify-end">
+            <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap justify-end no-print">
                 <button
                     onClick={onStartCompare}
-                    className="btn-press w-full sm:w-auto px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 dark:font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
+                    className="btn-press w-full sm:w-auto px-6 py-3 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                 >
                     Comparar este código
-                </button>
-                 <button
-                    onClick={handleToggleFavoriteClick}
-                    title={isFavorite ? 'Remover dos Favoritos' : 'Adicionar aos Favoritos'}
-                    className={`btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 font-bold rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors ${
-                        isFavorite 
-                        ? 'bg-amber-100 dark:bg-amber-800/50 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800' 
-                        : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600'
-                    }`}
-                >
-                    <StarIcon className={`w-5 h-5 ${animateFavorite ? 'animate-pop-in' : ''}`} solid={isFavorite} />
-                    {isFavorite ? 'Favorito' : 'Favoritar'}
                 </button>
                  {searchType === SearchType.SERVICO && (
                      <button
                         onClick={onFindSimilar}
-                        className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 dark:font-semibold rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors"
+                        className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-700 text-slate-800 font-bold dark:text-slate-200 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
                     >
                         <LightBulbIcon className="w-5 h-5" />
                         Serviços Similares
                     </button>
                 )}
-                <button
-                    onClick={handleExportPDF}
-                    disabled={isExporting}
-                    className="btn-press w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <DownloadIcon className="w-5 h-5" />
-                    {isExporting ? 'Exportando...' : 'Exportar PDF'}
-                </button>
             </div>
-        </div>
+        </motion.div>
     );
 };
 

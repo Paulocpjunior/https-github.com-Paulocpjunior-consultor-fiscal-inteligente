@@ -7,9 +7,14 @@ import Tooltip from './Tooltip';
 interface IbptCalculatorProps {
     initialRates?: IbptRates;
     queryCode: string;
+    contextRates?: {
+        icms?: string;
+        pisCofins?: string;
+        iss?: string;
+    };
 }
 
-const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode }) => {
+const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode, contextRates }) => {
     const [productValue, setProductValue] = useState<number>(100);
     const [origin, setOrigin] = useState<'nacional' | 'importado'>('nacional');
     const [isDetailed, setIsDetailed] = useState(false);
@@ -35,13 +40,33 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
     useEffect(() => {
         if (initialRates) {
             setRates(initialRates);
-            // Update Detailed defaults based on loaded aggregates
+            
+            // If we have context rates from the search form, use them to override defaults in detailed mode
+            const icmsVal = contextRates?.icms ? parseFloat(contextRates.icms) : (initialRates.estadual || 18);
+            const issVal = contextRates?.iss ? parseFloat(contextRates.iss) : (initialRates.municipal || 5);
+            
+            // PIS/COFINS split is tricky, if we have a combined rate, we might split it or just use it for one
+            let pisVal = 1.65;
+            let cofinsVal = 7.60;
+            if (contextRates?.pisCofins) {
+                const combined = parseFloat(contextRates.pisCofins);
+                // Simple split for demonstration if combined is provided
+                pisVal = combined * 0.178; // Roughly 1.65/9.25
+                cofinsVal = combined * 0.822; // Roughly 7.60/9.25
+            }
+
             setDetailedRates(prev => ({
                 ...prev,
-                icms: initialRates.estadual || 18,
-                iss: initialRates.municipal || 5,
-                // We can't know PIS/COFINS split from aggregate, so keep defaults
+                icms: isNaN(icmsVal) ? 18 : icmsVal,
+                iss: isNaN(issVal) ? 5 : issVal,
+                pis: isNaN(pisVal) ? 1.65 : pisVal,
+                cofins: isNaN(cofinsVal) ? 7.60 : cofinsVal
             }));
+
+            // If user provided specific rates in context, maybe default to Detailed mode
+            if (contextRates?.icms || contextRates?.pisCofins || contextRates?.iss) {
+                setIsDetailed(true);
+            }
         } else {
             setRates({
                 nacional: 13.45,
@@ -50,7 +75,7 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                 municipal: 0
             });
         }
-    }, [initialRates]);
+    }, [initialRates, contextRates]);
 
     const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
