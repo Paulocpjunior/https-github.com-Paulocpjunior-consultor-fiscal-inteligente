@@ -1,5 +1,5 @@
 
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
 const MODEL_NAME = 'gemini-3-flash-preview';
@@ -185,10 +185,31 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
 export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
     try {
         const ai = getAI();
-        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
-        const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
-    } catch (e) { return []; }
+        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS). 
+        Retorne APENAS um JSON Array válido, sem nenhum outro texto, no formato:
+        [
+          { "title": "Título da notícia", "summary": "Resumo curto", "source": "URL da notícia" }
+        ]`;
+        const response = await withRetry(() => ai.models.generateContent({ 
+            model: MODEL_NAME, 
+            contents: prompt, 
+            config: { 
+                tools: [{ googleSearch: {} }]
+            } 
+        }));
+        
+        let text = response.text || '[]';
+        // Extract JSON block if the model wrapped it in markdown
+        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+            text = jsonMatch[1];
+        }
+        
+        return JSON.parse(cleanJsonString(text));
+    } catch (e) { 
+        console.error("fetchReformaNews error:", e);
+        return []; 
+    }
 };
 
 export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEmpresa, resumo: SimplesNacionalResumo, question: string): Promise<SearchResult> => {
