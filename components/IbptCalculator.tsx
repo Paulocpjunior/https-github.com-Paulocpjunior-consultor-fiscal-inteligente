@@ -17,7 +17,7 @@ interface IbptCalculatorProps {
 const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode, contextRates }) => {
     const [productValue, setProductValue] = useState<number>(100);
     const [origin, setOrigin] = useState<'nacional' | 'importado'>('nacional');
-    const [isDetailed, setIsDetailed] = useState(false);
+    const [calcMode, setCalcMode] = useState<'ibpt' | 'detailed' | 'reforma'>('ibpt');
     
     // Standard IBPT Aggregate Rates
     const [rates, setRates] = useState<IbptRates>({
@@ -34,6 +34,13 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
         ipi: 0,
         icms: 18,
         iss: 5
+    });
+
+    // Reforma Tributaria Rates
+    const [reformaRates, setReformaRates] = useState({
+        cbs: 8.8, // Contribuição sobre Bens e Serviços (Federal)
+        ibs: 17.7, // Imposto sobre Bens e Serviços (Estadual/Municipal)
+        is: 0 // Imposto Seletivo (Federal - apenas bens específicos)
     });
 
     // Load initial rates from Gemini or set defaults
@@ -65,7 +72,7 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
 
             // If user provided specific rates in context, maybe default to Detailed mode
             if (contextRates?.icms || contextRates?.pisCofins || contextRates?.iss) {
-                setIsDetailed(true);
+                setCalcMode('detailed');
             }
         } else {
             setRates({
@@ -93,6 +100,11 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
         setDetailedRates(prev => ({ ...prev, [key]: isNaN(num) ? 0 : num }));
     };
 
+    const handleReformaRateChange = (key: keyof typeof reformaRates, value: string) => {
+        const num = parseFloat(value);
+        setReformaRates(prev => ({ ...prev, [key]: isNaN(num) ? 0 : num }));
+    };
+
     const calculateTax = (rate: number) => productValue * (rate / 100);
 
     // Calculation Logic
@@ -102,7 +114,7 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
     let totalBurden = 0;
     let totalPercentage = 0;
 
-    if (isDetailed) {
+    if (calcMode === 'detailed') {
         // Detailed Mode
         const pisVal = calculateTax(detailedRates.pis);
         const cofinsVal = calculateTax(detailedRates.cofins);
@@ -114,6 +126,19 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
         
         totalBurden = federalVal + estadualVal + municipalVal;
         totalPercentage = detailedRates.pis + detailedRates.cofins + detailedRates.ipi + detailedRates.icms + detailedRates.iss;
+    } else if (calcMode === 'reforma') {
+        // Reforma Tributaria Mode
+        const cbsVal = calculateTax(reformaRates.cbs);
+        const isVal = calculateTax(reformaRates.is);
+        federalVal = cbsVal + isVal;
+        
+        const ibsVal = calculateTax(reformaRates.ibs);
+        // IBS is shared between states and municipalities, we'll group it under "Estadual/Municipal"
+        estadualVal = ibsVal; 
+        municipalVal = 0; // Handled together with IBS
+        
+        totalBurden = federalVal + estadualVal;
+        totalPercentage = reformaRates.cbs + reformaRates.ibs + reformaRates.is;
     } else {
         // IBPT Aggregate Mode
         const federalRate = origin === 'nacional' ? rates.nacional : rates.importado;
@@ -142,16 +167,22 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                 
                 <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
                     <button 
-                        onClick={() => setIsDetailed(false)}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${!isDetailed ? 'bg-white dark:bg-slate-600 shadow text-sky-700 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
+                        onClick={() => setCalcMode('ibpt')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${calcMode === 'ibpt' ? 'bg-white dark:bg-slate-600 shadow text-sky-700 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
                     >
                         Padrão IBPT
                     </button>
                     <button 
-                        onClick={() => setIsDetailed(true)}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${isDetailed ? 'bg-white dark:bg-slate-600 shadow text-sky-700 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
+                        onClick={() => setCalcMode('detailed')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${calcMode === 'detailed' ? 'bg-white dark:bg-slate-600 shadow text-sky-700 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
                     >
                         Detalhado
+                    </button>
+                    <button 
+                        onClick={() => setCalcMode('reforma')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${calcMode === 'reforma' ? 'bg-white dark:bg-slate-600 shadow text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}
+                    >
+                        Reforma
                     </button>
                 </div>
             </div>
@@ -172,7 +203,7 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                         </div>
                     </div>
 
-                    {!isDetailed ? (
+                    {calcMode === 'ibpt' && (
                         <div className="space-y-3">
                             <div className="flex justify-between items-center">
                                 <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1">
@@ -222,7 +253,9 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                                 </div>
                             </div>
                         </div>
-                    ) : (
+                    )}
+                    
+                    {calcMode === 'detailed' && (
                         <div className="space-y-3 animate-fade-in">
                             <p className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase">Detalhamento de Alíquotas (%)</p>
                             <div className="grid grid-cols-3 gap-3">
@@ -249,6 +282,31 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                             </div>
                         </div>
                     )}
+
+                    {calcMode === 'reforma' && (
+                        <div className="space-y-3 animate-fade-in">
+                            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase flex items-center gap-1">
+                                Novos Tributos (Reforma)
+                                <Tooltip content="Estimativa com base no novo sistema tributário (IBS, CBS e IS).">
+                                    <InfoIcon className="w-3 h-3 text-emerald-500 cursor-help" />
+                                </Tooltip>
+                            </p>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[10px] block text-slate-500 mb-1 font-bold">CBS (Federal)</label>
+                                    <input type="number" value={reformaRates.cbs} onChange={e => handleReformaRateChange('cbs', e.target.value)} className="w-full p-2 text-sm bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded text-center font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] block text-slate-500 mb-1 font-bold">IBS (Est/Mun)</label>
+                                    <input type="number" value={reformaRates.ibs} onChange={e => handleReformaRateChange('ibs', e.target.value)} className="w-full p-2 text-sm bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded text-center font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] block text-slate-500 mb-1 font-bold">IS (Seletivo)</label>
+                                    <input type="number" value={reformaRates.is} onChange={e => handleReformaRateChange('is', e.target.value)} className="w-full p-2 text-sm bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded text-center font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500" />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Results Visualization */}
@@ -257,9 +315,13 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                         {/* Federal */}
                         <div className="flex justify-between items-end border-b border-slate-200 dark:border-slate-800 pb-2">
                             <div>
-                                <p className="text-xs font-bold text-sky-600 uppercase">Federal (IPI, PIS, COFINS)</p>
+                                <p className={`text-xs font-bold uppercase ${calcMode === 'reforma' ? 'text-emerald-600' : 'text-sky-600'}`}>
+                                    {calcMode === 'reforma' ? 'Federal (CBS + IS)' : 'Federal (IPI, PIS, COFINS)'}
+                                </p>
                                 <p className="text-[10px] text-slate-400 font-medium">
-                                    {isDetailed ? `PIS: ${detailedRates.pis}% | COFINS: ${detailedRates.cofins}% | IPI: ${detailedRates.ipi}%` : `Agregado IBPT ${origin === 'nacional' ? 'Nacional' : 'Importado'}`}
+                                    {calcMode === 'detailed' ? `PIS: ${detailedRates.pis}% | COFINS: ${detailedRates.cofins}% | IPI: ${detailedRates.ipi}%` : 
+                                     calcMode === 'reforma' ? `CBS: ${reformaRates.cbs}% | IS: ${reformaRates.is}%` :
+                                     `Agregado IBPT ${origin === 'nacional' ? 'Nacional' : 'Importado'}`}
                                 </p>
                             </div>
                             <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -267,12 +329,16 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                             </p>
                         </div>
                         
-                        {/* Estadual */}
+                        {/* Estadual / IBS */}
                         <div className="flex justify-between items-end border-b border-slate-200 dark:border-slate-800 pb-2">
                             <div>
-                                <p className="text-xs font-bold text-amber-600 uppercase">Estadual (ICMS)</p>
+                                <p className={`text-xs font-bold uppercase ${calcMode === 'reforma' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                    {calcMode === 'reforma' ? 'Estadual/Municipal (IBS)' : 'Estadual (ICMS)'}
+                                </p>
                                 <p className="text-[10px] text-slate-400 font-medium">
-                                    {isDetailed ? `Aliquota: ${detailedRates.icms}%` : `Agregado IBPT`}
+                                    {calcMode === 'detailed' ? `Aliquota: ${detailedRates.icms}%` : 
+                                     calcMode === 'reforma' ? `Aliquota: ${reformaRates.ibs}%` :
+                                     `Agregado IBPT`}
                                 </p>
                             </div>
                             <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -280,18 +346,20 @@ const IbptCalculator: React.FC<IbptCalculatorProps> = ({ initialRates, queryCode
                             </p>
                         </div>
                         
-                        {/* Municipal */}
-                        <div className="flex justify-between items-end border-b border-slate-200 dark:border-slate-800 pb-2">
-                            <div>
-                                <p className="text-xs font-bold text-purple-600 uppercase">Municipal (ISS)</p>
-                                <p className="text-[10px] text-slate-400 font-medium">
-                                    {isDetailed ? `Aliquota: ${detailedRates.iss}%` : `Agregado IBPT`}
+                        {/* Municipal (Hidden in Reforma mode) */}
+                        {calcMode !== 'reforma' && (
+                            <div className="flex justify-between items-end border-b border-slate-200 dark:border-slate-800 pb-2">
+                                <div>
+                                    <p className="text-xs font-bold text-purple-600 uppercase">Municipal (ISS)</p>
+                                    <p className="text-[10px] text-slate-400 font-medium">
+                                        {calcMode === 'detailed' ? `Aliquota: ${detailedRates.iss}%` : `Agregado IBPT`}
+                                    </p>
+                                </div>
+                                <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(municipalVal)}
                                 </p>
                             </div>
-                            <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(municipalVal)}
-                            </p>
-                        </div>
+                        )}
                         
                         {/* Total */}
                         <div className="pt-2">
