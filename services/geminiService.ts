@@ -8,6 +8,14 @@ const cleanJsonString = (str: string) => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
+const getAI = () => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        throw new Error('GEMINI_API_KEY is not set. Please configure it in the environment.');
+    }
+    return new GoogleGenAI({ apiKey });
+};
+
 export const fetchFiscalData = async (
     type: SearchType, 
     query: string, 
@@ -61,7 +69,7 @@ export const fetchFiscalData = async (
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getAI();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: prompt,
@@ -108,7 +116,7 @@ export const fetchFiscalData = async (
 };
 
 export const fetchComparison = async (type: SearchType, query1: string, query2: string): Promise<ComparisonResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getAI();
     const prompt = `Compare ${type}: "${query1}" vs "${query2}".`;
     try {
         const response = await ai.models.generateContent({
@@ -127,34 +135,34 @@ export const fetchComparison = async (type: SearchType, query1: string, query2: 
 };
 
 export const fetchSimilarServices = async (query: string): Promise<SimilarService[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const prompt = `Liste 4 códigos da LC 116/03 similares a: "${query}". JSON Array: [{ "code": "X.XX", "description": "..." }]`;
     try {
+        const ai = getAI();
+        const prompt = `Liste 4 códigos da LC 116/03 similares a: "${query}". JSON Array: [{ "code": "X.XX", "description": "..." }]`;
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt });
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
 
 export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestion[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const prompt = `Sugira 5 CNAEs válidos para: "${query}". JSON Array: [{ "code": "XXXX-X/XX", "description": "..." }]`;
     try {
+        const ai = getAI();
+        const prompt = `Sugira 5 CNAEs válidos para: "${query}". JSON Array: [{ "code": "XXXX-X/XX", "description": "..." }]`;
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
 
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
     try {
+        const ai = getAI();
+        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
 
 export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEmpresa, resumo: SimplesNacionalResumo, question: string): Promise<SearchResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getAI();
     const context = `Empresa: ${empresa.nome}, CNAE: ${empresa.cnae}, Anexo: ${empresa.anexo}, RBT12: ${resumo.rbt12}, Aliq: ${resumo.aliq_eff}%`;
     const prompt = `Contexto: ${context}. Pergunta: "${question}"`;
     try {
@@ -164,7 +172,7 @@ export const fetchSimplesNacionalExplanation = async (empresa: SimplesNacionalEm
 };
 
 export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getAI();
     const prompt = `Analise detalhadamente o CNAE ${cnae} para o Simples Nacional.
     Estruture a resposta com os seguintes tópicos em Markdown:
     1. **Descrição Oficial**: A descrição completa.
@@ -180,23 +188,23 @@ export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> 
 };
 
 export const fetchCnaeTaxDetails = async (cnae: string, manualRates?: { icms: string; pisCofins: string; iss: string }): Promise<CnaeTaxDetail[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    let prompt = `Para CNAE ${cnae}, gere tabela JSON impostos (ICMS, ISS, PIS, COFINS) Regime Geral. 
-    Retorne: JSON Array: [{ "tributo": "...", "incidencia": "...", "aliquotaMedia": "...", "baseLegal": "..." }]`;
-
-    if (manualRates) {
-        prompt += `\nConsidere também estas alíquotas informadas pelo usuário para refinar a resposta: 
-        ICMS: ${manualRates.icms || 'Padrão'}, PIS/COFINS: ${manualRates.pisCofins || 'Padrão'}, ISS: ${manualRates.iss || 'Padrão'}.`;
-    }
-
     try {
+        const ai = getAI();
+        let prompt = `Para CNAE ${cnae}, gere tabela JSON impostos (ICMS, ISS, PIS, COFINS) Regime Geral. 
+        Retorne: JSON Array: [{ "tributo": "...", "incidencia": "...", "aliquotaMedia": "...", "baseLegal": "..." }]`;
+
+        if (manualRates) {
+            prompt += `\nConsidere também estas alíquotas informadas pelo usuário para refinar a resposta: 
+            ICMS: ${manualRates.icms || 'Padrão'}, PIS/COFINS: ${manualRates.pisCofins || 'Padrão'}, ISS: ${manualRates.iss || 'Padrão'}.`;
+        }
+
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } });
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }
 };
 
 export const extractDocumentData = async (base64Data: string, mimeType: string = 'application/pdf'): Promise<any[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const ai = getAI();
     const prompt = `Analise este documento (PDF, Excel, Imagem ou XML) para extrair dados financeiros de notas fiscais ou faturamento.
     
     **Objetivo:** Extrair uma lista de transações/notas.
@@ -231,25 +239,25 @@ export const extractInvoiceDataFromPdf = async (base64Pdf: string): Promise<any[
 }
 
 export const extractPgdasDataFromPdf = async (base64Pdf: string): Promise<any> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const prompt = `Analise este PDF, que deve ser um **Extrato PGDAS-D** ou **Declaração do Simples Nacional**.
-    
-    **Missão:** Extrair o histórico de receita bruta dos últimos 12 meses (RBT12).
-    
-    **Instruções Específicas:**
-    1. Localize a tabela ou seção geralmente intitulada "2.2 - Receitas Brutas Anteriores" ou "Receita Bruta Acumulada nos 12 Meses Anteriores ao do Período de Apuração (RBT12)".
-    2. Esta tabela geralmente contém colunas como "Período de Apuração (PA)" e "Receita Bruta Total (RBT)".
-    3. Ignore linhas de totalização ou cabeçalhos repetidos por quebra de página.
-    4. Ignore valores zerados se houver duplicatas, mas mantenha meses com faturamento zero se listados explicitamente.
-    5. Se o documento for um Recibo de Entrega ou Declaração, procure pelo campo "Receita Bruta Acumulada" ou similar que liste mês a mês.
-    
-    **Retorno:** Estritamente um JSON Array.
-    Formato: [{ "periodo": "MM/AAAA", "valor": number }]
-    Exemplo: [{ "periodo": "01/2024", "valor": 15000.00 }, { "periodo": "02/2024", "valor": 20000.50 }]
-    
-    Se não encontrar dados compatíveis com um extrato do Simples Nacional, retorne [].`;
-
     try {
+        const ai = getAI();
+        const prompt = `Analise este PDF, que deve ser um **Extrato PGDAS-D** ou **Declaração do Simples Nacional**.
+        
+        **Missão:** Extrair o histórico de receita bruta dos últimos 12 meses (RBT12).
+        
+        **Instruções Específicas:**
+        1. Localize a tabela ou seção geralmente intitulada "2.2 - Receitas Brutas Anteriores" ou "Receita Bruta Acumulada nos 12 Meses Anteriores ao do Período de Apuração (RBT12)".
+        2. Esta tabela geralmente contém colunas como "Período de Apuração (PA)" e "Receita Bruta Total (RBT)".
+        3. Ignore linhas de totalização ou cabeçalhos repetidos por quebra de página.
+        4. Ignore valores zerados se houver duplicatas, mas mantenha meses com faturamento zero se listados explicitamente.
+        5. Se o documento for um Recibo de Entrega ou Declaração, procure pelo campo "Receita Bruta Acumulada" ou similar que liste mês a mês.
+        
+        **Retorno:** Estritamente um JSON Array.
+        Formato: [{ "periodo": "MM/AAAA", "valor": number }]
+        Exemplo: [{ "periodo": "01/2024", "valor": 15000.00 }, { "periodo": "02/2024", "valor": 20000.50 }]
+        
+        Se não encontrar dados compatíveis com um extrato do Simples Nacional, retorne [].`;
+
         const response = await ai.models.generateContent({ model: MODEL_NAME, contents: [{ inlineData: { mimeType: "application/pdf", data: base64Pdf } }, { text: prompt }] });
         return JSON.parse(cleanJsonString(response.text || '[]'));
     } catch (e) { return []; }

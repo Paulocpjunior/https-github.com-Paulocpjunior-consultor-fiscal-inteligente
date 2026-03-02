@@ -304,8 +304,8 @@ const App: React.FC = () => {
           return "Erro de conexão. Verifique sua internet.";
       }
 
-      if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY')) {
-          return "A chave da API do Gemini não foi configurada. Por favor, configure a variável de ambiente GEMINI_API_KEY na plataforma.";
+      if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY') || message.includes('API Key must be set')) {
+          return "A chave da API do Gemini não foi configurada ou selecionada. Por favor, configure a variável de ambiente GEMINI_API_KEY ou selecione uma chave válida.";
       }
 
       return message || "Ocorreu um erro inesperado ao comunicar com a API.";
@@ -337,9 +337,39 @@ const App: React.FC = () => {
       return Object.keys(errors).length === 0;
   };
 
+  const checkApiKey = async () => {
+    if (process.env.GEMINI_API_KEY) return true;
+    
+    // @ts-ignore
+    if (window.aistudio) {
+      try {
+        // @ts-ignore
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          // @ts-ignore
+          await window.aistudio.openSelectKey();
+          return true; // Assume success after opening dialog
+        }
+        return true;
+      } catch (e) {
+        console.error("Erro ao verificar chave da API:", e);
+        return false;
+      }
+    }
+    return false;
+  };
+
   const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string, contextOverride?: any) => {
     if (isLoading) return; // Prevent double submission
     if (!validateInputs(currentQuery1, currentQuery2)) return;
+
+    setIsLoading(true);
+    setError(null);
+    setResult(null);
+    setComparisonResult(null);
+
+    // Check for API key before proceeding
+    await checkApiKey();
 
     // Use overrides if provided (from history click), otherwise use current state
     const currentSearchType = contextOverride?.type || searchType;
@@ -352,11 +382,6 @@ const App: React.FC = () => {
     const currentPisCofins = contextOverride?.aliquotaPisCofins !== undefined ? contextOverride.aliquotaPisCofins : aliquotaPisCofins;
     const currentIss = contextOverride?.aliquotaIss !== undefined ? contextOverride.aliquotaIss : aliquotaIss;
     const currentUserNotes = contextOverride?.userNotes !== undefined ? contextOverride.userNotes : userNotes;
-
-    setIsLoading(true);
-    setError(null);
-    setResult(null);
-    setComparisonResult(null);
     
     if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search', `${currentSearchType}: ${currentQuery1}`);
 
@@ -425,6 +450,9 @@ const App: React.FC = () => {
       setError(null);
       setResult(null);
       
+      // Check for API key before proceeding
+      await checkApiKey();
+
       if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search_reforma', query);
 
       try {
