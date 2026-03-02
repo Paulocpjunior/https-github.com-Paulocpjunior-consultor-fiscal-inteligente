@@ -187,6 +187,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     const [ajustesLucroRealAdicoes, setAjustesLucroRealAdicoes] = useState(0);
     const [ajustesLucroRealExclusoes, setAjustesLucroRealExclusoes] = useState(0);
     const [itensAdicionaisExtra, setItensAdicionaisExtra] = useState(0);
+    const [despesasAvulsas, setDespesasAvulsas] = useState<ItemFinanceiroAvulso[]>([]);
     const [saldoCredorIcms, setSaldoCredorIcms] = useState(0);
     const [saldoCredorIpi, setSaldoCredorIpi] = useState(0);
 
@@ -427,12 +428,15 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
             ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
             saldoCredorIcms: saldoCredorIcms,
             saldoCredorIpi: saldoCredorIpi,
-            itensAvulsos: itensAdicionaisExtra > 0 ? [{
-                id: 'extra',
-                descricao: 'Itens Adicionais - (Extra Operacionais)',
-                valor: itensAdicionaisExtra,
-                tipo: 'receita'
-            }] : []
+            itensAvulsos: [
+                ...(itensAdicionaisExtra > 0 ? [{
+                    id: 'extra',
+                    descricao: 'Itens Adicionais - (Extra Operacionais)',
+                    valor: itensAdicionaisExtra,
+                    tipo: 'receita' as const
+                }] : []),
+                ...despesasAvulsas
+            ]
         };
 
         return calcularLucro(liveInput);
