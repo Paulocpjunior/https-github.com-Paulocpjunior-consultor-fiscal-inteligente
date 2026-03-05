@@ -4,22 +4,22 @@ import { type NewsAlert } from '../types';
 import { NewspaperIcon } from './Icons';
 
 const AlertCard: React.FC<{ alert: NewsAlert }> = ({ alert }) => (
-    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg flex flex-col h-full">
+    <a
+        href={alert.source}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg flex flex-col h-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+    >
         <h3 className="font-bold text-md text-sky-700 dark:text-sky-400 mb-2">
             {alert.title}
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
             {alert.summary}
         </p>
-        <a 
-            href={alert.source} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-sm font-semibold text-sky-600 dark:text-sky-400 hover:underline mt-4 self-start"
-        >
+        <span className="text-sm font-semibold text-sky-600 dark:text-sky-400 mt-4 self-start">
             Ler mais &rarr;
-        </a>
-    </div>
+        </span>
+    </a>
 );
 
 const SkeletonCard: React.FC = () => (
@@ -58,7 +58,7 @@ const NewsAlerts: React.FC = () => {
     if (error) {
         return null;
     }
-    
+
     // Don't render the section at all if loading is finished and there are no alerts.
     if (!isLoading && alerts.length === 0) {
         return null;
