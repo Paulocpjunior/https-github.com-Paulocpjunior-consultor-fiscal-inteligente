@@ -3,24 +3,44 @@ import { fetchNewsAlerts } from '../services/geminiService';
 import { type NewsAlert } from '../types';
 import { NewspaperIcon } from './Icons';
 
-const AlertCard: React.FC<{ alert: NewsAlert }> = ({ alert }) => (
-    <a
-        href={alert.source}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg flex flex-col h-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-    >
-        <h3 className="font-bold text-md text-sky-700 dark:text-sky-400 mb-2">
-            {alert.title}
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
-            {alert.summary}
-        </p>
-        <span className="text-sm font-semibold text-sky-600 dark:text-sky-400 mt-4 self-start">
-            Ler mais &rarr;
-        </span>
-    </a>
-);
+const AlertCard: React.FC<{ alert: NewsAlert }> = ({ alert }) => {
+    const isValidUrl = alert.source && alert.source.startsWith('http');
+
+    if (!isValidUrl) {
+        return (
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg flex flex-col h-full">
+                <h3 className="font-bold text-md text-sky-700 dark:text-sky-400 mb-2">
+                    {alert.title}
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
+                    {alert.summary}
+                </p>
+                <span className="text-sm text-slate-400 mt-4 self-start">
+                    Fonte indisponível
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <a
+            href={alert.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg flex flex-col h-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+        >
+            <h3 className="font-bold text-md text-sky-700 dark:text-sky-400 mb-2">
+                {alert.title}
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
+                {alert.summary}
+            </p>
+            <span className="text-sm font-semibold text-sky-600 dark:text-sky-400 mt-4 self-start">
+                Ler mais &rarr;
+            </span>
+        </a>
+    );
+};
 
 const SkeletonCard: React.FC = () => (
     <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg animate-pulse">

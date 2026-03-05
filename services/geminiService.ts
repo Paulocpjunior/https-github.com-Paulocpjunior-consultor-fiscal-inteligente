@@ -6,7 +6,7 @@ const MODEL_NAME = 'gemini-3-flash-preview';
 
 const safeJsonParse = (str: string) => {
     let cleanStr = str.trim();
-    
+
     // Try to extract content between ```json and ```
     const jsonMatch = cleanStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch && jsonMatch[1]) {
@@ -17,10 +17,10 @@ const safeJsonParse = (str: string) => {
         const firstBracket = cleanStr.indexOf('[');
         const lastBrace = cleanStr.lastIndexOf('}');
         const lastBracket = cleanStr.lastIndexOf(']');
-        
+
         let startIdx = -1;
         let endIdx = -1;
-        
+
         if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
             startIdx = firstBrace;
             endIdx = lastBrace;
@@ -28,7 +28,7 @@ const safeJsonParse = (str: string) => {
             startIdx = firstBracket;
             endIdx = lastBracket;
         }
-        
+
         if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
             cleanStr = cleanStr.substring(startIdx, endIdx + 1);
         }
@@ -67,11 +67,11 @@ const getAI = () => {
 };
 
 export const fetchFiscalData = async (
-    type: SearchType, 
-    query: string, 
-    municipio?: string, 
-    alias?: string, 
-    responsavel?: string, 
+    type: SearchType,
+    query: string,
+    municipio?: string,
+    alias?: string,
+    responsavel?: string,
     cnae?: string,
     regimeTributario?: string,
     reformaQuery?: string,
@@ -80,23 +80,23 @@ export const fetchFiscalData = async (
     aliquotaIss?: string,
     userNotes?: string
 ): Promise<SearchResult> => {
-  // Build context string from optional inputs
-  let contextParts = [];
-  if (municipio) contextParts.push(`Município Prestador: ${municipio}`);
-  if (alias) contextParts.push(`Tomador/Cliente: ${alias}`);
-  if (regimeTributario) contextParts.push(`Regime Tributário: ${regimeTributario}`);
-  
-  // Add specific tax rates if provided
-  if (aliquotaIcms) contextParts.push(`Alíquota ICMS informada pelo usuário: ${aliquotaIcms}%`);
-  if (aliquotaPisCofins) contextParts.push(`Alíquota PIS/COFINS informada pelo usuário: ${aliquotaPisCofins}%`);
-  if (aliquotaIss) contextParts.push(`Alíquota ISS informada pelo usuário: ${aliquotaIss}%`);
+    // Build context string from optional inputs
+    let contextParts = [];
+    if (municipio) contextParts.push(`Município Prestador: ${municipio}`);
+    if (alias) contextParts.push(`Tomador/Cliente: ${alias}`);
+    if (regimeTributario) contextParts.push(`Regime Tributário: ${regimeTributario}`);
 
-  // Add user notes
-  if (userNotes) contextParts.push(`Notas/Observações do Usuário: ${userNotes}`);
+    // Add specific tax rates if provided
+    if (aliquotaIcms) contextParts.push(`Alíquota ICMS informada pelo usuário: ${aliquotaIcms}%`);
+    if (aliquotaPisCofins) contextParts.push(`Alíquota PIS/COFINS informada pelo usuário: ${aliquotaPisCofins}%`);
+    if (aliquotaIss) contextParts.push(`Alíquota ISS informada pelo usuário: ${aliquotaIss}%`);
 
-  const contextInfo = contextParts.length > 0 ? `\nCONSIDERE OS SEGUINTES DADOS ESPECÍFICOS PARA O CÁLCULO/ANÁLISE: ${contextParts.join('; ')}.` : '';
+    // Add user notes
+    if (userNotes) contextParts.push(`Notas/Observações do Usuário: ${userNotes}`);
 
-  const prompt = `Analise "${query}" no contexto de ${type}.${contextInfo}
+    const contextInfo = contextParts.length > 0 ? `\nCONSIDERE OS SEGUINTES DADOS ESPECÍFICOS PARA O CÁLCULO/ANÁLISE: ${contextParts.join('; ')}.` : '';
+
+    const prompt = `Analise "${query}" no contexto de ${type}.${contextInfo}
   1. Forneça detalhes tributários completos, base legal e se há retenções obrigatórias considerando os dados informados.
   2. AO FINAL DA RESPOSTA, inclua um bloco JSON ESTRITAMENTE com a estimativa de carga tributária média aproximada (IBPT/De Olho no Imposto) para este item no seguinte formato:
   
@@ -112,57 +112,57 @@ export const fetchFiscalData = async (
   \`\`\`
   
   Substitua 0.00 pelas alíquotas estimadas percentuais (ex: 13.45). Se for serviço, estadual é 0 e municipal > 0. Se for mercadoria, municipal é 0.`;
-  
-  let config: any = { temperature: 0.4 };
-  if ([SearchType.REFORMA_TRIBUTARIA, SearchType.SERVICO, SearchType.CFOP, SearchType.NCM].includes(type)) {
-      config.tools = [{ googleSearch: {} }];
-  }
 
-  try {
-    const ai = getAI();
-    const response = await withRetry(() => ai.models.generateContent({
-      model: MODEL_NAME,
-      contents: prompt,
-      config: config
-    }));
+    let config: any = { temperature: 0.4 };
+    if ([SearchType.REFORMA_TRIBUTARIA, SearchType.SERVICO, SearchType.CFOP, SearchType.NCM].includes(type)) {
+        config.tools = [{ googleSearch: {} }];
+    }
 
-    let text = response.text || 'Não foi possível gerar a análise.';
-    let ibptData = undefined;
+    try {
+        const ai = getAI();
+        const response = await withRetry(() => ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: config
+        }));
 
-    // Extract JSON block for IBPT if exists
-    const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
-    if (jsonMatch && jsonMatch[1]) {
-        try {
-            const parsed = JSON.parse(jsonMatch[1]);
-            if (parsed.ibpt) {
-                ibptData = parsed.ibpt;
-                // Optional: Clean the JSON block from the text to avoid duplication in UI
-                text = text.replace(jsonMatch[0], '').trim();
+        let text = response.text || 'Não foi possível gerar a análise.';
+        let ibptData = undefined;
+
+        // Extract JSON block for IBPT if exists
+        const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+            try {
+                const parsed = JSON.parse(jsonMatch[1]);
+                if (parsed.ibpt) {
+                    ibptData = parsed.ibpt;
+                    // Optional: Clean the JSON block from the text to avoid duplication in UI
+                    text = text.replace(jsonMatch[0], '').trim();
+                }
+            } catch (e) {
+                console.warn("Failed to parse IBPT JSON", e);
             }
-        } catch (e) {
-            console.warn("Failed to parse IBPT JSON", e);
         }
-    }
 
-    let sources: GroundingSource[] = [];
-    if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
-        sources = response.candidates[0].groundingMetadata.groundingChunks
-            .filter((c: any) => c.web)
-            .map((c: any) => ({ web: { uri: c.web.uri, title: c.web.title } }));
-    }
+        let sources: GroundingSource[] = [];
+        if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            sources = response.candidates[0].groundingMetadata.groundingChunks
+                .filter((c: any) => c.web)
+                .map((c: any) => ({ web: { uri: c.web.uri, title: c.web.title } }));
+        }
 
-    return {
-      text: text,
-      sources,
-      query,
-      timestamp: Date.now(),
-      context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss, userNotes },
-      ibpt: ibptData
-    };
-  } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    throw error;
-  }
+        return {
+            text: text,
+            sources,
+            query,
+            timestamp: Date.now(),
+            context: { aliquotaIcms, aliquotaPisCofins, aliquotaIss, userNotes },
+            ibpt: ibptData
+        };
+    } catch (error: any) {
+        console.error("Gemini API Error:", error);
+        throw error;
+    }
 };
 
 export const fetchComparison = async (type: SearchType, query1: string, query2: string): Promise<ComparisonResult> => {
@@ -205,7 +205,7 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     try {
         const ai = getAI();
-        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
+        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "URL_COMPLETA_E_VALIDA_DA_FONTE (deve começar obrigatoriamente com https://)" }]`;
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
@@ -217,20 +217,20 @@ export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
         const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS). 
         Retorne APENAS um JSON Array válido, sem nenhum outro texto, no formato:
         [
-          { "title": "Título da notícia", "summary": "Resumo curto", "source": "URL da notícia" }
+          { "title": "Título da notícia", "summary": "Resumo curto", "source": "URL_COMPLETA_E_VALIDA_DA_FONTE (deve começar obrigatoriamente com https://)" }
         ]`;
-        const response = await withRetry(() => ai.models.generateContent({ 
-            model: MODEL_NAME, 
-            contents: prompt, 
-            config: { 
+        const response = await withRetry(() => ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: {
                 tools: [{ googleSearch: {} }]
-            } 
+            }
         }));
-        
+
         return safeJsonParse(response.text || '[]');
-    } catch (e) { 
+    } catch (e) {
         console.error("fetchReformaNews error:", e);
-        return []; 
+        return [];
     }
 };
 
@@ -253,7 +253,7 @@ export const fetchCnaeDescription = async (cnae: string): Promise<SearchResult> 
     3. **Fator R**: Informe se esta atividade está sujeita ao Fator R (Anexo V podendo ser III ou vice-versa).
     4. **Atividades Compreendidas**: Lista do que este CNAE engloba.
     5. **Atividades NÃO Compreendidas**: Lista do que NÃO engloba.`;
-    
+
     try {
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         return { text: response.text || '', query: cnae, sources: [] };
@@ -294,14 +294,14 @@ export const extractDocumentData = async (base64Data: string, mimeType: string =
     
     **Retorno:** Apenas um JSON Array puro.
     Exemplo: [{ "data": "2023-10-25", "valor": 1500.50, "descricao": "Consultoria TI", "origem": "Cliente X" }]`;
-    
+
     try {
-        const response = await withRetry(() => ai.models.generateContent({ 
-            model: MODEL_NAME, 
+        const response = await withRetry(() => ai.models.generateContent({
+            model: MODEL_NAME,
             contents: [
-                { inlineData: { mimeType: mimeType, data: base64Data } }, 
+                { inlineData: { mimeType: mimeType, data: base64Data } },
                 { text: prompt }
-            ] 
+            ]
         }));
         return safeJsonParse(response.text || '[]');
     } catch (e: any) { throw new Error("Erro na extração IA: " + e.message); }

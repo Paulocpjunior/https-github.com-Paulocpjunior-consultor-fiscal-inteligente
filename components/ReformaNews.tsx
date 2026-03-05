@@ -3,24 +3,44 @@ import { fetchReformaNews } from '../services/geminiService';
 import { type NewsAlert } from '../types';
 import { NewspaperIcon } from './Icons';
 
-const AlertCard: React.FC<{ alert: NewsAlert }> = ({ alert }) => (
-    <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg flex flex-col h-full border border-emerald-100 dark:border-emerald-800/50">
-        <h3 className="font-bold text-md text-emerald-800 dark:text-emerald-400 mb-2">
-            {alert.title}
-        </h3>
-        <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
-            {alert.summary}
-        </p>
-        <a 
-            href={alert.source} 
-            target="_blank" 
+const AlertCard: React.FC<{ alert: NewsAlert }> = ({ alert }) => {
+    const isValidUrl = alert.source && alert.source.startsWith('http');
+
+    if (!isValidUrl) {
+        return (
+            <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg flex flex-col h-full border border-emerald-100 dark:border-emerald-800/50">
+                <h3 className="font-bold text-md text-emerald-800 dark:text-emerald-400 mb-2">
+                    {alert.title}
+                </h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
+                    {alert.summary}
+                </p>
+                <span className="text-sm text-emerald-400/70 mt-4 self-start">
+                    Fonte indisponível
+                </span>
+            </div>
+        );
+    }
+
+    return (
+        <a
+            href={alert.source}
+            target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline mt-4 self-start"
+            className="block bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg flex flex-col h-full border border-emerald-100 dark:border-emerald-800/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer"
         >
-            Ler mais &rarr;
+            <h3 className="font-bold text-md text-emerald-800 dark:text-emerald-400 mb-2">
+                {alert.title}
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 flex-grow">
+                {alert.summary}
+            </p>
+            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 mt-4 self-start">
+                Ler mais &rarr;
+            </span>
         </a>
-    </div>
-);
+    );
+};
 
 const SkeletonCard: React.FC = () => (
     <div className="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg animate-pulse border border-emerald-100 dark:border-emerald-800/50">
@@ -55,7 +75,7 @@ const ReformaNews: React.FC = () => {
     if (error) {
         return null;
     }
-    
+
     if (!isLoading && alerts.length === 0) {
         return null;
     }
