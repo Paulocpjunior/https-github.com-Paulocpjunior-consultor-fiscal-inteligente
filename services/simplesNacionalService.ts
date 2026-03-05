@@ -9,11 +9,11 @@ const STORAGE_KEY_NOTAS = 'simples_nacional_notas';
 const MASTER_ADMIN_EMAIL = 'junior@spassessoriacontabil.com.br';
 
 export const ANEXOS_TABELAS: any = {
-    "I": [{"limite": 180000,"aliquota":4,"parcela":0},{"limite":360000,"aliquota":7.3,"parcela":5940},{"limite":720000,"aliquota":9.5,"parcela":13860},{"limite":1800000,"aliquota":10.7,"parcela":22500},{"limite":3600000,"aliquota":14.3,"parcela":87300},{"limite":4800000,"aliquota":19,"parcela":378000}],
-    "II": [{"limite":180000,"aliquota":4.5,"parcela":0},{"limite":360000,"aliquota":7.8,"parcela":5940},{"limite":720000,"aliquota":10,"parcela":13860},{"limite":1800000,"aliquota":11.2,"parcela":22500},{"limite":3600000,"aliquota":14.7,"parcela":85500},{"limite":4800000,"aliquota":30,"parcela":720000}],
-    "III": [{"limite":180000,"aliquota":6,"parcela":0},{"limite":360000,"aliquota":11.2,"parcela":9360},{"limite":720000,"aliquota":13.5,"parcela":17640},{"limite":1800000,"aliquota":16,"parcela":35640},{"limite":3600000,"aliquota":21,"parcela":125640},{"limite":4800000,"aliquota":33,"parcela":648000}],
-    "IV": [{"limite":180000,"aliquota":4.5,"parcela":0},{"limite":360000,"aliquota":9,"parcela":8100},{"limite":720000,"aliquota":10.2,"parcela":12420},{"limite":1800000,"aliquota":14,"parcela":39780},{"limite":3600000,"aliquota":22,"parcela":183780},{"limite":4800000,"aliquota":33,"parcela":828000}],
-    "V": [{"limite":180000,"aliquota":15.5,"parcela":0},{"limite":360000,"aliquota":18,"parcela":4500},{"limite":720000,"aliquota":19.5,"parcela":9900},{"limite":1800000,"aliquota":20.5,"parcela":17100},{"limite":3600000,"aliquota":23,"parcela":62100},{"limite":4800000,"aliquota":30.5,"parcela":540000}]
+    "I": [{ "limite": 180000, "aliquota": 4, "parcela": 0 }, { "limite": 360000, "aliquota": 7.3, "parcela": 5940 }, { "limite": 720000, "aliquota": 9.5, "parcela": 13860 }, { "limite": 1800000, "aliquota": 10.7, "parcela": 22500 }, { "limite": 3600000, "aliquota": 14.3, "parcela": 87300 }, { "limite": 4800000, "aliquota": 19, "parcela": 378000 }],
+    "II": [{ "limite": 180000, "aliquota": 4.5, "parcela": 0 }, { "limite": 360000, "aliquota": 7.8, "parcela": 5940 }, { "limite": 720000, "aliquota": 10, "parcela": 13860 }, { "limite": 1800000, "aliquota": 11.2, "parcela": 22500 }, { "limite": 3600000, "aliquota": 14.7, "parcela": 85500 }, { "limite": 4800000, "aliquota": 30, "parcela": 720000 }],
+    "III": [{ "limite": 180000, "aliquota": 6, "parcela": 0 }, { "limite": 360000, "aliquota": 11.2, "parcela": 9360 }, { "limite": 720000, "aliquota": 13.5, "parcela": 17640 }, { "limite": 1800000, "aliquota": 16, "parcela": 35640 }, { "limite": 3600000, "aliquota": 21, "parcela": 125640 }, { "limite": 4800000, "aliquota": 33, "parcela": 648000 }],
+    "IV": [{ "limite": 180000, "aliquota": 4.5, "parcela": 0 }, { "limite": 360000, "aliquota": 9, "parcela": 8100 }, { "limite": 720000, "aliquota": 10.2, "parcela": 12420 }, { "limite": 1800000, "aliquota": 14, "parcela": 39780 }, { "limite": 3600000, "aliquota": 22, "parcela": 183780 }, { "limite": 4800000, "aliquota": 33, "parcela": 828000 }],
+    "V": [{ "limite": 180000, "aliquota": 15.5, "parcela": 0 }, { "limite": 360000, "aliquota": 18, "parcela": 4500 }, { "limite": 720000, "aliquota": 19.5, "parcela": 9900 }, { "limite": 1800000, "aliquota": 20.5, "parcela": 17100 }, { "limite": 3600000, "aliquota": 23, "parcela": 62100 }, { "limite": 4800000, "aliquota": 30.5, "parcela": 540000 }]
 };
 
 // Tabela Completa de Repartição dos Tributos (Percentuais da Alíquota Efetiva)
@@ -83,7 +83,7 @@ const saveLocalEmpresas = (empresas: SimplesNacionalEmpresa[]) => {
 export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEmpresa[]> => {
     if (!user) return [];
     let firebaseEmpresas: SimplesNacionalEmpresa[] = [];
-    
+
     const isMasterAdmin = user.role === 'admin' || user.email.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
 
     if (isFirebaseConfigured && db && auth?.currentUser) {
@@ -125,12 +125,12 @@ export const getEmpresas = async (user?: User | null): Promise<SimplesNacionalEm
 
 export const saveEmpresa = async (nome: string, cnpj: string, cnae: string, anexo: string, atividadesSecundarias: any[], userId: string): Promise<SimplesNacionalEmpresa> => {
     const finalAnexo = anexo === 'auto' ? sugerirAnexoPorCnae(cnae) : anexo;
-    
+
     const newEmpresa: any = {
         id: generateUUID(),
-        nome, cnpj, cnae, anexo: finalAnexo, 
+        nome, cnpj, cnae, anexo: finalAnexo,
         atividadesSecundarias: atividadesSecundarias || [],
-        folha12: 0, faturamentoManual: {}, faturamentoMensalDetalhado: {}, historicoCalculos: [], 
+        folha12: 0, faturamentoManual: {}, faturamentoMensalDetalhado: {}, historicoCalculos: [],
         createdBy: userId,
         createdByEmail: auth?.currentUser?.email || undefined
     };
@@ -163,8 +163,8 @@ export const updateEmpresa = async (id: string, data: Partial<SimplesNacionalEmp
         try {
             const docRef = doc(db, 'simples_empresas', id);
             const { id: _, createdBy: __, createdByEmail: ___, ...safeData } = data as any;
-            const payload = sanitizePayload({ 
-                ...safeData, 
+            const payload = sanitizePayload({
+                ...safeData,
                 createdBy: auth.currentUser.uid,
                 createdByEmail: auth.currentUser.email
             });
@@ -209,7 +209,7 @@ export const getAllNotas = async (user?: User | null): Promise<Record<string, Si
         if (!result[note.empresaId]) result[note.empresaId] = [];
         result[note.empresaId].push(note);
     });
-    
+
     return result;
 };
 
@@ -250,7 +250,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         if (fileType.endsWith('.pdf')) {
             const base64 = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
             const pgdasHistory = await extractPgdasDataFromPdf(base64);
-            
+
             if (pgdasHistory && pgdasHistory.length > 0) {
                 const empresas = await getEmpresas({ id: 'temp', role: 'admin', name: '', email: '' } as any);
                 const emp = empresas.find(e => e.id === empresaId);
@@ -281,7 +281,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
             const xmlContent = textDecoder.decode(buffer);
             extractedData = parseXmlNfe(xmlContent);
             if (extractedData.length === 0) {
-                const base64 = btoa(unescape(encodeURIComponent(xmlContent))); 
+                const base64 = btoa(unescape(encodeURIComponent(xmlContent)));
                 extractedData = await extractDocumentData(base64, 'text/xml');
             }
         } else if (fileType.endsWith('.xlsx') || fileType.endsWith('.xls')) {
@@ -302,11 +302,15 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
     let success = 0;
 
     extractedData.forEach(item => {
-        if(item.data && (item.valor !== undefined && item.valor !== null)) {
+        if (item.data && (item.valor !== undefined && item.valor !== null)) {
             let dateVal = new Date(item.data).getTime();
-            if (isNaN(dateVal) && item.data.includes('/')) {
-                const parts = item.data.split('/');
-                if (parts.length === 3) dateVal = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
+            if (isNaN(dateVal) && typeof item.data === 'string') {
+                // Handle DD/MM/YYYY or DD-MM-YYYY formats 
+                const parts = item.data.split(/[\/\-]/);
+                if (parts.length === 3) {
+                    // Assume DD-MM-YYYY if standard JS Date failed
+                    dateVal = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`).getTime();
+                }
             }
             if (!isNaN(dateVal)) {
                 newNotes.push({
@@ -335,7 +339,7 @@ export const parseAndSaveNotas = async (empresaId: string, file: File): Promise<
         });
         await Promise.allSettled(batchPromises);
     }
-    
+
     return { successCount: success, failCount: extractedData.length - success, errors: [] };
 };
 
@@ -356,11 +360,11 @@ export const saveHistoricoCalculo = async (empresaId: string, resumo: SimplesNac
         rbt12: resumo.rbt12, aliq_eff: resumo.aliq_eff, fator_r: resumo.fator_r,
         das_mensal: resumo.das_mensal, anexo_efetivo: resumo.anexo_efetivo
     };
-    
-    const currentEmpresas = await getEmpresas({ id: 'temp', role: 'admin', name: '', email: '' } as any); 
+
+    const currentEmpresas = await getEmpresas({ id: 'temp', role: 'admin', name: '', email: '' } as any);
     const emp = currentEmpresas.find(e => e.id === empresaId);
     const currentHistory = emp?.historicoCalculos || [];
-    
+
     return updateEmpresa(empresaId, { historicoCalculos: [...currentHistory, novoCalculo] });
 };
 
@@ -380,7 +384,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     const mensal: any = empresa.faturamentoManual || {};
     const detalhadoHistorico = empresa.faturamentoMensalDetalhado || {};
-    
+
     const historico_simulado: SimplesCalculoMensal[] = [];
 
     // --- CÁLCULO DO RBT12 SEGREGADO ---
@@ -397,7 +401,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             let mesInterno = 0;
             let mesExterno = 0;
             const detalhes = detalhadoHistorico[k];
-            
+
             // Itera sobre os itens do mês para somar separadamente
             Object.values(detalhes).forEach((item: any) => {
                 const valorItem = typeof item === 'number' ? item : item.valor;
@@ -405,7 +409,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
                 if (typeof item === 'object' && !item.issRetido && !item.isSup && !item.icmsSt && !item.isMonofasico && !item.isImune && !item.isExterior && valorItem === 0) return;
 
                 const isExt = typeof item === 'object' && item.isExterior === true;
-                
+
                 if (isExt) mesExterno += valorItem;
                 else mesInterno += valorItem;
             });
@@ -426,7 +430,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
             competencia: k,
             label: d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }),
             faturamento: valTotalMes,
-            rbt12: 0, 
+            rbt12: 0,
             aliquotaEfetiva: 0,
             fatorR: 0,
             dasCalculado: 0,
@@ -442,11 +446,11 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
     }
 
     let itensCalculo: SimplesItemCalculo[] = options?.itensCalculo || [];
-    
+
     if (itensCalculo.length === 0) {
         const detalheSalvo = empresa.faturamentoMensalDetalhado?.[mesChave] || {};
         const entries = Object.entries(detalheSalvo);
-        
+
         if (entries.length > 0) {
             entries.forEach(([key, value]) => {
                 if (key === 'icms_vendas') return; // Ignora campo informativo
@@ -512,10 +516,10 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         faturamentoTotalMes += item.valor;
         if (item.isExterior) totalMercadoExterno += item.valor;
         else totalMercadoInterno += item.valor;
-        
+
         let anexoAplicado = item.anexo;
         const anexoOriginal = item.anexo;
-        
+
         // Aplicação do Fator R: Validação para mudar Anexo V para III (ou vice-versa para III_V)
         if (anexoAplicado === 'V') {
             if (fator_r >= 0.28) anexoAplicado = 'III';
@@ -531,9 +535,9 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         const rbtParaEnquadramento = item.isExterior ? rbt12Externo : rbt12Interno;
 
         let faixaIndex = tabela.findIndex((f: any) => rbtParaEnquadramento <= f.limite);
-        if (faixaIndex === -1 && rbtParaEnquadramento > 0) faixaIndex = tabela.length - 1; 
+        if (faixaIndex === -1 && rbtParaEnquadramento > 0) faixaIndex = tabela.length - 1;
         if (rbtParaEnquadramento === 0) faixaIndex = 0;
-        
+
         const faixa = tabela[faixaIndex];
 
         // Cálculo da Alíquota Nominal Específica para este Item/Origem
@@ -546,12 +550,12 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
         let percentualReducao = 0;
         const reparticao = REPARTICAO_IMPOSTOS[anexoAplicado]?.[Math.min(faixaIndex, 5)];
-        
+
         if (reparticao) {
             if (item.isImune) {
                 if (reparticao['ICMS']) percentualReducao += reparticao['ICMS'];
                 if (reparticao['IPI']) percentualReducao += reparticao['IPI'];
-            } 
+            }
             else if (item.isExterior) {
                 // Imunidade na Exportação (PIS, COFINS, IPI, ICMS, ISS)
                 // Mantém IRPJ, CSLL e CPP (exceto anexo IV onde CPP é fora)
@@ -605,7 +609,7 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
 
     const tabelaPrincipal = ANEXOS_TABELAS[empresa.anexo === 'III_V' ? (fator_r >= 0.28 ? 'III' : 'V') : empresa.anexo];
     let faixaIndexPrincipal = 0;
-    if(tabelaPrincipal) {
+    if (tabelaPrincipal) {
         faixaIndexPrincipal = tabelaPrincipal.findIndex((f: any) => rbt12Global <= f.limite);
         if (faixaIndexPrincipal === -1 && rbt12Global > 0) faixaIndexPrincipal = 5;
     }
@@ -614,15 +618,15 @@ export const calcularResumoEmpresa = (empresa: SimplesNacionalEmpresa, notas: Si
         rbt12: rbt12Global,
         rbt12Interno, // Retorna segregado
         rbt12Externo, // Retorna segregado
-        aliq_nom: tabelaPrincipal ? tabelaPrincipal[faixaIndexPrincipal].aliquota : 0, 
-        aliq_eff: aliq_eff_global, 
+        aliq_nom: tabelaPrincipal ? tabelaPrincipal[faixaIndexPrincipal].aliquota : 0,
+        aliq_eff: aliq_eff_global,
         das: dasTotal * 12,
         das_mensal: dasTotal,
-        mensal, 
-        historico_simulado: historico_simulado, 
-        anexo_efetivo: empresa.anexo, 
+        mensal,
+        historico_simulado: historico_simulado,
+        anexo_efetivo: empresa.anexo,
         fator_r,
-        folha_12: empresa.folha12, 
+        folha_12: empresa.folha12,
         ultrapassou_sublimite: rbt12Global > 3600000,
         faixa_index: faixaIndexPrincipal,
         detalhamento_anexos: detalhamentoAnexos,

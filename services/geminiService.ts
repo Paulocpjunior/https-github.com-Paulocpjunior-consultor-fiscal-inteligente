@@ -4,8 +4,37 @@ import { SearchType, type SearchResult, type GroundingSource, type ComparisonRes
 
 const MODEL_NAME = 'gemini-3-flash-preview';
 
-const cleanJsonString = (str: string) => {
-    return str.replace(/```json/g, '').replace(/```/g, '').trim();
+const safeJsonParse = (str: string) => {
+    let cleanStr = str.trim();
+    
+    // Try to extract content between ```json and ```
+    const jsonMatch = cleanStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[1]) {
+        cleanStr = jsonMatch[1].trim();
+    } else {
+        // If no markdown block, try to find the first '{' or '[' and the last '}' or ']'
+        const firstBrace = cleanStr.indexOf('{');
+        const firstBracket = cleanStr.indexOf('[');
+        const lastBrace = cleanStr.lastIndexOf('}');
+        const lastBracket = cleanStr.lastIndexOf(']');
+        
+        let startIdx = -1;
+        let endIdx = -1;
+        
+        if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+            startIdx = firstBrace;
+            endIdx = lastBrace;
+        } else if (firstBracket !== -1) {
+            startIdx = firstBracket;
+            endIdx = lastBracket;
+        }
+        
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+            cleanStr = cleanStr.substring(startIdx, endIdx + 1);
+        }
+    }
+
+    return JSON.parse(cleanStr);
 };
 
 const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
@@ -30,7 +59,7 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> =>
 };
 
 const getAI = () => {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
     if (!apiKey) {
         throw new Error('GEMINI_API_KEY is not set. Please configure it in the environment.');
     }
@@ -160,7 +189,7 @@ export const fetchSimilarServices = async (query: string): Promise<SimilarServic
         const ai = getAI();
         const prompt = `Liste 4 códigos da LC 116/03 similares a: "${query}". JSON Array: [{ "code": "X.XX", "description": "..." }]`;
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
 };
 
@@ -169,7 +198,7 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
         const ai = getAI();
         const prompt = `Sugira 5 CNAEs válidos para: "${query}". JSON Array: [{ "code": "XXXX-X/XX", "description": "..." }]`;
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
 };
 
@@ -178,7 +207,7 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
         const ai = getAI();
         const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "..." }]`;
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
 };
 
@@ -198,14 +227,7 @@ export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
             } 
         }));
         
-        let text = response.text || '[]';
-        // Extract JSON block if the model wrapped it in markdown
-        const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[1]) {
-            text = jsonMatch[1];
-        }
-        
-        return JSON.parse(cleanJsonString(text));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { 
         console.error("fetchReformaNews error:", e);
         return []; 
@@ -250,7 +272,7 @@ export const fetchCnaeTaxDetails = async (cnae: string, manualRates?: { icms: st
         }
 
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
 };
 
@@ -281,7 +303,7 @@ export const extractDocumentData = async (base64Data: string, mimeType: string =
                 { text: prompt }
             ] 
         }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e: any) { throw new Error("Erro na extração IA: " + e.message); }
 };
 
@@ -310,6 +332,6 @@ export const extractPgdasDataFromPdf = async (base64Pdf: string): Promise<any> =
         Se não encontrar dados compatíveis com um extrato do Simples Nacional, retorne [].`;
 
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: [{ inlineData: { mimeType: "application/pdf", data: base64Pdf } }, { text: prompt }] }));
-        return JSON.parse(cleanJsonString(response.text || '[]'));
+        return safeJsonParse(response.text || '[]');
     } catch (e) { return []; }
 };
