@@ -66,7 +66,7 @@ const convertFichaToInput = (ficha: FichaFinanceiraRegistro, empresa: LucroPresu
 };
 
 // Helper component for Currency Input
-const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean; placeholder?: string; highlight?: boolean; subtitle?: string }> = ({ label, value, onChange, className, disabled, placeholder, highlight, subtitle }) => {
+const CurrencyInput: React.FC<{ label?: string; value: number; onChange: (val: number) => void; className?: string; disabled?: boolean; placeholder?: string; highlight?: boolean; subtitle?: string; noLabel?: boolean }> = ({ label, value, onChange, className, disabled, placeholder, highlight, subtitle, noLabel }) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const raw = e.target.value.replace(/\D/g, '');
         const num = parseFloat(raw) / 100;
@@ -76,7 +76,7 @@ const CurrencyInput: React.FC<{ label: string; value: number; onChange: (val: nu
     
     return (
         <div className={className}>
-            <label className={`block text-xs font-bold uppercase mb-1 ${disabled ? 'text-slate-400' : (highlight ? 'text-sky-700 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400')}`}>{label}</label>
+            {!noLabel && label && <label className={`block text-xs font-bold uppercase mb-1 ${disabled ? 'text-slate-400' : (highlight ? 'text-sky-700 dark:text-sky-400' : 'text-slate-500 dark:text-slate-400')}`}>{label}</label>}
             <div className="relative">
                 <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-xs ${highlight ? 'text-sky-600' : 'text-slate-400'}`}>R$</span>
                 <input 
@@ -317,6 +317,9 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 const extraReceitas = (ficha.itensAvulsos || []).filter(i => i.tipo === 'receita' && i.descricao === 'Itens Adicionais - (Extra Operacionais)').reduce((a, b) => a + b.valor, 0);
                 setItensAdicionaisExtra(extraReceitas);
 
+                const otherExpenses = (ficha.itensAvulsos || []).filter(i => i.tipo === 'despesa');
+                setDespesasAvulsas(otherExpenses);
+
                 // Configurações
                 setIsEquiparacaoHospitalar(ficha.isEquiparacaoHospitalar || false);
                 setIsPresuncaoReduzida(ficha.isPresuncaoReduzida16 || false);
@@ -347,6 +350,21 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
         setAcumuladoComercio(0); setAcumuladoIndustria(0); setAcumuladoServico(0); setAcumuladoServicoHospitalar(0); setAcumuladoFinanceira(0);
         setIsEquiparacaoHospitalar(false); setIsPresuncaoReduzida(false);
         setFichaRecFinanceira(0);
+        setItensAdicionaisExtra(0);
+        setDespesasAvulsas([]);
+    };
+
+    const handleAddDespesa = () => {
+        const id = Math.random().toString(36).substr(2, 9);
+        setDespesasAvulsas([...despesasAvulsas, { id, descricao: '', valor: 0, tipo: 'despesa' }]);
+    };
+
+    const handleRemoveDespesa = (id: string) => {
+        setDespesasAvulsas(despesasAvulsas.filter(d => d.id !== id));
+    };
+
+    const handleUpdateDespesa = (id: string, field: keyof ItemFinanceiroAvulso, value: any) => {
+        setDespesasAvulsas(despesasAvulsas.map(d => d.id === id ? { ...d, [field]: value } : d));
     };
 
     const handleCreateNewFicha = () => {
@@ -576,12 +594,15 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                 ajustesLucroRealExclusoes: ajustesLucroRealExclusoes,
                 saldoCredorIcms: saldoCredorIcms,
                 saldoCredorIpi: saldoCredorIpi,
-                itensAvulsos: itensAdicionaisExtra > 0 ? [{
-                    id: 'extra',
-                    descricao: 'Itens Adicionais - (Extra Operacionais)',
-                    valor: itensAdicionaisExtra,
-                    tipo: 'receita'
-                }] : []
+                itensAvulsos: [
+                    ...(itensAdicionaisExtra > 0 ? [{
+                        id: 'extra',
+                        descricao: 'Itens Adicionais - (Extra Operacionais)',
+                        valor: itensAdicionaisExtra,
+                        tipo: 'receita' as const
+                    }] : []),
+                    ...despesasAvulsas
+                ]
             };
 
             const savedFicha = await lucroPresumidoService.addFichaFinanceira(selectedEmpresa.id, tempFicha);
@@ -1074,7 +1095,53 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                             <div className="space-y-3">
                                 <CurrencyInput label="CMV" value={fichaCmv} onChange={setFichaCmv} />
                                 <CurrencyInput label="Folha de Pagamento" value={fichaFolha} onChange={setFichaFolha} />
-                                <CurrencyInput label="Despesas Operacionais" value={fichaDespesas} onChange={setFichaDespesas} />
+                                
+                                <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Despesas Itemizadas</h4>
+                                        <button 
+                                            onClick={handleAddDespesa}
+                                            className="text-[10px] flex items-center gap-1 bg-sky-50 text-sky-600 hover:bg-sky-100 px-2 py-1 rounded font-bold transition-colors"
+                                        >
+                                            <PlusIcon className="w-3 h-3" /> Adicionar Despesa
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="space-y-2 mb-4">
+                                        {despesasAvulsas.map((despesa) => (
+                                            <div key={despesa.id} className="flex gap-2 items-center bg-slate-50 dark:bg-slate-700/30 p-2 rounded-lg border border-slate-100 dark:border-slate-600 group">
+                                                <div className="flex-1">
+                                                    <input 
+                                                        type="text"
+                                                        placeholder="Descrição (ex: Frete, Aluguel)"
+                                                        className="w-full text-xs bg-transparent border-none focus:ring-0 p-1 text-slate-700 dark:text-slate-200 font-medium"
+                                                        value={despesa.descricao}
+                                                        onChange={(e) => handleUpdateDespesa(despesa.id, 'descricao', e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="w-28">
+                                                    <CurrencyInput 
+                                                        value={despesa.valor} 
+                                                        onChange={(val) => handleUpdateDespesa(despesa.id, 'valor', val)}
+                                                        noLabel
+                                                        className="text-xs"
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleRemoveDespesa(despesa.id)}
+                                                    className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <TrashIcon className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {despesasAvulsas.length === 0 && (
+                                            <p className="text-[10px] text-slate-400 italic text-center py-2">Nenhuma despesa itemizada adicionada.</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <CurrencyInput label="Outras Despesas (Total)" value={fichaDespesas} onChange={setFichaDespesas} />
                                 <CurrencyInput label="Despesas Dedutíveis (PIS/COFINS)" value={fichaDespesasDedutiveis} onChange={setFichaDespesasDedutiveis} />
                                 
                                 <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-4">

@@ -316,8 +316,11 @@ const SimplesNacionalClienteView: React.FC<SimplesNacionalClienteViewProps> = ({
                         )}
 
                         {/* Cards Principais */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                              <div className="p-6 rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-100 dark:border-sky-800/50 transition-all hover:shadow-md">
+                                <InfoCard label="Faturamento Mês (Base)" value={`R$ ${(resumo.totalMercadoInterno + resumo.totalMercadoExterno).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+                             </div>
+                             <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700 transition-all hover:shadow-md">
                                 <InfoCard label="Faturamento 12 Meses (RBT12)" value={`R$ ${resumo.rbt12.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
                              </div>
                              <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-700/30 border border-slate-100 dark:border-slate-700 transition-all hover:shadow-md">
