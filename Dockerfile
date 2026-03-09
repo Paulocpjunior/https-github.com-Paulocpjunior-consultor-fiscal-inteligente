@@ -1,27 +1,19 @@
-# Build stage
-FROM node:20-slim AS build
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-RUN npm run build
-
-# Production stage
+# ─── Proxy Backend — Consultor Fiscal ───────────────────────────────────────
 FROM node:20-slim
 
 WORKDIR /app
 
-# Install 'serve' package
-RUN npm install -g serve
+# Instala dependências primeiro (cache layer)
+COPY package*.json ./
+RUN npm ci --only=production
 
-# Copy built files from build stage
-COPY --from=build /app/dist ./dist
+# Copia código fonte
+COPY src/ ./src/
 
-# Expose the port
-EXPOSE 3000
+# Cloud Run usa porta 8080
+EXPOSE 8080
 
-# Start command
-CMD ["serve", "-s", "dist", "-p", "3000"]
+# Usuário não-root (segurança)
+USER node
+
+CMD ["node", "src/server.js"]
