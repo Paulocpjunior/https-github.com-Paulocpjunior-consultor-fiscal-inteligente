@@ -1,4 +1,3 @@
-
 import { LucroInput, LucroResult, DetalheImposto, PlanoCotas, ItemFinanceiroAvulso } from '../types';
 
 // Alíquotas Base
@@ -88,7 +87,7 @@ const calcularISS = (input: LucroInput): DetalheImposto | null => {
         
         // Base de ISS APENAS sobre serviços com ISS Devido e Hospitalar
         // Serviços com retenção na fonte ou Locação (não incide ISS) são excluídos aqui.
-        const baseIss = input.faturamentoServico + (input.faturamentoFiliais?.servico || 0) + 
+        const baseIss = input.faturamentoServico + (input.faturamentoServicoHospitalar || 0);
                         (input.faturamentoServicoHospitalar || 0) + (input.faturamentoFiliais?.servicoHospitalar || 0);
         
         if (baseIss <= 0 || aliquota <= 0) return null;
