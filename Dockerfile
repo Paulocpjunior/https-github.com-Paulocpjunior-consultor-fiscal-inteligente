@@ -20,8 +20,8 @@ RUN npm install -g serve
 # Copy built files from build stage
 COPY --from=build /app/dist ./dist
 
-# Expose the port (Cloud Run defaults to 8080)
-EXPOSE 8080
+# Expose the port
+EXPOSE 3000
 
-# Start command with environment variable expansion
-CMD ["sh", "-c", "serve -s dist -p ${PORT:-8080}"]
+# Start command
+CMD ["serve", "-s", "dist", "-p", "3000"]
