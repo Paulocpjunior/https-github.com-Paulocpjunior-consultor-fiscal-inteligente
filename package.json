@@ -1,20 +1,41 @@
-{
-  "name": "consultor-fiscal-proxy",
-  "version": "1.0.0",
-  "type": "module",
-  "description": "Backend proxy seguro para Gemini API — Consultor Fiscal Inteligente",
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "node src/server.js"
-  },
-  "dependencies": {
-    "@google/genai": "^1.29.0",
-    "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.3.1",
-    "helmet": "^7.1.0"
-  }
+"scripts": {
+    "build": "vite build",   ← precisa ter isso
+    ...
 }
+```
+
+Se não tiver, substitua pelo `package.json` original do frontend que você me enviou no início da conversa (aquele com `vite`, `react`, `firebase`, etc.).
+
+---
+
+## Passo 2 — Crie o `.dockerignore` na raiz
+
+No GitHub → **Add file → Create new file** → nome: `.dockerignore`
+
+Conteúdo:
+```
+node_modules
+dist
+.env
+.env.*
+.git
+*.log
+coverage
+proxy-backend
+```
+
+---
+
+## Passo 3 — Confirme a estrutura correta na raiz
+
+O repo deve ter:
+```
+├── .github/workflows/deploy.yml
+├── .dockerignore          ← criar agora
+├── Dockerfile             ← frontend (nginx)
+├── nginx.conf             ← já criado
+├── package.json           ← frontend (com vite build)
+├── src/
+├── components/
+├── services/
+└── proxy-backend/         ← pasta separada do proxy
