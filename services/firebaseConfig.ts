@@ -1,68 +1,34 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-
-// --- CONFIGURAÇÃO DO FIREBASE ---
-// Chaves configuradas para o projeto consultorfiscalapp
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import { getAuth, type Auth } from 'firebase/auth';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDIqWgUuLjkrrg1vQe5FuN1TY22WHoPQQs",
-  authDomain: "consultorfiscalapp.firebaseapp.com",
-  projectId: "consultorfiscalapp",
-  storageBucket: "consultorfiscalapp.firebasestorage.app",
-  messagingSenderId: "631239634290",
-  appId: "1:631239634290:web:1edfcab8ba8e21f27c41eb",
-  measurementId: "G-25WMQ139GN"
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Verifica se a chave de API foi preenchida (ignora string vazia ou placeholders)
-let isFirebaseConfigured = !!firebaseConfig.apiKey && firebaseConfig.apiKey !== "" && !firebaseConfig.apiKey.includes("COLE_AQUI");
+export const isFirebaseConfigured =
+  !!firebaseConfig.apiKey &&
+  !!firebaseConfig.projectId &&
+  firebaseConfig.apiKey !== 'undefined';
 
-let app;
-let auth: any;
-let db: any;
+let app: FirebaseApp | undefined;
+let auth: Auth | null = null;
+let db: Firestore | null = null;
 
 if (isFirebaseConfigured) {
-    try {
-        // Previne inicialização duplicada (Erro comum em React Strict Mode / HMR)
-        // Isso corrige o erro: "Failed to execute 'transaction' on 'IDBDatabase'"
-        if (getApps().length === 0) {
-            app = initializeApp(firebaseConfig);
-            
-            // Tenta inicializar com persistência Local (Padrão)
-            try {
-                auth = initializeAuth(app, {
-                    persistence: browserLocalPersistence
-                });
-            } catch (authError) {
-                console.warn("Auth persistence error, falling back to standard getAuth:", authError);
-                // Fallback seguro: usa getAuth padrão se a inicialização explícita falhar
-                auth = getAuth(app); 
-            }
-        } else {
-            // Se já existe, reutiliza a instância (evita crash)
-            app = getApp();
-            auth = getAuth(app);
-        }
-
-        db = getFirestore(app);
-        console.log("Firebase conectado com sucesso (Nuvem Ativa).");
-    } catch (e) {
-        console.error("Erro Crítico ao inicializar Firebase:", e);
-        // Fallback para evitar crash total se as chaves estiverem erradas ou erro de rede grave
-        isFirebaseConfigured = false;
-    }
+  app = getApps().length === 0
+    ? initializeApp(firebaseConfig)
+    : getApps()[0];
+  auth = getAuth(app);
+  db = getFirestore(app);
 } else {
-    console.warn("Firebase não configurado ou chaves inválidas. A aplicação rodará em modo LOCAL (LocalStorage).");
+  console.warn('⚠️ Firebase não configurado. Usando modo local.');
 }
 
-export { auth, db, isFirebaseConfigured };
-// services/firebaseConfig.ts
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+export { auth, db };
+export default app;
