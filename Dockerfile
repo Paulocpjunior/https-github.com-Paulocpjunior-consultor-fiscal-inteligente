@@ -1,18 +1,38 @@
-# ─── Proxy Backend — Consultor Fiscal ───────────────────────────────────────
-FROM node:20-slim
+# ─── Stage 1: Build React/Vite ───────────────────────────────────────────────
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Instala dependências primeiro (cache layer)
 COPY package*.json ./
-RUN npm install --omit=dev
-# Copia código fonte
-COPY src/ ./src/
+RUN npm install
 
-# Cloud Run usa porta 8080
+COPY . .
+
+ARG VITE_GEMINI_API_KEY
+ARG VITE_FIREBASE_API_KEY
+ARG VITE_FIREBASE_AUTH_DOMAIN
+ARG VITE_FIREBASE_PROJECT_ID
+ARG VITE_FIREBASE_STORAGE_BUCKET
+ARG VITE_FIREBASE_MESSAGING_SENDER_ID
+ARG VITE_FIREBASE_APP_ID
+
+ENV VITE_GEMINI_API_KEY=$VITE_GEMINI_API_KEY
+ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
+ENV VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN
+ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
+ENV VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET
+ENV VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID
+ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+
+RUN npm run build
+
+# ─── Stage 2: Serve com Nginx na porta 8080 ───────────────────────────────────
+FROM nginx:alpine
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 EXPOSE 8080
 
-# Usuário não-root (segurança)
-USER node
-
-CMD ["node", "src/server.js"]
+CMD ["nginx", "-g", "daemon off;"]
