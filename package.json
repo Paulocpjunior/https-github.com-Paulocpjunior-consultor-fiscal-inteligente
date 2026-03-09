@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "serve -s dist -p ${PORT:-3000}",
+    "start": "serve -s dist -p ${PORT:-80}",
     "lint": "tsc --noEmit",
     "test": "jest"
   },
