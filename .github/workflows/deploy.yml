@@ -7,7 +7,7 @@ on:
 
 env:
   PROJECT_ID: consultorfiscalapp
-  SERVICE: consultor-fiscal-inteligente-292090471177
+  SERVICE: gen-lang-client-0569062468
   REGION: us-west1
 
 jobs:
