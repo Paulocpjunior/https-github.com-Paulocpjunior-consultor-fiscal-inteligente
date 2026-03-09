@@ -1,4 +1,4 @@
-
+import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
