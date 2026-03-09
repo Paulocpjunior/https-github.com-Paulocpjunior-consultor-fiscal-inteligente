@@ -166,11 +166,21 @@ const SimplesNacionalDetalhe: React.FC<SimplesNacionalDetalheProps> = ({
         if (filialIndustria > 0) {
             itensCalculo.push({ cnae: 'Filial Indústria', anexo: 'II', valor: filialIndustria, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false });
         }
-        if (filialServico > 0) {
-            // Assume Anexo III ou o da empresa se for serviço
-            const anexoServico = ['III', 'IV', 'V'].includes(empresa.anexo) ? empresa.anexo : 'III';
-            itensCalculo.push({ cnae: 'Filial Serviço', anexo: anexoServico as any, valor: filialServico, issRetido: false, icmsSt: false, isSup: false, isMonofasico: false, isImune: false, isExterior: false });
-        }
+
+if (filialServico > 0) {
+    const anexoServico = ['III', 'IV', 'V'].includes(empresa.anexo) ? empresa.anexo : 'III';
+    itensCalculo.push({ 
+        cnae: 'Filial Serviço', 
+        anexo: anexoServico as any, 
+        valor: filialServico, 
+        issRetido: true,  // ✅ ISS NÃO compõe o DAS da matriz (é municipal, pago na filial)
+        icmsSt: false, 
+        isSup: false, 
+        isMonofasico: false, 
+        isImune: false, 
+        isExterior: false 
+    });
+}
 
         // Simula a empresa com os dados atuais de input para o cálculo
         const empresaTemp = {
