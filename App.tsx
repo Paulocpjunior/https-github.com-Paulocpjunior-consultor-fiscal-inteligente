@@ -1,4 +1,3 @@
-import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
 import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -7,6 +6,7 @@ import LoginScreen from './components/LoginScreen';
 import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
 import ReformaNews from './components/ReformaNews';
+import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
 import FavoritesSidebar from './components/FavoritesSidebar';
 import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
 import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa';
@@ -136,7 +136,6 @@ const App: React.FC = () => {
             if (isFirebaseConfigured && auth) {
                 const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
                     if (firebaseUser) {
-                        // Recover user profile from DB or Auth data securely
                         const syncedUser = await authService.syncUserFromAuth(firebaseUser);
                         setCurrentUser(syncedUser);
                         loadSimplesData(syncedUser);
@@ -181,7 +180,6 @@ const App: React.FC = () => {
             setSearchType(item.type);
             setSelectedLucroEmpresaId(item.entityId);
         } else {
-            // Atualiza o estado da UI para refletir o item selecionado
             setSearchType(item.type);
             setMode(item.mode);
             setMunicipio(item.municipio || '');
@@ -205,8 +203,6 @@ const App: React.FC = () => {
                 }
             }
 
-            // Executa a busca imediatamente passando os parâmetros do item para evitar race conditions
-            // Passamos um objeto de contexto explícito para garantir que os valores do histórico sejam usados
             const explicitContext = {
                 type: item.type,
                 mode: item.mode,
@@ -255,7 +251,6 @@ const App: React.FC = () => {
         } else {
             setQuery1(item.code);
         }
-        // Favoritos geralmente são buscas simples sem contexto salvo, mas podemos passar contexto vazio para limpar
         handleSearch(item.code, undefined, { type: item.type, mode: 'single' });
         if (window.innerWidth < 768) setIsSidebarOpen(false);
     };
@@ -283,30 +278,24 @@ const App: React.FC = () => {
         saveFavorites(newFavorites);
     };
 
-    // Auxiliar para formatar erros amigáveis
     const getFriendlyErrorMessage = (error: any): string => {
         const message = error?.message || '';
 
         if (message.includes('429') || message.includes('Quota exceeded')) {
             return "Limite de consultas excedido (Erro 429). A IA está sobrecarregada ou sua cota acabou. Por favor, aguarde alguns instantes antes de tentar novamente.";
         }
-
         if (message.includes('503') || message.includes('Service Unavailable')) {
             return "O serviço de IA está temporariamente indisponível (Erro 503). Isso geralmente é passageiro. Tente novamente em alguns minutos.";
         }
-
         if (message.includes('400') || message.includes('Invalid argument')) {
             return "A consulta parece inválida ou incompleta (Erro 400). Verifique os dados digitados e tente novamente.";
         }
-
         if (message.includes('500')) {
             return "Erro interno no servidor da IA (Erro 500). Por favor, tente novamente.";
         }
-
         if (message.includes('Failed to fetch')) {
             return "Erro de conexão. Verifique sua internet.";
         }
-
         if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY') || message.includes('API Key must be set')) {
             return "A chave da API do Gemini não foi configurada ou selecionada. Por favor, configure a variável de ambiente GEMINI_API_KEY ou selecione uma chave válida.";
         }
@@ -351,7 +340,7 @@ const App: React.FC = () => {
                 if (!hasKey) {
                     // @ts-ignore
                     await window.aistudio.openSelectKey();
-                    return true; // Assume success after opening dialog
+                    return true;
                 }
                 return true;
             } catch (e) {
@@ -363,7 +352,7 @@ const App: React.FC = () => {
     };
 
     const handleSearch = useCallback(async (currentQuery1: string, currentQuery2?: string, contextOverride?: any) => {
-        if (isLoading) return; // Prevent double submission
+        if (isLoading) return;
         if (!validateInputs(currentQuery1, currentQuery2)) return;
 
         setIsLoading(true);
@@ -371,10 +360,8 @@ const App: React.FC = () => {
         setResult(null);
         setComparisonResult(null);
 
-        // Check for API key before proceeding
         await checkApiKey();
 
-        // Use overrides if provided (from history click), otherwise use current state
         const currentSearchType = contextOverride?.type || searchType;
         const currentMode = contextOverride?.mode || mode;
         const currentMunicipio = contextOverride?.municipio !== undefined ? contextOverride.municipio : municipio;
@@ -392,7 +379,6 @@ const App: React.FC = () => {
             if (currentMode === 'compare' && currentQuery2) {
                 const data = await fetchComparison(currentSearchType, currentQuery1, currentQuery2);
                 setComparisonResult(data);
-                // Don't add to history if it's coming from history click (contextOverride present) to avoid duplicates at top
                 if (!contextOverride) {
                     addHistory({
                         queries: [currentQuery1, currentQuery2],
@@ -453,7 +439,6 @@ const App: React.FC = () => {
         setError(null);
         setResult(null);
 
-        // Check for API key before proceeding
         await checkApiKey();
 
         if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'search_reforma', query);
@@ -495,25 +480,20 @@ const App: React.FC = () => {
         if (!currentUser) return;
 
         if (simplesEmpresaToEdit) {
-            // UPDATE MODE
             const finalAnexo = anexo === 'auto' ? simplesService.sugerirAnexoPorCnae(cnae) : anexo;
             const dataToUpdate: Partial<SimplesNacionalEmpresa> = {
                 nome, cnpj, cnae, anexo: finalAnexo, atividadesSecundarias: atividadesSecundarias || []
             };
 
             await simplesService.updateEmpresa(simplesEmpresaToEdit.id, dataToUpdate);
-
-            // Optimistic update
             setSimplesEmpresas(prev => prev.map(e => e.id === simplesEmpresaToEdit.id ? { ...e, ...dataToUpdate } : e));
             setToastMessage("Empresa atualizada com sucesso!");
         } else {
-            // CREATE MODE
             const newEmpresa = await simplesService.saveEmpresa(nome, cnpj, cnae, anexo, atividadesSecundarias || [], currentUser.id);
             setSimplesEmpresas(prev => [...prev, newEmpresa]);
             if (currentUser) authService.logAction(currentUser.id, currentUser.name, 'create_empresa', nome);
             setToastMessage("Empresa cadastrada com sucesso!");
 
-            // Add to History
             addHistory({
                 queries: [nome],
                 type: SearchType.SIMPLES_NACIONAL,
@@ -528,7 +508,6 @@ const App: React.FC = () => {
     const handleImportNotas = async (empresaId: string, file: File): Promise<SimplesNacionalImportResult> => {
         try {
             const result = await simplesService.parseAndSaveNotas(empresaId, file);
-            // Refetch data after import to ensure UI consistency
             if (currentUser) {
                 const empresas = await simplesService.getEmpresas(currentUser);
                 const notas = await simplesService.getAllNotas(currentUser);
@@ -560,7 +539,6 @@ const App: React.FC = () => {
         } : e);
         setSimplesEmpresas(updated);
 
-        // Add to History (Calculation Update)
         const emp = updated.find(e => e.id === empresaId);
         if (emp) {
             addHistory({
@@ -575,13 +553,9 @@ const App: React.FC = () => {
     };
 
     const handleUpdateEmpresa = async (empresaId: string, data: Partial<SimplesNacionalEmpresa>) => {
-        // Optimistic update
         const updatedList = simplesEmpresas.map(e => e.id === empresaId ? { ...e, ...data } : e);
         setSimplesEmpresas(updatedList);
-
-        // Real DB Update
         await simplesService.updateEmpresa(empresaId, data);
-
         setToastMessage("Dados da empresa salvos no banco de dados!");
         return updatedList.find(e => e.id === empresaId) || null;
     }
@@ -623,7 +597,7 @@ const App: React.FC = () => {
                 <div className="flex flex-col md:flex-row gap-6">
                     <main className="flex-grow min-w-0">
                         {/* Search Type Selection Grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-8">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 mb-4">
                             {Object.values(SearchType).map((type) => (
                                 <button
                                     key={type}
@@ -665,6 +639,9 @@ const App: React.FC = () => {
                                 </button>
                             ))}
                         </div>
+
+                        {/* ✅ NEWS REFORMA TRIBUTÁRIA — aparece em todas as telas */}
+                        <ReformaTributariaNewsBanner />
 
                         {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro, Obrigações) */}
                         {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
@@ -747,7 +724,6 @@ const App: React.FC = () => {
                                             </div>
 
                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                {/* Column 1: Notes */}
                                                 <div className="md:col-span-2">
                                                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-2">
                                                         Notas / Observações da Operação
@@ -763,7 +739,6 @@ const App: React.FC = () => {
                                                     />
                                                 </div>
 
-                                                {/* Column 2: Specific Rates */}
                                                 <div className="space-y-4">
                                                     <div>
                                                         <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1 mb-1.5">
@@ -773,9 +748,7 @@ const App: React.FC = () => {
                                                             </Tooltip>
                                                         </label>
                                                         <input
-                                                            type="number"
-                                                            min="0"
-                                                            max="100"
+                                                            type="number" min="0" max="100"
                                                             value={aliquotaIcms}
                                                             onChange={e => { setAliquotaIcms(e.target.value); if (validationErrors.aliquotaIcms) setValidationErrors({ ...validationErrors, aliquotaIcms: '' }); }}
                                                             className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaIcms ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
@@ -791,9 +764,7 @@ const App: React.FC = () => {
                                                             </Tooltip>
                                                         </label>
                                                         <input
-                                                            type="number"
-                                                            min="0"
-                                                            max="100"
+                                                            type="number" min="0" max="100"
                                                             value={aliquotaPisCofins}
                                                             onChange={e => { setAliquotaPisCofins(e.target.value); if (validationErrors.aliquotaPisCofins) setValidationErrors({ ...validationErrors, aliquotaPisCofins: '' }); }}
                                                             className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaPisCofins ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
@@ -809,9 +780,7 @@ const App: React.FC = () => {
                                                             </Tooltip>
                                                         </label>
                                                         <input
-                                                            type="number"
-                                                            min="0"
-                                                            max="100"
+                                                            type="number" min="0" max="100"
                                                             value={aliquotaIss}
                                                             onChange={e => { setAliquotaIss(e.target.value); if (validationErrors.aliquotaIss) setValidationErrors({ ...validationErrors, aliquotaIss: '' }); }}
                                                             className={`w-full p-2 text-sm bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-900 font-bold dark:text-white dark:font-normal focus:ring-2 focus:ring-sky-500 outline-none transition-all ${validationErrors.aliquotaIss ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
@@ -822,7 +791,6 @@ const App: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Service Specific Context */}
                                             {searchType === SearchType.SERVICO && (
                                                 <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800">
                                                     <div>
@@ -990,7 +958,6 @@ const App: React.FC = () => {
                             searchType === SearchType.REFORMA_TRIBUTARIA ? <ReformaNews /> : <NewsAlerts />
                         )}
 
-                        {/* Allow tax alerts/results to show for Simples/Lucro if a search was performed */}
                         {(result && (searchType === SearchType.SIMPLES_NACIONAL || searchType === SearchType.LUCRO_PRESUMIDO_REAL)) || (searchType !== SearchType.SIMPLES_NACIONAL && searchType !== SearchType.LUCRO_PRESUMIDO_REAL) ? (
                             <TaxAlerts results={result ? [result] : []} searchType={searchType} />
                         ) : null}
