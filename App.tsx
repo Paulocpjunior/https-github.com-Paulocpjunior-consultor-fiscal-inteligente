@@ -21,7 +21,8 @@ import { SearchType, type SearchResult, type ComparisonResult, type FavoriteItem
 import { fetchFiscalData, fetchComparison, fetchSimilarServices, fetchCnaeSuggestions } from './services/geminiService';
 import * as simplesService from './services/simplesNacionalService';
 import * as authService from './services/authService';
-import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon, InfoIcon } from './components/Icons';
+import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon, InfoIcon, CalendarIcon } from './components/Icons';
+import FiscalObligationsDashboard from './components/FiscalObligationsDashboard';
 import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -39,6 +40,7 @@ const searchDescriptions: Record<SearchType, string> = {
     [SearchType.REFORMA_TRIBUTARIA]: "Simule o impacto da Reforma Tributária (IBS/CBS) para sua atividade.",
     [SearchType.SIMPLES_NACIONAL]: "Gestão de empresas do Simples, cálculo de DAS e Fator R.",
     [SearchType.LUCRO_PRESUMIDO_REAL]: "Ficha Financeira e Cadastro para Lucro Presumido/Real.",
+    [SearchType.OBRIGACOES_FISCAIS]: "Acompanhamento de obrigações, vencimentos e alertas fiscais.",
 };
 
 const App: React.FC = () => {
@@ -657,16 +659,17 @@ const App: React.FC = () => {
                                         {type === SearchType.REFORMA_TRIBUTARIA && <CalculatorIcon className="w-5 h-5" />}
                                         {type === SearchType.SIMPLES_NACIONAL && <CalculatorIcon className="w-5 h-5" />}
                                         {type === SearchType.LUCRO_PRESUMIDO_REAL && <BuildingIcon className="w-5 h-5" />}
+                                        {type === SearchType.OBRIGACOES_FISCAIS && <CalendarIcon className="w-5 h-5" />}
                                     </div>
                                     <span className="text-xs font-bold text-center leading-tight">{type}</span>
                                 </button>
                             ))}
                         </div>
 
-                        {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro) */}
-                        {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
+                        {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro, Obrigações) */}
+                        {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
                             <>
-                                <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in ${[SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) ? 'hidden' : ''}`}>
+                                <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in ${[SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) ? 'hidden' : ''}`}>
                                     <div className="flex items-center gap-4 mb-4">
                                         <button
                                             onClick={() => setMode('single')}
@@ -931,9 +934,14 @@ const App: React.FC = () => {
                             </Suspense>
                         )}
 
+                        {/* Fiscal Obligations View */}
+                        {searchType === SearchType.OBRIGACOES_FISCAIS && (
+                            <FiscalObligationsDashboard />
+                        )}
+
                         {/* Results Display */}
                         <Suspense fallback={<LoadingSpinner />}>
-                            {!result && !comparisonResult && ![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL].includes(searchType) && (
+                            {!result && !comparisonResult && ![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
                                 <InitialStateDisplay searchType={searchType} mode={mode} />
                             )}
 

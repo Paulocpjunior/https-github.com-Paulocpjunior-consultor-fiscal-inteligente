@@ -5,7 +5,8 @@ export enum SearchType {
     SERVICO = 'Serviço',
     REFORMA_TRIBUTARIA = 'Reforma Tributária',
     SIMPLES_NACIONAL = 'Simples Nacional',
-    LUCRO_PRESUMIDO_REAL = 'Lucro Presumido/Real'
+    LUCRO_PRESUMIDO_REAL = 'Lucro Presumido/Real',
+    OBRIGACOES_FISCAIS = 'Obrigações Fiscais'
 }
 
 export interface GroundingSource {
@@ -453,4 +454,32 @@ export interface LucroInput {
     ajustesLucroRealExclusoes?: number;
     saldoCredorIcms?: number;
     saldoCredorIpi?: number;
+}
+
+// Fiscal Obligations Types
+
+export type FiscalStatus = 'pending' | 'completed' | 'overdue' | 'warning';
+
+export type FiscalBranch = 'Varejo' | 'Indústria' | 'Serviço' | 'Agronegócio' | 'E-commerce' | 'Todos';
+
+export type TaxationRegime = 'Simples Nacional' | 'Lucro Presumido' | 'Lucro Real' | 'MEI' | 'Todos';
+
+export interface FiscalObligation {
+    id: string;
+    title: string;
+    description: string;
+    dueDate: number;
+    status: FiscalStatus;
+    branch: FiscalBranch;
+    regime: TaxationRegime;
+    frequency: 'Mensal' | 'Trimestral' | 'Anual' | 'Eventual';
+    category: 'Federal' | 'Estadual' | 'Municipal';
+}
+
+export interface ManagerAlert {
+    id: string;
+    type: 'overdue' | 'upcoming' | 'info';
+    message: string;
+    obligationId?: string;
+    timestamp: number;
 }
