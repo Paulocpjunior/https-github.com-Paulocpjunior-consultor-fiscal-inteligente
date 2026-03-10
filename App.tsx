@@ -23,8 +23,9 @@ import * as simplesService from './services/simplesNacionalService';
 import * as authService from './services/authService';
 import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon, InfoIcon, CalendarIcon } from './components/Icons';
 import FiscalObligationsDashboard from './components/FiscalObligationsDashboard';
-import { auth, isFirebaseConfigured } from './services/firebaseConfig';
-import { onAuthStateChanged } from 'firebase/auth';
+// ✅ REMOVIDO: import { auth, isFirebaseConfigured } from './services/firebaseConfig';
+// ✅ REMOVIDO: import { onAuthStateChanged } from 'firebase/auth';
+// Ambos encapsulados em authService.subscribeAuthState
 
 const SimplesNacionalDetalhe = lazy(() => import('./components/SimplesNacionalDetalhe'));
 const SimplesNacionalClienteView = lazy(() => import('./components/SimplesNacionalClienteView'));
@@ -122,29 +123,23 @@ const App: React.FC = () => {
         }
     };
 
+    // ✅ ALTERADO: usa subscribeAuthState em vez de onAuthStateChanged manual.
+    // O listener dispara imediatamente com o usuário atual (ou null),
+    // sincroniza automaticamente em qualquer dispositivo sem relogar.
     useEffect(() => {
         try {
-            const user = authService.getCurrentUser();
-            setCurrentUser(user);
-
             const storedFavorites = localStorage.getItem('fiscal-consultant-favorites');
             if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
 
             const storedHistory = localStorage.getItem('fiscal-consultant-history');
             if (storedHistory) setHistory(JSON.parse(storedHistory));
 
-            if (isFirebaseConfigured && auth) {
-                const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-                    if (firebaseUser) {
-                        const syncedUser = await authService.syncUserFromAuth(firebaseUser);
-                        setCurrentUser(syncedUser);
-                        loadSimplesData(syncedUser);
-                    }
-                });
-                return () => unsubscribe();
-            } else {
+            const unsubscribe = authService.subscribeAuthState((user) => {
+                setCurrentUser(user);
                 if (user) loadSimplesData(user);
-            }
+            });
+
+            return () => unsubscribe();
         } catch (e) {
             console.error("Initialization error", e);
         }
