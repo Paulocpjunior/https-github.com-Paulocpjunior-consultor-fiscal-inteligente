@@ -87,8 +87,8 @@ const calcularISS = (input: LucroInput): DetalheImposto | null => {
         
         // Base de ISS APENAS sobre serviços com ISS Devido e Hospitalar
         // Serviços com retenção na fonte ou Locação (não incide ISS) são excluídos aqui.
-        const baseIss = input.faturamentoServico + (input.faturamentoServicoHospitalar || 0);
-                        (input.faturamentoServicoHospitalar || 0) + (input.faturamentoFiliais?.servicoHospitalar || 0);
+        const baseIss = input.faturamentoServico + (input.faturamentoServicoHospitalar || 0) +
+                        (input.faturamentoFiliais?.servicoHospitalar || 0);
         
         if (baseIss <= 0 || aliquota <= 0) return null;
 
@@ -200,25 +200,30 @@ const calcularLucroPresumido = (input: LucroInput): LucroResult => {
     const retencaoCsll = input.retencaoCsll || 0;
 
     // PIS/COFINS
-    // Base: Receita Bruta Efetiva - ICMS sobre Vendas (Exclusão do ICMS da base de PIS/COFINS)
-    // O campo 'faturamentoMonofasico' não é deduzido automaticamente aqui, conforme solicitado anteriormente.
+    // Base: Receita Bruta Efetiva - ICMS sobre Vendas (Exclusão do ICMS da base de PIS/COFINS) - Monofásico
+    // CORREÇÃO: Deduz faturamento monofásico da base de PIS/COFINS (mesmo tratamento do Lucro Real)
     const icmsVendas = input.icmsVendas || 0;
-    const basePisCofins = Math.max(0, receitaBrutaEfetiva - icmsVendas);
+    const valorMonofasico = input.faturamentoMonofasico || 0;
+    const basePisCofins = Math.max(0, receitaBrutaEfetiva - icmsVendas - valorMonofasico);
     
+    // Monta observação dinâmica para PIS/COFINS
+    const obsPisCofinsBase = icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)}). ` : `Base: Receita Bruta Efetiva. `;
+    const obsPisCofinsMonofasico = valorMonofasico > 0 ? `Deduzido Monofásico (${fmt(valorMonofasico)}). ` : '';
+
     if (basePisCofins > 0) {
         detalhamento.push({
             imposto: 'PIS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_PIS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_PIS_CUMULATIVO) - retencaoPis),
-            observacao: (icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)}). ` : `Base: Receita Bruta Efetiva. `) + (retencaoPis > 0 ? `Retenção abatida: ${fmt(retencaoPis)}` : '')
+            observacao: obsPisCofinsBase + obsPisCofinsMonofasico + (retencaoPis > 0 ? `Retenção abatida: ${fmt(retencaoPis)}` : '')
         });
         detalhamento.push({
             imposto: 'COFINS (Cumulativo)',
             baseCalculo: basePisCofins,
             aliquota: ALIQ_COFINS_CUMULATIVO * 100,
             valor: Math.max(0, (basePisCofins * ALIQ_COFINS_CUMULATIVO) - retencaoCofins),
-            observacao: (icmsVendas > 0 ? `Base Deduzida de ICMS (${fmt(icmsVendas)}). ` : `Base: Receita Bruta Efetiva. `) + (retencaoCofins > 0 ? `Retenção abatida: ${fmt(retencaoCofins)}` : '')
+            observacao: obsPisCofinsBase + obsPisCofinsMonofasico + (retencaoCofins > 0 ? `Retenção abatida: ${fmt(retencaoCofins)}` : '')
         });
     }
 
