@@ -39,7 +39,8 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
     const model = req.model || MODEL_NAME;
 
     // Build URL with API key as query parameter (avoids Headers issues in Safari/WebKit)
-    const url = `${API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const url = `${API_BASE}/${encodeURIComponent(model)}%3AgenerateContent?key=${encodeURIComponent(apiKey)}`;
+
 
     // Build request body in REST API format
     let contentsParts: any[];
