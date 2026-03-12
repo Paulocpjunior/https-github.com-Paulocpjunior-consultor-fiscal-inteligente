@@ -20,23 +20,23 @@ const parseBrasilAPIResponse = (data: any): CnpjData => ({
     cep: data.cep
 });
 
-const parseReceitaWSResponse = (data: any): CnpjData => ({
-    razaoSocial: data.nome || '',
-    nomeFantasia: data.fantasia || '',
+const parseCnpjWsResponse = (data: any): CnpjData => ({
+    razaoSocial: data.razao_social || '',
+    nomeFantasia: data.estabelecimento?.nome_fantasia || '',
     cnaePrincipal: {
-        codigo: String(data.atividade_principal?.[0]?.code || '').replace(/[.\-/]/g, ''),
-        descricao: data.atividade_principal?.[0]?.text || ''
+        codigo: String(data.estabelecimento?.atividade_principal?.id || ''),
+        descricao: data.estabelecimento?.atividade_principal?.descricao || ''
     },
-    cnaesSecundarios: (data.atividades_secundarias || []).map((c: any) => ({
-        codigo: String(c.code || '').replace(/[.\-/]/g, ''),
-        descricao: c.text || ''
+    cnaesSecundarios: (data.estabelecimento?.atividades_secundarias || []).map((c: any) => ({
+        codigo: String(c.id || ''),
+        descricao: c.descricao || ''
     })),
-    logradouro: data.logradouro,
-    numero: data.numero,
-    bairro: data.bairro,
-    municipio: data.municipio,
-    uf: data.uf,
-    cep: data.cep
+    logradouro: data.estabelecimento?.logradouro || '',
+    numero: data.estabelecimento?.numero || '',
+    bairro: data.estabelecimento?.bairro || '',
+    municipio: data.estabelecimento?.cidade?.nome || '',
+    uf: data.estabelecimento?.estado?.sigla || '',
+    cep: data.estabelecimento?.cep || ''
 });
 
 const fetchFromBrasilAPI = async (cleanCnpj: string): Promise<CnpjData> => {
@@ -56,26 +56,21 @@ const fetchFromBrasilAPI = async (cleanCnpj: string): Promise<CnpjData> => {
     return parseBrasilAPIResponse(data);
 };
 
-const fetchFromReceitaWS = async (cleanCnpj: string): Promise<CnpjData> => {
-    const response = await fetch(`https://receitaws.com.br/v1/cnpj/${cleanCnpj}`);
+const fetchFromCnpjWs = async (cleanCnpj: string): Promise<CnpjData> => {
+    const response = await fetch(`https://publica.cnpj.ws/cnpj/${cleanCnpj}`);
 
     if (!response.ok) {
         if (response.status === 404) {
             throw new Error('CNPJ não encontrado na base de dados da Receita Federal.');
         }
         if (response.status === 429) {
-            throw new Error('Muitas requisições. Tente novamente em alguns instantes.');
+            throw new Error('Muitas requisições. Aguarde 1 minuto e tente novamente.');
         }
-        throw new Error(`ReceitaWS retornou status ${response.status}`);
+        throw new Error(`CNPJ.ws retornou status ${response.status}`);
     }
 
     const data = await response.json();
-
-    if (data.status === 'ERROR') {
-        throw new Error(data.message || 'Erro na consulta ReceitaWS.');
-    }
-
-    return parseReceitaWSResponse(data);
+    return parseCnpjWsResponse(data);
 };
 
 export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> => {
@@ -89,7 +84,7 @@ export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> =>
     // Tenta BrasilAPI primeiro, depois ReceitaWS como fallback
     const apis = [
         { name: 'BrasilAPI', fn: () => fetchFromBrasilAPI(cleanCnpj) },
-        { name: 'ReceitaWS', fn: () => fetchFromReceitaWS(cleanCnpj) },
+        { name: 'CNPJ.ws', fn: () => fetchFromCnpjWs(cleanCnpj) },
     ];
 
     let lastError: any = null;
