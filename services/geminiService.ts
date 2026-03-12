@@ -11,7 +11,11 @@ const getApiKey = (): string => {
     const raw = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
     const apiKey = String(raw).replace(/[\s\r\n]+/g, '').trim();
     if (!apiKey || apiKey === 'undefined') {
-        throw new Error('GEMINI_API_KEY is not set. Please configure it in the environment.');
+        throw new Error('API Key must be set. Please configure VITE_GEMINI_API_KEY in the environment.');
+    }
+    // Validate API key format (only alphanumeric, hyphens, underscores)
+    if (!/^[a-zA-Z0-9_-]+$/.test(apiKey)) {
+        throw new Error('API Key contains invalid characters. Please check VITE_GEMINI_API_KEY.');
     }
     return apiKey;
 };
@@ -35,7 +39,7 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
     const model = req.model || MODEL_NAME;
 
     // Build URL with API key as query parameter (avoids Headers issues in Safari/WebKit)
-    const url = API_BASE + '/' + model + ':generateContent?key=' + apiKey;
+    const url = `${API_BASE}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     // Build request body in REST API format
     let contentsParts: any[];
@@ -63,9 +67,14 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
         body.generationConfig = { temperature: req.config.temperature };
     }
 
-    // Pass tools as-is (REST API accepts camelCase from protobuf)
+    // Pass tools for Gemini REST API (google_search_retrieval for grounding)
     if (req.config?.tools) {
-        body.tools = req.config.tools;
+        body.tools = req.config.tools.map((tool: any) => {
+            if (tool.googleSearch !== undefined) {
+                return { google_search: {} };
+            }
+            return tool;
+        });
     }
 
     let response: Response;
@@ -77,12 +86,22 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
         });
     } catch (fetchError: any) {
         // Catch DOMException or network errors from fetch itself
-        console.error('Fetch error:', fetchError?.name, fetchError?.message, 'URL length:', url.length);
-        throw new Error('Erro de conexão com a API Gemini: ' + (fetchError?.message || 'erro desconhecido'));
+        const errorName = fetchError?.name || 'UnknownError';
+        const errorMsg = fetchError?.message || 'erro desconhecido';
+        console.error('Fetch error:', errorName, errorMsg);
+
+        if (errorName === 'DOMException' || errorMsg.includes('pattern') || errorMsg.includes('DOMException')) {
+            throw new Error(`Erro de conexão com a API (${errorName}). Verifique se a chave da API está correta e tente novamente.`);
+        }
+        if (errorMsg === 'Failed to fetch' || errorMsg.includes('NetworkError')) {
+            throw new Error('Failed to fetch');
+        }
+        throw new Error(`Erro de conexão com a API Gemini: ${errorMsg}`);
     }
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => '');
+        console.error(`Gemini API error ${response.status}:`, errorText.substring(0, 300));
         throw new Error(`Gemini API error ${response.status}: ${errorText.substring(0, 200)}`);
     }
 
@@ -94,6 +113,10 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
             .filter((p: any) => p.text)
             .map((p: any) => p.text)
             .join('');
+    }
+
+    if (!text && data.candidates?.[0]?.finishReason === 'SAFETY') {
+        throw new Error('A resposta foi bloqueada pelo filtro de segurança da API. Tente reformular sua consulta.');
     }
 
     return {
@@ -135,7 +158,7 @@ const safeJsonParse = (str: string) => {
     return JSON.parse(cleanStr);
 };
 
-const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> => {
+const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
     let lastError: any;
     for (let i = 0; i < maxRetries; i++) {
         try {
@@ -143,7 +166,7 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> =>
         } catch (error: any) {
             lastError = error;
             const message = error?.message || '';
-            if (message.includes('503') || message.includes('429') || message.includes('500') || message.includes('405') || message.includes('Service Unavailable') || message.includes('Quota exceeded') || message.includes('Not Allowed')) {
+            if (message.includes('503') || message.includes('429') || message.includes('500') || message.includes('Service Unavailable') || message.includes('Quota exceeded')) {
                 const delay = Math.pow(2, i) * 1500 + Math.random() * 1000;
                 console.warn(`Gemini API error (${message.substring(0, 100)}). Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
                 await new Promise(resolve => setTimeout(resolve, delay));
@@ -160,8 +183,8 @@ const withModelFallback = async <T>(fn: (model: string) => Promise<T>): Promise<
         return await fn(MODEL_NAME);
     } catch (error: any) {
         const msg = error?.message || '';
-        if (msg.includes('405') || msg.includes('Not Allowed') || msg.includes('404') || msg.includes('not found')) {
-            console.warn(`Modelo ${MODEL_NAME} falhou, tentando fallback ${MODEL_FALLBACK}...`);
+        if (msg.includes('405') || msg.includes('Not Allowed') || msg.includes('404') || msg.includes('not found') || msg.includes('not supported')) {
+            console.warn(`Modelo ${MODEL_NAME} falhou (${msg.substring(0, 80)}), tentando fallback ${MODEL_FALLBACK}...`);
             return await fn(MODEL_FALLBACK);
         }
         throw error;
