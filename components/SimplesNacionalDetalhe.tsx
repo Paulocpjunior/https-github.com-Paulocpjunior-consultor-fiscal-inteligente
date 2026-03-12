@@ -634,14 +634,18 @@ if (filialServico > 0) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {notas.slice(0, 5).map(nota => (
-                                            <tr key={nota.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                <td className="px-4 py-2">{new Date(nota.data).toLocaleDateString()}</td>
-                                                <td className="px-4 py-2 text-right font-mono font-bold text-slate-700 dark:text-slate-200">
-                                                    {nota.valor.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {notas.slice(0, 5).map(nota => {
+                                            const dataFormatada = (() => { try { return new Date(nota.data).toLocaleDateString('pt-BR'); } catch { return '—'; } })();
+                                            const valorFormatado = (() => { try { return (nota.valor ?? 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); } catch { return 'R$ —'; } })();
+                                            return (
+                                                <tr key={nota.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                    <td className="px-4 py-2">{dataFormatada}</td>
+                                                    <td className="px-4 py-2 text-right font-mono font-bold text-slate-700 dark:text-slate-200">
+                                                        {valorFormatado}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
