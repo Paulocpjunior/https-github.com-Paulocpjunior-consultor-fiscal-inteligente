@@ -7,8 +7,10 @@ const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const getApiKey = (): string => {
     // Vite replaces import.meta.env.VITE_* at build time
-    const apiKey = ((import.meta as any).env?.VITE_GEMINI_API_KEY || '').trim();
-    if (!apiKey) {
+    // Sanitize: strip any whitespace/newlines that may come from GitHub Secrets
+    const raw = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+    const apiKey = String(raw).replace(/[\s\r\n]+/g, '').trim();
+    if (!apiKey || apiKey === 'undefined') {
         throw new Error('GEMINI_API_KEY is not set. Please configure it in the environment.');
     }
     return apiKey;
@@ -33,7 +35,7 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
     const model = req.model || MODEL_NAME;
 
     // Build URL with API key as query parameter (avoids Headers issues in Safari/WebKit)
-    const url = API_BASE + '/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+    const url = API_BASE + '/' + model + ':generateContent?key=' + apiKey;
 
     // Build request body in REST API format
     let contentsParts: any[];
