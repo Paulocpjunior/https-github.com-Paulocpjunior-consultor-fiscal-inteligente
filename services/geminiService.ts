@@ -205,19 +205,35 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     try {
         const ai = getAI();
-        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "...", "source": "URL_COMPLETA_E_VALIDA_DA_FONTE (deve começar obrigatoriamente com https://)" }]`;
+        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "..." }]`;
         const response = await withRetry(() => ai.models.generateContent({ model: MODEL_NAME, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
-        return safeJsonParse(response.text || '[]');
+        const alerts: NewsAlert[] = safeJsonParse(response.text || '[]');
+
+        // Extrair URLs reais das fontes do Google Search (grounding metadata)
+        const groundingUrls: string[] = [];
+        if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            response.candidates[0].groundingMetadata.groundingChunks
+                .filter((c: any) => c.web?.uri)
+                .forEach((c: any) => groundingUrls.push(c.web.uri));
+        }
+
+        // Associar URLs reais às notícias
+        return alerts.map((alert, idx) => ({
+            ...alert,
+            source: alert.source && alert.source.startsWith('https://')
+                ? alert.source
+                : (groundingUrls[idx] || groundingUrls[0] || '')
+        }));
     } catch (e) { return []; }
 };
 
 export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
     try {
         const ai = getAI();
-        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS). 
+        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS).
         Retorne APENAS um JSON Array válido, sem nenhum outro texto, no formato:
         [
-          { "title": "Título da notícia", "summary": "Resumo curto", "source": "URL_COMPLETA_E_VALIDA_DA_FONTE (deve começar obrigatoriamente com https://)" }
+          { "title": "Título da notícia", "summary": "Resumo curto" }
         ]`;
         const response = await withRetry(() => ai.models.generateContent({
             model: MODEL_NAME,
@@ -227,7 +243,23 @@ export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
             }
         }));
 
-        return safeJsonParse(response.text || '[]');
+        const alerts: NewsAlert[] = safeJsonParse(response.text || '[]');
+
+        // Extrair URLs reais das fontes do Google Search (grounding metadata)
+        const groundingUrls: string[] = [];
+        if (response.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            response.candidates[0].groundingMetadata.groundingChunks
+                .filter((c: any) => c.web?.uri)
+                .forEach((c: any) => groundingUrls.push(c.web.uri));
+        }
+
+        // Associar URLs reais às notícias
+        return alerts.map((alert, idx) => ({
+            ...alert,
+            source: alert.source && alert.source.startsWith('https://')
+                ? alert.source
+                : (groundingUrls[idx] || groundingUrls[0] || '')
+        }));
     } catch (e) {
         console.error("fetchReformaNews error:", e);
         return [];

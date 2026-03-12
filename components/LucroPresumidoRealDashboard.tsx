@@ -499,14 +499,22 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
     };
 
     const handleSaveNewCompany = async (e: React.FormEvent) => {
-        e.preventDefault(); if (!currentUser) return; setLoading(true);
+        e.preventDefault();
+        if (!currentUser) return;
+        if (!newName.trim()) { setCnpjError('Informe a Razão Social da empresa.'); return; }
+        if (!newCnpj.trim()) { setCnpjError('Informe o CNPJ da empresa.'); return; }
+        setCnpjError('');
+        setLoading(true);
         try {
             await lucroPresumidoService.saveEmpresa({
                 nome: newName, cnpj: newCnpj, cnaePrincipal: { codigo: newCnae, descricao: '' },
                 regimePadrao: newRegime, fichaFinanceira: []
             }, currentUser.id);
             await loadEmpresas(); setView('list'); setNewName(''); setNewCnpj(''); setNewCnae('');
-        } catch (err) { console.error(err); } finally { setLoading(false); }
+        } catch (err: any) {
+            console.error(err);
+            setCnpjError(err?.message || 'Erro ao salvar a empresa. Tente novamente.');
+        } finally { setLoading(false); }
     };
 
     const handleDeleteCompany = async (id: string) => {
@@ -1152,14 +1160,14 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                         label="Ret. IRPJ" 
                                         value={fichaRetIrpj} 
                                         onChange={setFichaRetIrpj}
-                                        subtitle={retencoesAcumuladas.irpj > 0 ? `+ R$ ${retencoesAcumuladas.irpj.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (Ant. Trimestre)` : undefined}
+                                        subtitle={retencoesAcumuladas.irpj > 0 ? `+ ${retencoesAcumuladas.irpj.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} (Ant. Trimestre)` : undefined}
                                         highlight={retencoesAcumuladas.irpj > 0}
                                     />
                                     <CurrencyInput 
                                         label="Ret. CSLL" 
                                         value={fichaRetCsll} 
                                         onChange={setFichaRetCsll}
-                                        subtitle={retencoesAcumuladas.csll > 0 ? `+ R$ ${retencoesAcumuladas.csll.toLocaleString('pt-BR', {minimumFractionDigits: 2})} (Ant. Trimestre)` : undefined}
+                                        subtitle={retencoesAcumuladas.csll > 0 ? `+ ${retencoesAcumuladas.csll.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} (Ant. Trimestre)` : undefined}
                                         highlight={retencoesAcumuladas.csll > 0}
                                     />
                                 </div>
@@ -1303,58 +1311,58 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                         <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
                             <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Receitas Operacionais Brutas</h4>
                             <div className="space-y-2">
-                                {selectedFicha.faturamentoMesComercio > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Comércio (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesComercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.faturamentoMesIndustria > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Indústria (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesIndustria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.faturamentoMesServico > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Próprio (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.faturamentoMesServicoRetido > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Retido (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServicoRetido.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.faturamentoMesLocacao > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Locação de Bens (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesLocacao.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.faturamentoMesServicoHospitalar > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços Hospitalares (Matriz+Filial):</span><span>R$ {selectedFicha.faturamentoMesServicoHospitalar.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                {selectedFicha.receitaFinanceira > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>(+) Receita Financeira:</span><span>R$ {selectedFicha.receitaFinanceira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                {selectedFicha.faturamentoMesComercio > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Comércio (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesComercio.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.faturamentoMesIndustria > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Indústria (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesIndustria.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.faturamentoMesServico > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Próprio (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesServico.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.faturamentoMesServicoRetido > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços ISS Retido (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesServicoRetido.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.faturamentoMesLocacao > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Locação de Bens (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesLocacao.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.faturamentoMesServicoHospitalar > 0 && <div className="flex justify-between text-sm font-bold text-slate-600"><span>Serviços Hospitalares (Matriz+Filial):</span><span>{selectedFicha.faturamentoMesServicoHospitalar.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                {selectedFicha.receitaFinanceira > 0 && <div className="flex justify-between text-sm font-bold text-amber-600"><span>(+) Receita Financeira:</span><span>{selectedFicha.receitaFinanceira.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
                                 {itensAvulsos.filter(i => i.tipo === 'receita').length > 0 && (
                                     <div className="flex justify-between text-sm font-bold text-emerald-600">
                                         <span>(+) Itens Adicionais (Extra Operacionais):</span>
-                                        <span>R$ {itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        <span>{itensAvulsos.filter(i => i.tipo === 'receita').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                     </div>
                                 )}
                                 
                                 {/* Deduções e Bases */}
                                 {(selectedFicha.valorIpi > 0 || selectedFicha.valorDevolucoes > 0) && (
                                     <div className="pt-2 mt-2 border-t border-dashed border-slate-200">
-                                        {selectedFicha.valorIpi > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução IPI:</span><span>R$ {selectedFicha.valorIpi.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.valorDevolucoes > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução Devoluções:</span><span>R$ {selectedFicha.valorDevolucoes.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.valorIpi > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução IPI:</span><span>{selectedFicha.valorIpi.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {selectedFicha.valorDevolucoes > 0 && <div className="flex justify-between text-xs font-bold text-red-400 italic"><span>(-) Dedução Devoluções:</span><span>{selectedFicha.valorDevolucoes.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
                                     </div>
                                 )}
 
                                 <div className="flex justify-between text-base font-black text-slate-800 border-t pt-4 mt-2">
                                     <span>Base Cálculo IRPJ/CSLL:</span>
-                                    <span>R$ {baseIrpjCsll.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    <span>{baseIrpjCsll.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                 </div>
 
                                 {selectedFicha.icmsVendas > 0 && (
                                     <div className="flex justify-between text-xs font-bold text-blue-400 italic mt-1">
                                         <span>(-) Ded. ICMS s/ Vendas (STF):</span>
-                                        <span>R$ {selectedFicha.icmsVendas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        <span>{selectedFicha.icmsVendas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                     </div>
                                 )}
 
                                 {selectedFicha.faturamentoMonofasico > 0 && (
                                     <div className="flex justify-between text-xs font-bold text-blue-400 italic mt-1">
                                         <span>(-) Receita Monofásica (PIS/COFINS):</span>
-                                        <span>R$ {selectedFicha.faturamentoMonofasico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        <span>{selectedFicha.faturamentoMonofasico.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                     </div>
                                 )}
 
                                 <div className="flex justify-between text-sm font-black text-slate-700 mt-2">
                                     <span>Base Cálculo PIS/COFINS:</span>
-                                    <span>R$ {basePisCofins.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    <span>{basePisCofins.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                 </div>
 
                                 {/* Ajustes Lucro Real */}
-                                {selectedFicha.regime === 'Real' && (selectedFicha.ajustesLucroRealAdicoes || 0 > 0 || selectedFicha.ajustesLucroRealExclusoes || 0 > 0) && (
+                                {selectedFicha.regime === 'Real' && ((selectedFicha.ajustesLucroRealAdicoes || 0) > 0 || (selectedFicha.ajustesLucroRealExclusoes || 0) > 0) && (
                                     <div className="pt-2 mt-2 border-t border-emerald-100">
                                         <h5 className="text-[10px] font-black text-emerald-600 uppercase mb-1">Ajustes Lucro Real (LALUR)</h5>
-                                        {selectedFicha.ajustesLucroRealAdicoes || 0 > 0 && <div className="flex justify-between text-xs font-bold text-emerald-600"><span>(+) Adições:</span><span>R$ {selectedFicha.ajustesLucroRealAdicoes?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.ajustesLucroRealExclusoes || 0 > 0 && <div className="flex justify-between text-xs font-bold text-red-500"><span>(-) Exclusões:</span><span>R$ {selectedFicha.ajustesLucroRealExclusoes?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {(selectedFicha.ajustesLucroRealAdicoes || 0) > 0 && <div className="flex justify-between text-xs font-bold text-emerald-600"><span>(+) Adições:</span><span>{(selectedFicha.ajustesLucroRealAdicoes || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {(selectedFicha.ajustesLucroRealExclusoes || 0) > 0 && <div className="flex justify-between text-xs font-bold text-red-500"><span>(-) Exclusões:</span><span>{(selectedFicha.ajustesLucroRealExclusoes || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
                                     </div>
                                 )}
                             </div>
@@ -1364,16 +1372,16 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                         <div className="bg-white border-2 border-slate-100 rounded-[2rem] p-8 shadow-sm">
                             <h4 className="text-xs font-black text-slate-400 uppercase mb-6 border-b pb-2">Custos, Gastos e Impostos</h4>
                             <div className="space-y-4">
-                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Custo de Mercadoria (CMV):</span><span>R$ {financeiro.cmv.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
-                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Folha e Encargos Sociais:</span><span>R$ {financeiro.folha.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
-                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Despesas Operacionais:</span><span>R$ {financeiro.despesas.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Custo de Mercadoria (CMV):</span><span>{financeiro.cmv.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Folha e Encargos Sociais:</span><span>{financeiro.folha.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-600"><span>Despesas Operacionais:</span><span>{financeiro.despesas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
                                 
                                 {/* Saldos Credores */}
-                                {(selectedFicha.saldoCredorIcms || 0 > 0 || selectedFicha.saldoCredorIpi || 0 > 0) && (
+                                {((selectedFicha.saldoCredorIcms || 0) > 0 || (selectedFicha.saldoCredorIpi || 0) > 0) && (
                                     <div className="pt-2 mt-2 border-t border-slate-100">
                                         <h5 className="text-[10px] font-black text-slate-400 uppercase mb-1">Saldos Credores Compensados</h5>
-                                        {selectedFicha.saldoCredorIcms || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. ICMS Anterior:</span><span>R$ {selectedFicha.saldoCredorIcms?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.saldoCredorIpi || 0 > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. IPI Anterior:</span><span>R$ {selectedFicha.saldoCredorIpi?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {(selectedFicha.saldoCredorIcms || 0) > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. ICMS Anterior:</span><span>{(selectedFicha.saldoCredorIcms || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {(selectedFicha.saldoCredorIpi || 0) > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>Cred. IPI Anterior:</span><span>{(selectedFicha.saldoCredorIpi || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
                                     </div>
                                 )}
 
@@ -1381,17 +1389,17 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                 {(selectedFicha.retencaoPis > 0 || selectedFicha.retencaoCofins > 0 || selectedFicha.retencaoIrpj > 0 || selectedFicha.retencaoCsll > 0) && (
                                     <div className="pt-2 mt-2 border-t border-slate-100">
                                         <h5 className="text-[10px] font-black text-slate-400 uppercase mb-1">Retenções na Fonte (Deduções Federais)</h5>
-                                        {selectedFicha.retencaoPis > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>PIS Retido:</span><span>R$ {selectedFicha.retencaoPis.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.retencaoCofins > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>COFINS Retido:</span><span>R$ {selectedFicha.retencaoCofins.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.retencaoIrpj > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>IRPJ Retido:</span><span>R$ {selectedFicha.retencaoIrpj.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
-                                        {selectedFicha.retencaoCsll > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>CSLL Retido:</span><span>R$ {selectedFicha.retencaoCsll.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span></div>}
+                                        {selectedFicha.retencaoPis > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>PIS Retido:</span><span>{selectedFicha.retencaoPis.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {selectedFicha.retencaoCofins > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>COFINS Retido:</span><span>{selectedFicha.retencaoCofins.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {selectedFicha.retencaoIrpj > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>IRPJ Retido:</span><span>{selectedFicha.retencaoIrpj.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
+                                        {selectedFicha.retencaoCsll > 0 && <div className="flex justify-between text-xs font-bold text-slate-500"><span>CSLL Retido:</span><span>{selectedFicha.retencaoCsll.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>}
                                     </div>
                                 )}
 
                                 {itensAvulsos.filter(i => i.tipo === 'despesa').length > 0 && (
                                     <div className="flex justify-between text-sm font-bold text-slate-600">
                                         <span>(+) Outras Despesas:</span>
-                                        <span>R$ {itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                        <span>{itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                     </div>
                                 )}
 
@@ -1400,7 +1408,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     {resultadoCalculado.detalhamento.map((det, idx) => (
                                         <div key={idx} className="flex justify-between text-sm font-bold text-amber-600">
                                             <span>{det.imposto}:</span>
-                                            <span>R$ {det.valor.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span>{det.valor.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     ))}
                                     {resultadoCalculado.detalhamento.length === 0 && (
@@ -1410,7 +1418,7 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
 
                                 <div className="flex justify-between text-base font-black text-sky-900 border-t border-sky-100 pt-4 mt-2">
                                     <span>Total Desembolsos:</span>
-                                    <span>R$ {(financeiro.cmv + financeiro.folha + financeiro.despesas + itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0) + resultadoCalculado.totalImpostos).toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                    <span>{(financeiro.cmv + financeiro.folha + financeiro.despesas + itensAvulsos.filter(i => i.tipo === 'despesa').reduce((a, b) => a + b.valor, 0) + resultadoCalculado.totalImpostos).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                 </div>
                             </div>
                         </div>
@@ -1425,31 +1433,31 @@ const LucroPresumidoRealDashboard: React.FC<LucroPresumidoRealDashboardProps> = 
                                     {selectedFicha.dadosTrimestrais.comercio > 0 && (
                                         <div>
                                             <span className="block text-slate-500 text-[10px] uppercase font-bold">Comércio Ant.</span>
-                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.comercio.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span className="font-bold text-slate-700">{selectedFicha.dadosTrimestrais.comercio.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     )}
                                     {selectedFicha.dadosTrimestrais.industria > 0 && (
                                         <div>
                                             <span className="block text-slate-500 text-[10px] uppercase font-bold">Indústria Ant.</span>
-                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.industria.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span className="font-bold text-slate-700">{selectedFicha.dadosTrimestrais.industria.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     )}
                                     {selectedFicha.dadosTrimestrais.servico > 0 && (
                                         <div>
                                             <span className="block text-slate-500 text-[10px] uppercase font-bold">Serviços Ant.</span>
-                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servico.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span className="font-bold text-slate-700">{selectedFicha.dadosTrimestrais.servico.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     )}
                                     {(selectedFicha.dadosTrimestrais.servicoHospitalar || 0) > 0 && (
                                         <div>
                                             <span className="block text-slate-500 text-[10px] uppercase font-bold">Hospitalar Ant.</span>
-                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.servicoHospitalar?.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span className="font-bold text-slate-700">{selectedFicha.dadosTrimestrais.servicoHospitalar?.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     )}
                                     {selectedFicha.dadosTrimestrais.financeira > 0 && (
                                         <div>
                                             <span className="block text-slate-500 text-[10px] uppercase font-bold">Rec. Fin. Ant.</span>
-                                            <span className="font-bold text-slate-700">R$ {selectedFicha.dadosTrimestrais.financeira.toLocaleString('pt-BR', {minimumFractionDigits:2})}</span>
+                                            <span className="font-bold text-slate-700">{selectedFicha.dadosTrimestrais.financeira.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                     )}
                                 </div>
