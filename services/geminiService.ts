@@ -31,7 +31,9 @@ interface GeminiResponse {
 const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
     const apiKey = getApiKey();
     const model = req.model || MODEL_NAME;
-    const url = `${API_BASE}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    // Build URL with API key as query parameter (avoids Headers issues in Safari/WebKit)
+    const url = API_BASE + '/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
 
     // Build request body in REST API format
     let contentsParts: any[];
@@ -39,7 +41,6 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
     if (typeof req.contents === 'string') {
         contentsParts = [{ parts: [{ text: req.contents }] }];
     } else if (Array.isArray(req.contents)) {
-        // Array of parts (e.g., inlineData + text)
         const parts = req.contents.map((item: any) => {
             if (item.inlineData) {
                 return { inlineData: item.inlineData };
@@ -56,26 +57,27 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
 
     const body: any = { contents: contentsParts };
 
-    // Add generation config
     if (req.config?.temperature !== undefined) {
         body.generationConfig = { temperature: req.config.temperature };
     }
 
-    // Add tools (google search grounding)
+    // Pass tools as-is (REST API accepts camelCase from protobuf)
     if (req.config?.tools) {
-        body.tools = req.config.tools.map((t: any) => {
-            if (t.googleSearch !== undefined) {
-                return { google_search: t.googleSearch };
-            }
-            return t;
-        });
+        body.tools = req.config.tools;
     }
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+    } catch (fetchError: any) {
+        // Catch DOMException or network errors from fetch itself
+        console.error('Fetch error:', fetchError?.name, fetchError?.message, 'URL length:', url.length);
+        throw new Error('Erro de conexão com a API Gemini: ' + (fetchError?.message || 'erro desconhecido'));
+    }
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => '');
@@ -84,7 +86,6 @@ const callGeminiAPI = async (req: GeminiRequest): Promise<GeminiResponse> => {
 
     const data = await response.json();
 
-    // Extract text from response
     let text = '';
     if (data.candidates?.[0]?.content?.parts) {
         text = data.candidates[0].content.parts

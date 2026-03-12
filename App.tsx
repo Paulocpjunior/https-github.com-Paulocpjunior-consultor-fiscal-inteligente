@@ -294,6 +294,9 @@ const App: React.FC = () => {
         if (message.includes('Failed to fetch')) {
             return "Erro de conexão. Verifique sua internet.";
         }
+        if (message.includes('pattern') || message.includes('DOMException')) {
+            return "Erro de comunicação com a API. Verifique sua conexão e tente novamente.";
+        }
         if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY') || message.includes('API Key must be set')) {
             return "A chave da API do Gemini não foi configurada ou selecionada. Por favor, configure a variável de ambiente GEMINI_API_KEY ou selecione uma chave válida.";
         }
@@ -328,7 +331,7 @@ const App: React.FC = () => {
     };
 
     const checkApiKey = async () => {
-        if (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY) return true;
+        if ((import.meta as any).env?.VITE_GEMINI_API_KEY) return true;
 
         // @ts-ignore
         if (window.aistudio) {
