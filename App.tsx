@@ -285,6 +285,9 @@ const App: React.FC = () => {
         if (message.includes('400') || message.includes('Invalid argument')) {
             return "A consulta parece inválida ou incompleta (Erro 400). Verifique os dados digitados e tente novamente.";
         }
+        if (message.includes('405') || message.includes('Not Allowed')) {
+            return "Erro de comunicação com o serviço de IA (Erro 405). O serviço pode estar temporariamente indisponível. Tente novamente em alguns instantes.";
+        }
         if (message.includes('500')) {
             return "Erro interno no servidor da IA (Erro 500). Por favor, tente novamente.";
         }
