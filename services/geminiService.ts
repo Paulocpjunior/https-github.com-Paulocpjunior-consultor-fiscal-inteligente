@@ -2,8 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
-const MODEL_NAME = 'gemini-2.0-flash';
-const MODEL_FALLBACK = 'gemini-2.5-flash-preview-05-20';
+const MODEL_NAME = 'gemini-2.5-flash';
+const MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const safeJsonParse = (str: string) => {
     let cleanStr = str.trim();
