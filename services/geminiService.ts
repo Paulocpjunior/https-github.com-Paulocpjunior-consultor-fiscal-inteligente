@@ -1,8 +1,8 @@
 
 import { SearchType, type SearchResult, type GroundingSource, type ComparisonResult, type NewsAlert, type SimilarService, type CnaeSuggestion, type SimplesNacionalEmpresa, type SimplesNacionalResumo, CnaeTaxDetail } from '../types';
 
-const MODEL_NAME = 'gemini-2.5-flash';
-const MODEL_FALLBACK = 'gemini-2.0-flash';
+const MODEL_NAME = 'gemini-2.0-flash';
+const MODEL_FALLBACK = 'gemini-1.5-flash';
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 const getApiKey = (): string => {
