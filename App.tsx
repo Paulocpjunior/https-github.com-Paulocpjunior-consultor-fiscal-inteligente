@@ -7,6 +7,7 @@ import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
 import ReformaNews from './components/ReformaNews';
 import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
+import ErrorBoundary from './components/ErrorBoundary';
 import FavoritesSidebar from './components/FavoritesSidebar';
 import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
 import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa';
@@ -848,6 +849,7 @@ const App: React.FC = () => {
 
                         {/* Simples Nacional Views */}
                         {searchType === SearchType.SIMPLES_NACIONAL && (
+                            <ErrorBoundary>
                             <Suspense fallback={<LoadingSpinner />}>
                                 {simplesView === 'dashboard' && (
                                     <SimplesNacionalDashboard
@@ -868,28 +870,43 @@ const App: React.FC = () => {
                                         initialData={simplesEmpresaToEdit}
                                     />
                                 )}
-                                {simplesView === 'detalhe' && selectedEmpresa && (
-                                    <SimplesNacionalDetalhe
-                                        empresa={selectedEmpresa}
-                                        notas={simplesNotas[selectedEmpresa.id] || []}
-                                        onBack={() => setSimplesView('dashboard')}
-                                        onImport={handleImportNotas}
-                                        onUpdateFolha12={handleUpdateFolha12}
-                                        onSaveFaturamentoManual={handleSaveFaturamentoManual}
-                                        onUpdateEmpresa={handleUpdateEmpresa}
-                                        onShowClienteView={() => setSimplesView('cliente')}
-                                        onShowToast={(msg) => setToastMessage(msg)}
-                                        currentUser={currentUser}
-                                    />
+                                {simplesView === 'detalhe' && (
+                                    selectedEmpresa ? (
+                                        <SimplesNacionalDetalhe
+                                            empresa={selectedEmpresa}
+                                            notas={simplesNotas[selectedEmpresa.id] || []}
+                                            onBack={() => setSimplesView('dashboard')}
+                                            onImport={handleImportNotas}
+                                            onUpdateFolha12={handleUpdateFolha12}
+                                            onSaveFaturamentoManual={handleSaveFaturamentoManual}
+                                            onUpdateEmpresa={handleUpdateEmpresa}
+                                            onShowClienteView={() => setSimplesView('cliente')}
+                                            onShowToast={(msg) => setToastMessage(msg)}
+                                            currentUser={currentUser}
+                                        />
+                                    ) : (
+                                        <div className="p-8 text-center">
+                                            <LoadingSpinner />
+                                            <p className="mt-4 text-slate-500">Carregando empresa...</p>
+                                        </div>
+                                    )
                                 )}
-                                {simplesView === 'cliente' && selectedEmpresa && (
-                                    <SimplesNacionalClienteView
-                                        empresa={selectedEmpresa}
-                                        notas={simplesNotas[selectedEmpresa.id] || []}
-                                        onBack={() => setSimplesView('dashboard')}
-                                    />
+                                {simplesView === 'cliente' && (
+                                    selectedEmpresa ? (
+                                        <SimplesNacionalClienteView
+                                            empresa={selectedEmpresa}
+                                            notas={simplesNotas[selectedEmpresa.id] || []}
+                                            onBack={() => setSimplesView('dashboard')}
+                                        />
+                                    ) : (
+                                        <div className="p-8 text-center">
+                                            <LoadingSpinner />
+                                            <p className="mt-4 text-slate-500">Carregando empresa...</p>
+                                        </div>
+                                    )
                                 )}
                             </Suspense>
+                            </ErrorBoundary>
                         )}
 
                         {/* Lucro Presumido View */}
