@@ -58,13 +58,26 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> =>
     throw lastError;
 };
 
-const getAI = () => {
-    const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-        throw new Error('GEMINI_API_KEY is not set. Please configure it in the environment.');
+const getAI = () => ({
+    models: {
+        generateContent: async ({ contents, model }: any) => {
+            const response = await fetch('/api/fiscal/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    prompt: typeof contents === 'string' ? contents : JSON.stringify(contents), 
+                    model 
+                }),
+            });
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || 'Erro na API');
+            }
+            const data = await response.json();
+            return { text: data.text };
+        }
     }
-    return new GoogleGenAI({ apiKey });
-};
+});
 
 export const fetchFiscalData = async (
     type: SearchType,

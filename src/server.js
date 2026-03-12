@@ -8,7 +8,18 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ─── Segurança ────────────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.tailwindcss.com", "https://*.firebaseapp.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com"],
+            connectSrc: ["'self'", "https://*.googleapis.com", "https://*.firebaseio.com", "https://*.google.com"],
+            imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'", "https:", "data:"],
+        },
+    },
+}));
 app.use(express.json({ limit: '10kb' })); // Limita payload
 
 // CORS: aceita apenas o domínio do seu frontend no Cloud Run
@@ -130,3 +141,16 @@ app.listen(PORT, () => {
     console.log(`✅ Proxy Gemini rodando na porta ${PORT}`);
     console.log(`   CORS permitido para: ${ALLOWED_ORIGINS.join(', ') || 'todos (desenvolvimento)'}`);
 });
+
+
+// ─── Serve Frontend estático ──────────────────────────────────────────────────
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const distPath = join(__dirname, '../dist');
+if (existsSync(distPath)) {
+    const { default: serveStatic } = await import('serve-static');
+    app.use(serveStatic(distPath));
+    app.get('/{*path}', (_req, res) => res.sendFile(join(distPath, 'index.html')));
+}
