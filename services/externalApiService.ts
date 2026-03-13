@@ -1,52 +1,33 @@
-
 import { CnpjData } from '../types';
 
+// Usa o backend como proxy para evitar CORS e proteger a origem das requisições
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+
 export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> => {
-    // Remove caracteres não numéricos
     const cleanCnpj = cnpj.replace(/\D/g, '');
-    
+
     if (cleanCnpj.length !== 14) {
         throw new Error('CNPJ deve conter 14 dígitos.');
     }
 
     try {
-        // BrasilAPI é uma fonte confiável de dados públicos brasileiros
-        const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
-        
+        const response = await fetch(`${BACKEND_URL}/api/cnpj/${cleanCnpj}`, {
+            signal: AbortSignal.timeout(20000),
+        });
+
         if (!response.ok) {
-            if (response.status === 404) {
-                 throw new Error('CNPJ não encontrado na base de dados da Receita Federal.');
-            }
-            if (response.status === 429) {
-                throw new Error('Muitas requisições. Tente novamente em alguns instantes.');
-            }
-            throw new Error('Erro ao consultar o serviço de CNPJ.');
+            const err = await response.json().catch(() => ({}));
+            if (response.status === 404) throw new Error('CNPJ não encontrado na base de dados da Receita Federal.');
+            if (response.status === 429) throw new Error('Muitas requisições. Tente novamente em alguns instantes.');
+            throw new Error(err.error || 'Erro ao consultar o serviço de CNPJ.');
         }
 
-        const data = await response.json();
-        
-        return {
-            razaoSocial: data.razao_social,
-            nomeFantasia: data.nome_fantasia || '',
-            cnaePrincipal: { 
-                codigo: String(data.cnae_fiscal), 
-                descricao: data.cnae_fiscal_descricao 
-            },
-            cnaesSecundarios: data.cnaes_secundarios?.map((c: any) => ({
-                codigo: String(c.codigo),
-                descricao: c.descricao
-            })) || [],
-            logradouro: data.logradouro,
-            numero: data.numero,
-            bairro: data.bairro,
-            municipio: data.municipio,
-            uf: data.uf,
-            cep: data.cep
-        };
+        return await response.json() as CnpjData;
+
     } catch (error: any) {
-        console.error("Erro na consulta de CNPJ:", error);
-        if (error.message === 'Failed to fetch') {
-             throw new Error('Erro de conexão com a API da Receita. Verifique sua internet.');
+        console.error('Erro na consulta de CNPJ:', error);
+        if (error.message === 'Failed to fetch' || error.name === 'TimeoutError') {
+            throw new Error('Erro de conexão com os serviços de consulta CNPJ. Verifique sua internet e tente novamente.');
         }
         throw error;
     }
