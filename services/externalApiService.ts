@@ -1,7 +1,25 @@
 import { CnpjData } from '../types';
 
-// Usa o backend como proxy para evitar CORS e proteger a origem das requisições
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+const normalizeFromBrasilAPI = (data: any): CnpjData => ({
+    razaoSocial: data.razao_social,
+    nomeFantasia: data.nome_fantasia || '',
+    cnaePrincipal: { codigo: String(data.cnae_fiscal), descricao: data.cnae_fiscal_descricao },
+    cnaesSecundarios: (data.cnaes_secundarios || []).map((c: any) => ({ codigo: String(c.codigo), descricao: c.descricao })),
+    logradouro: data.logradouro, numero: data.numero,
+    bairro: data.bairro, municipio: data.municipio, uf: data.uf, cep: data.cep,
+});
+
+const normalizeFromCnpjWs = (data: any): CnpjData => {
+    const est = data.estabelecimento || {};
+    return {
+        razaoSocial: data.razao_social,
+        nomeFantasia: est.nome_fantasia || '',
+        cnaePrincipal: { codigo: String(est.cnae_fiscal || ''), descricao: est.cnae_fiscal_descricao || '' },
+        cnaesSecundarios: (est.cnaes_secundarios || []).map((c: any) => ({ codigo: String(c.codigo), descricao: c.descricao })),
+        logradouro: est.logradouro, numero: est.numero,
+        bairro: est.bairro, municipio: est.cidade?.nome || '', uf: est.estado?.sigla || '', cep: est.cep,
+    };
+};
 
 export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> => {
     const cleanCnpj = cnpj.replace(/\D/g, '');
@@ -10,25 +28,28 @@ export const fetchCnpjFromBrasilAPI = async (cnpj: string): Promise<CnpjData> =>
         throw new Error('CNPJ deve conter 14 dígitos.');
     }
 
-    try {
-        const response = await fetch(`${BACKEND_URL}/api/cnpj/${cleanCnpj}`, {
-            signal: AbortSignal.timeout(20000),
-        });
+    // Tenta BrasilAPI primeiro, fallback para CNPJ.ws
+    const sources = [
+        { url: `https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`, normalize: normalizeFromBrasilAPI },
+        { url: `https://publica.cnpj.ws/cnpj/${cleanCnpj}`, normalize: normalizeFromCnpjWs },
+    ];
 
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
+    for (const source of sources) {
+        try {
+            const response = await fetch(source.url, { signal: AbortSignal.timeout(15000) });
+
             if (response.status === 404) throw new Error('CNPJ não encontrado na base de dados da Receita Federal.');
             if (response.status === 429) throw new Error('Muitas requisições. Tente novamente em alguns instantes.');
-            throw new Error(err.error || 'Erro ao consultar o serviço de CNPJ.');
-        }
+            if (!response.ok) continue; // tenta próxima fonte
 
-        return await response.json() as CnpjData;
+            const data = await response.json();
+            return source.normalize(data);
 
-    } catch (error: any) {
-        console.error('Erro na consulta de CNPJ:', error);
-        if (error.message === 'Failed to fetch' || error.name === 'TimeoutError') {
-            throw new Error('Erro de conexão com os serviços de consulta CNPJ. Verifique sua internet e tente novamente.');
+        } catch (error: any) {
+            if (error.message.includes('não encontrado') || error.message.includes('Muitas requisições')) throw error;
+            console.warn(`Falha em ${source.url}:`, error.message);
         }
-        throw error;
     }
+
+    throw new Error('Erro de conexão com os serviços de consulta CNPJ. Verifique sua internet e tente novamente.');
 };
