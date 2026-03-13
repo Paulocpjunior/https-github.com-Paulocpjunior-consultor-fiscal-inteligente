@@ -26,7 +26,7 @@ app.use(cors({
             callback(new Error(`CORS bloqueado para origin: ${origin}`));
         }
     },
-    methods: ['POST'],
+    methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
 }));
 
@@ -123,6 +123,55 @@ app.post('/api/fiscal/similar', async (req, res) => {
         console.error('Erro Gemini (similar):', err?.message);
         return res.status(500).json({ error: err?.message || 'Erro interno.' });
     }
+});
+
+// ─── Proxy endpoint: Consulta CNPJ ───────────────────────────────────────────
+app.get('/api/cnpj/:cnpj', async (req, res) => {
+    const cnpj = req.params.cnpj.replace(/\D/g, '');
+
+    if (cnpj.length !== 14) {
+        return res.status(400).json({ error: 'CNPJ deve conter 14 dígitos.' });
+    }
+
+    const apis = [
+        `https://brasilapi.com.br/api/cnpj/v1/${cnpj}`,
+        `https://publica.cnpj.ws/cnpj/${cnpj}`,
+    ];
+
+    for (const url of apis) {
+        try {
+            const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+            if (!response.ok) continue;
+            const data = await response.json();
+
+            if (url.includes('brasilapi')) {
+                return res.json({
+                    razaoSocial: data.razao_social,
+                    nomeFantasia: data.nome_fantasia || '',
+                    cnaePrincipal: { codigo: String(data.cnae_fiscal), descricao: data.cnae_fiscal_descricao },
+                    cnaesSecundarios: (data.cnaes_secundarios || []).map(c => ({ codigo: String(c.codigo), descricao: c.descricao })),
+                    logradouro: data.logradouro, numero: data.numero,
+                    bairro: data.bairro, municipio: data.municipio,
+                    uf: data.uf, cep: data.cep,
+                });
+            } else {
+                const est = data.estabelecimento || {};
+                return res.json({
+                    razaoSocial: data.razao_social,
+                    nomeFantasia: est.nome_fantasia || '',
+                    cnaePrincipal: { codigo: String(est.cnae_fiscal || ''), descricao: est.cnae_fiscal_descricao || '' },
+                    cnaesSecundarios: (est.cnaes_secundarios || []).map(c => ({ codigo: String(c.codigo), descricao: c.descricao })),
+                    logradouro: est.logradouro, numero: est.numero,
+                    bairro: est.bairro, municipio: est.cidade?.nome || '',
+                    uf: est.estado?.sigla || '', cep: est.cep,
+                });
+            }
+        } catch (err) {
+            console.warn(`Falha CNPJ em ${url}:`, err?.message);
+        }
+    }
+
+    return res.status(502).json({ error: 'Não foi possível consultar o CNPJ. Tente novamente.' });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
