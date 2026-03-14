@@ -7,6 +7,7 @@ import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
 import ReformaNews from './components/ReformaNews';
 import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
+import ErrorBoundary from './components/ErrorBoundary';
 import FavoritesSidebar from './components/FavoritesSidebar';
 import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
 import SimplesNacionalNovaEmpresa from './components/SimplesNacionalNovaEmpresa';
@@ -285,11 +286,17 @@ const App: React.FC = () => {
         if (message.includes('400') || message.includes('Invalid argument')) {
             return "A consulta parece inválida ou incompleta (Erro 400). Verifique os dados digitados e tente novamente.";
         }
+        if (message.includes('405') || message.includes('Not Allowed')) {
+            return "Erro de comunicação com o serviço de IA (Erro 405). O serviço pode estar temporariamente indisponível. Tente novamente em alguns instantes.";
+        }
         if (message.includes('500')) {
             return "Erro interno no servidor da IA (Erro 500). Por favor, tente novamente.";
         }
         if (message.includes('Failed to fetch')) {
             return "Erro de conexão. Verifique sua internet.";
+        }
+        if (message.includes('pattern') || message.includes('DOMException')) {
+            return "Erro de comunicação com a API. Verifique sua conexão e tente novamente.";
         }
         if (message.includes('process is not defined') || message.includes('GEMINI_API_KEY') || message.includes('API Key must be set')) {
             return "A chave da API do Gemini não foi configurada ou selecionada. Por favor, configure a variável de ambiente GEMINI_API_KEY ou selecione uma chave válida.";
@@ -325,7 +332,7 @@ const App: React.FC = () => {
     };
 
     const checkApiKey = async () => {
-        if (process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY) return true;
+        if ((import.meta as any).env?.VITE_GEMINI_API_KEY) return true;
 
         // @ts-ignore
         if (window.aistudio) {
@@ -842,6 +849,7 @@ const App: React.FC = () => {
 
                         {/* Simples Nacional Views */}
                         {searchType === SearchType.SIMPLES_NACIONAL && (
+                            <ErrorBoundary>
                             <Suspense fallback={<LoadingSpinner />}>
                                 {simplesView === 'dashboard' && (
                                     <SimplesNacionalDashboard
@@ -862,28 +870,43 @@ const App: React.FC = () => {
                                         initialData={simplesEmpresaToEdit}
                                     />
                                 )}
-                                {simplesView === 'detalhe' && selectedEmpresa && (
-                                    <SimplesNacionalDetalhe
-                                        empresa={selectedEmpresa}
-                                        notas={simplesNotas[selectedEmpresa.id] || []}
-                                        onBack={() => setSimplesView('dashboard')}
-                                        onImport={handleImportNotas}
-                                        onUpdateFolha12={handleUpdateFolha12}
-                                        onSaveFaturamentoManual={handleSaveFaturamentoManual}
-                                        onUpdateEmpresa={handleUpdateEmpresa}
-                                        onShowClienteView={() => setSimplesView('cliente')}
-                                        onShowToast={(msg) => setToastMessage(msg)}
-                                        currentUser={currentUser}
-                                    />
+                                {simplesView === 'detalhe' && (
+                                    selectedEmpresa ? (
+                                        <SimplesNacionalDetalhe
+                                            empresa={selectedEmpresa}
+                                            notas={simplesNotas[selectedEmpresa.id] || []}
+                                            onBack={() => setSimplesView('dashboard')}
+                                            onImport={handleImportNotas}
+                                            onUpdateFolha12={handleUpdateFolha12}
+                                            onSaveFaturamentoManual={handleSaveFaturamentoManual}
+                                            onUpdateEmpresa={handleUpdateEmpresa}
+                                            onShowClienteView={() => setSimplesView('cliente')}
+                                            onShowToast={(msg) => setToastMessage(msg)}
+                                            currentUser={currentUser}
+                                        />
+                                    ) : (
+                                        <div className="p-8 text-center">
+                                            <LoadingSpinner />
+                                            <p className="mt-4 text-slate-500">Carregando empresa...</p>
+                                        </div>
+                                    )
                                 )}
-                                {simplesView === 'cliente' && selectedEmpresa && (
-                                    <SimplesNacionalClienteView
-                                        empresa={selectedEmpresa}
-                                        notas={simplesNotas[selectedEmpresa.id] || []}
-                                        onBack={() => setSimplesView('dashboard')}
-                                    />
+                                {simplesView === 'cliente' && (
+                                    selectedEmpresa ? (
+                                        <SimplesNacionalClienteView
+                                            empresa={selectedEmpresa}
+                                            notas={simplesNotas[selectedEmpresa.id] || []}
+                                            onBack={() => setSimplesView('dashboard')}
+                                        />
+                                    ) : (
+                                        <div className="p-8 text-center">
+                                            <LoadingSpinner />
+                                            <p className="mt-4 text-slate-500">Carregando empresa...</p>
+                                        </div>
+                                    )
                                 )}
                             </Suspense>
+                            </ErrorBoundary>
                         )}
 
                         {/* Lucro Presumido View */}
