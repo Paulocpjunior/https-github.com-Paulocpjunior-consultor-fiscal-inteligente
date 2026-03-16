@@ -319,7 +319,7 @@ export const logAction = (
 ) => {
     const newLog: AccessLog = {
         id: Date.now().toString(), userId, userName,
-        timestamp: Date.now(), action, details
+        timestamp: Date.now(), action, details: details ?? null
     };
 
     // ── Local (imediato) ──

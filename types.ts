@@ -6,7 +6,9 @@ export enum SearchType {
     REFORMA_TRIBUTARIA = 'Reforma Tributária',
     SIMPLES_NACIONAL = 'Simples Nacional',
     LUCRO_PRESUMIDO_REAL = 'Lucro Presumido/Real',
-    OBRIGACOES_FISCAIS = 'Obrigações Fiscais'
+    OBRIGACOES_FISCAIS = 'Obrigações Fiscais',
+    NFP_PRO = 'NFP Pro Cloud',
+    IMPORTA_XML = 'Importa XML',
 }
 
 export interface GroundingSource {

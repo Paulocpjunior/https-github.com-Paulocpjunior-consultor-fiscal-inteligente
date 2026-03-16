@@ -7,6 +7,7 @@ import TaxAlerts from './components/TaxAlerts';
 import NewsAlerts from './components/NewsAlerts';
 import ReformaNews from './components/ReformaNews';
 import ReformaTributariaNewsBanner from './components/ReformaTributariaNewsBanner';
+import ImportaXML from './components/ImportaXML';
 import ErrorBoundary from './components/ErrorBoundary';
 import FavoritesSidebar from './components/FavoritesSidebar';
 import SimplesNacionalDashboard from './components/SimplesNacionalDashboard';
@@ -24,6 +25,7 @@ import * as simplesService from './services/simplesNacionalService';
 import * as authService from './services/authService';
 import { BuildingIcon, CalculatorIcon, ChevronDownIcon, DocumentTextIcon, LocationIcon, SearchIcon, TagIcon, UserIcon, InfoIcon, CalendarIcon } from './components/Icons';
 import FiscalObligationsDashboard from './components/FiscalObligationsDashboard';
+import AssistenteNFPPro from './components/AssistenteNFPPro';
 // ✅ REMOVIDO: import { auth, isFirebaseConfigured } from './services/firebaseConfig';
 // ✅ REMOVIDO: import { onAuthStateChanged } from 'firebase/auth';
 // Ambos encapsulados em authService.subscribeAuthState
@@ -43,6 +45,8 @@ const searchDescriptions: Record<SearchType, string> = {
     [SearchType.SIMPLES_NACIONAL]: "Gestão de empresas do Simples, cálculo de DAS e Fator R.",
     [SearchType.LUCRO_PRESUMIDO_REAL]: "Ficha Financeira e Cadastro para Lucro Presumido/Real.",
     [SearchType.OBRIGACOES_FISCAIS]: "Acompanhamento de obrigações, vencimentos e alertas fiscais.",
+    [SearchType.NFP_PRO]: "Consulta automatizada de Notas Fiscais de Prestadores via certificado digital.",
+    [SearchType.IMPORTA_XML]: "Importação e análise de arquivos XML de notas fiscais (NF-e).",
 };
 
 const App: React.FC = () => {
@@ -635,7 +639,9 @@ const App: React.FC = () => {
                                         {type === SearchType.REFORMA_TRIBUTARIA && <CalculatorIcon className="w-5 h-5" />}
                                         {type === SearchType.SIMPLES_NACIONAL && <CalculatorIcon className="w-5 h-5" />}
                                         {type === SearchType.LUCRO_PRESUMIDO_REAL && <BuildingIcon className="w-5 h-5" />}
+                                        {type === SearchType.IMPORTA_XML && <DocumentTextIcon className="w-5 h-5" />}
                                         {type === SearchType.OBRIGACOES_FISCAIS && <CalendarIcon className="w-5 h-5" />}
+                                        {type === SearchType.NFP_PRO && <DocumentTextIcon className="w-5 h-5" />}
                                     </div>
                                     <span className="text-xs font-bold text-center leading-tight">{type}</span>
                                 </button>
@@ -648,7 +654,7 @@ const App: React.FC = () => {
                         {/* Standard Search Views (CFOP, NCM, Serviço, Simples, Lucro, Obrigações) */}
                         {[SearchType.CFOP, SearchType.NCM, SearchType.SERVICO, SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
                             <>
-                                <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in ${[SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) ? 'hidden' : ''}`}>
+                                <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-6 animate-fade-in ${[SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS, SearchType.NFP_PRO, SearchType.IMPORTA_XML].includes(searchType) ? 'hidden' : ''}`}>
                                     <div className="flex items-center gap-4 mb-4">
                                         <button
                                             onClick={() => setMode('single')}
@@ -925,9 +931,22 @@ const App: React.FC = () => {
                             <FiscalObligationsDashboard />
                         )}
 
+                        {/* NFP Pro Cloud View */}
+                        {searchType === SearchType.NFP_PRO && (
+                            <ErrorBoundary>
+                                <AssistenteNFPPro />
+                            </ErrorBoundary>
+                        )}
+                        {/* Importa XML View */}
+                        {searchType === SearchType.IMPORTA_XML && (
+                            <ErrorBoundary>
+                                <ImportaXML currentUser={currentUser} />
+                            </ErrorBoundary>
+                        )}
+
                         {/* Results Display */}
                         <Suspense fallback={<LoadingSpinner />}>
-                            {!result && !comparisonResult && ![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
+                            {!result && !comparisonResult && ![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS, SearchType.NFP_PRO, SearchType.IMPORTA_XML].includes(searchType) && (
                                 <InitialStateDisplay searchType={searchType} mode={mode} />
                             )}
 
@@ -971,10 +990,7 @@ const App: React.FC = () => {
                                 else setQuery1(code);
                             }} />
                         )}
-
-                        {![SearchType.SIMPLES_NACIONAL, SearchType.LUCRO_PRESUMIDO_REAL, SearchType.OBRIGACOES_FISCAIS].includes(searchType) && (
-                            searchType === SearchType.REFORMA_TRIBUTARIA ? <ReformaNews /> : <NewsAlerts />
-                        )}
+                            <ReformaNews />
 
                         {(result && (searchType === SearchType.SIMPLES_NACIONAL || searchType === SearchType.LUCRO_PRESUMIDO_REAL)) || (searchType !== SearchType.SIMPLES_NACIONAL && searchType !== SearchType.LUCRO_PRESUMIDO_REAL) ? (
                             <TaxAlerts results={result ? [result] : []} searchType={searchType} />

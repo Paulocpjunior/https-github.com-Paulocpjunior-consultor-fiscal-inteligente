@@ -7,18 +7,7 @@ const API_BASE = '/api/gemini/v1beta/models';
 
 
 const getApiKey = (): string => {
-    // Vite replaces import.meta.env.VITE_* at build time
-    // Sanitize: strip any whitespace/newlines that may come from GitHub Secrets
-    const raw = (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
-    const apiKey = String(raw).replace(/[\s\r\n]+/g, '').trim();
-    if (!apiKey || apiKey === 'undefined') {
-        throw new Error('API Key must be set. Please configure VITE_GEMINI_API_KEY in the environment.');
-    }
-    // Validate API key format (only alphanumeric, hyphens, underscores)
-    if (!/^[a-zA-Z0-9_-]+$/.test(apiKey)) {
-        throw new Error('API Key contains invalid characters. Please check VITE_GEMINI_API_KEY.');
-    }
-    return apiKey;
+    return ''; // Proxy mode: chave fica no servidor
 };
 
 interface GeminiRequest {
@@ -180,7 +169,6 @@ const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> =>
     throw lastError;
 };
 
-<<<<<<< HEAD
 const getAI = () => ({
     models: {
         generateContent: async ({ contents, model }: any) => {
@@ -201,20 +189,10 @@ const getAI = () => ({
         }
     }
 });
-=======
+
 const withModelFallback = async <T>(fn: (model: string) => Promise<T>): Promise<T> => {
-    try {
-        return await fn(MODEL_NAME);
-    } catch (error: any) {
-        const msg = error?.message || '';
-        if (msg.includes('405') || msg.includes('Not Allowed') || msg.includes('404') || msg.includes('not found') || msg.includes('not supported')) {
-            console.warn(`Modelo ${MODEL_NAME} falhou (${msg.substring(0, 80)}), tentando fallback ${MODEL_FALLBACK}...`);
-            return await fn(MODEL_FALLBACK);
-        }
-        throw error;
-    }
+    return await fn("gemini-2.0-flash");
 };
->>>>>>> e7a804ce006ed8199e08623d51dd5e9de9a20366
 
 export const fetchFiscalData = async (
     type: SearchType,
@@ -351,7 +329,10 @@ export const fetchCnaeSuggestions = async (query: string): Promise<CnaeSuggestio
 
 export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
     try {
-        const prompt = `Liste 3 notícias fiscais Brasil recentes (semana/mês). JSON Array: [{ "title": "...", "summary": "..." }]`;
+        const today = new Date().toLocaleDateString('pt-BR');
+        const prompt = `Hoje é ${today}. Busque 3 notícias fiscais/tributárias recentes do Brasil publicadas nos últimos 30 dias, priorizando fontes oficiais como: receita.fazenda.gov.br, gov.br, senado.leg.br, camara.leg.br, planalto.gov.br, pgfn.gov.br, tesouro.fazenda.gov.br.
+Retorne APENAS um JSON Array válido, sem nenhum outro texto:
+[{ "title": "Título", "summary": "Resumo em 2 frases", "source": "https://url-da-fonte.gov.br" }]`;
         const response = await withModelFallback(async (modelName) => {
             return await withRetry(() => callGeminiAPI({ model: modelName, contents: prompt, config: { tools: [{ googleSearch: {} }] } }));
         });
@@ -375,11 +356,10 @@ export const fetchNewsAlerts = async (): Promise<NewsAlert[]> => {
 
 export const fetchReformaNews = async (): Promise<NewsAlert[]> => {
     try {
-        const prompt = `Liste 3 notícias recentes e relevantes sobre a Reforma Tributária no Brasil (IBS, CBS, IS).
-        Retorne APENAS um JSON Array válido, sem nenhum outro texto, no formato:
-        [
-          { "title": "Título da notícia", "summary": "Resumo curto" }
-        ]`;
+        const today = new Date().toLocaleDateString('pt-BR');
+        const prompt = `Hoje é ${today}. Busque 3 notícias recentes dos últimos 30 dias sobre a Reforma Tributária no Brasil (IBS, CBS, IS, LC 214/2025), priorizando fontes oficiais como: gov.br, senado.leg.br, camara.leg.br, planalto.gov.br, receita.fazenda.gov.br.
+Retorne APENAS um JSON Array válido, sem nenhum outro texto:
+[{ "title": "Título", "summary": "Resumo em 2 frases", "source": "https://url-da-fonte.gov.br" }]`;
         const response = await withModelFallback(async (modelName) => {
             return await withRetry(() => callGeminiAPI({
                 model: modelName,
