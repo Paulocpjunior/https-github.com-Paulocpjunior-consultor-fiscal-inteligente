@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus, Trash2, FileText, Upload, AlertTriangle, DollarSign,
-  Calendar, Building2, ClipboardList, X, ChevronDown, Save, Paperclip
+  Calendar, Building2, ClipboardList, X, ChevronDown, Save, Paperclip, RotateCcw
 } from 'lucide-react';
+
+const DRAFT_KEY = 'consultor_fiscal_manual_draft';
 
 export interface ManualPendencia {
   id: string;
@@ -70,6 +72,31 @@ export function ManualEntry({ onAnalyze, loading }: ManualEntryProps) {
   const [items, setItems] = useState<ManualPendencia[]>([emptyItem()]);
   const [expandedIdx, setExpandedIdx] = useState<number>(0);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY);
+      if (saved) {
+        const { nomeEmpresa: ne, cnpj: cn, items: it } = JSON.parse(saved);
+        if (ne) setNomeEmpresa(ne);
+        if (cn) setCnpj(cn);
+        if (it && Array.isArray(it) && it.length > 0)
+          setItems(it.map((i: any) => ({ ...i, anexo: undefined })));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ nomeEmpresa, cnpj, items }));
+    } catch {}
+  }, [nomeEmpresa, cnpj, items]);
+
+  const handleLimparRascunho = () => {
+    if (!confirm('Limpar todo o rascunho salvo?')) return;
+    localStorage.removeItem(DRAFT_KEY);
+    setNomeEmpresa(''); setCnpj(''); setItems([emptyItem()]); setExpandedIdx(0);
+  };
 
   const formatCNPJ = (value: string) => {
     const digits = value.replace(/\D/g, '').slice(0, 14);
@@ -397,7 +424,16 @@ export function ManualEntry({ onAnalyze, loading }: ManualEntryProps) {
           <Plus size={16} /> Adicionar Pendencia
         </button>
 
+        <button onClick={handleLimparRascunho}
+          className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 rounded-xl transition-colors border border-slate-200">
+          <RotateCcw size={16} /> Limpar Rascunho
+        </button>
+
         <div className="flex-1" />
+
+        <span className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+          <Save size={12} /> Salvo automaticamente
+        </span>
 
         <p className="text-xs text-slate-400">
           {items.length} {items.length === 1 ? 'item' : 'itens'} cadastrado{items.length > 1 ? 's' : ''}

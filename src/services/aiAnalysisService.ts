@@ -91,6 +91,28 @@ function classificarCategoria(item: ManualPendencia): AnaliseItem['categoria'] {
   return 'debito';
 }
 
+
+function determinarTiposDebitoRelevantes(pendencias: ManualPendencia[]): Set<string> {
+  const tipos = new Set<string>();
+  pendencias.forEach(p => {
+    const orgao = (p.orgao || '').toUpperCase();
+    const tipo  = (p.tipo  || '').toUpperCase();
+    if (orgao.includes('RECEITA FEDERAL') || orgao.includes('RFB') || orgao.includes('INSS'))
+      tipos.add('Federal');
+    if (orgao.includes('PGFN') || tipo.includes('DIVIDA ATIVA'))
+      { tipos.add('PGFN'); tipos.add('Divida Ativa'); }
+    if (tipo.includes('SIMPLES') || tipo.includes('DAS') || tipo.includes('RELP'))
+      tipos.add('Simples Nacional');
+    if (orgao.includes('FGTS') || orgao.includes('CEF') || tipo.includes('FGTS'))
+      tipos.add('FGTS');
+    if (orgao.includes('PREFEITURA') || tipo.includes('ISS') || tipo.includes('PPI'))
+      { tipos.add('Municipal'); tipos.add('ISS'); }
+  });
+  if (tipos.size === 0)
+    ['Federal','PGFN','Simples Nacional','FGTS','Municipal','ISS'].forEach(t => tipos.add(t));
+  return tipos;
+}
+
 export function analisarPendencias(pendencias: ManualPendencia[]): Omit<AnaliseCompleta, 'planoAcao' | 'resumoIA'> {
   const itens: AnaliseItem[] = [];
   let totalOriginal = 0;
@@ -140,10 +162,14 @@ export function analisarPendencias(pendencias: ManualPendencia[]): Omit<AnaliseC
   itens.sort((a, b) => ordem[a.urgencia] - ordem[b.urgencia]);
 
   // Sugestões de parcelamento
+  const tiposRelevantes = determinarTiposDebitoRelevantes(pendencias);
+  const parcelamentosAplicaveis = PARCELAMENTOS_VIGENTES.filter(
+    p => p.vigente && p.tiposDebito.some(t => tiposRelevantes.has(t))
+  );
   const sugestoesParcelamento: ParcelamentoSugestao[] = [];
   if (totalAtualizado > 0) {
     let menorParcela = Infinity;
-    PARCELAMENTOS_VIGENTES.forEach(parc => {
+    parcelamentosAplicaveis.forEach(parc => {
       const sim = simularParcelamento(totalAtualizado, parc);
       const sugestao: ParcelamentoSugestao = {
         nome: parc.nome,
