@@ -376,3 +376,5 @@ if (existsSync(distPath)) {
     app.use(serveStatic(distPath));
     app.get('/{*path}', (_req, res) => res.sendFile(join(distPath, 'index.html')));
 }
+const analiseCreditosRouter = require('./routes/analise-creditos');
+app.use('/api/analise-creditos', analiseCreditosRouter);
