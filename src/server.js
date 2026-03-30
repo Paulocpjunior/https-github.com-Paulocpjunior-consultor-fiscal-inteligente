@@ -5,6 +5,12 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { rateLimit } from 'express-rate-limit';
 import { GoogleGenAI } from '@google/genai';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
+
+// ─── Rota de Análise de Créditos Fiscais ─────────────────────────────────────
+import analiseCreditosRouter from './routes/analise-creditos.js';
 
 const app = express();
 app.set('trust proxy', true);
@@ -24,9 +30,9 @@ app.use(helmet({
         },
     },
 }));
-app.use(express.json({ limit: '50mb' })); // Limita payload
+app.use(express.json({ limit: '50mb' }));
 
-// CORS: aceita apenas o domínio do seu frontend no Cloud Run
+// CORS
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
     .split(',')
     .map(o => o.trim())
@@ -34,18 +40,17 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permite chamadas sem origin (server-to-server) e origins permitidas
         if (!origin || ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin)) {
             callback(null, true);
         } else {
             callback(new Error(`CORS bloqueado para origin: ${origin}`));
         }
     },
-    methods: ['POST'],
+    methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
 }));
 
-// Rate limiting: 60 req/min por IP
+// Rate limiting
 const limiter = rateLimit({
     windowMs: 60 * 1000,
     max: 60,
@@ -55,7 +60,7 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// ─── Gemini Client (chave fica APENAS no servidor) ───────────────────────────
+// ─── Gemini Client ────────────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) {
     console.error('❌ GEMINI_API_KEY não configurada!');
@@ -68,6 +73,9 @@ app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ─── Rotas: Análise de Créditos Fiscais ──────────────────────────────────────
+app.use('/api/analise-creditos', analiseCreditosRouter);
+
 // ─── Proxy endpoint: Consulta Fiscal ─────────────────────────────────────────
 app.post('/api/fiscal/query', async (req, res) => {
     const { prompt, model = 'gemini-2.0-flash' } = req.body;
@@ -75,26 +83,17 @@ app.post('/api/fiscal/query', async (req, res) => {
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
         return res.status(400).json({ error: 'Campo "prompt" é obrigatório.' });
     }
-
     if (prompt.length > 4000) {
         return res.status(400).json({ error: 'Prompt muito longo (máx 4000 chars).' });
     }
 
     try {
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-        });
-
-        const text = response.text ?? '';
-        return res.json({ text });
+        const response = await ai.models.generateContent({ model, contents: prompt });
+        return res.json({ text: response.text ?? '' });
     } catch (err) {
         console.error('Erro Gemini:', err?.message);
-
         const status = err?.status || 500;
-        const message = err?.message || 'Erro ao comunicar com a IA.';
-
-        return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+        return res.status(status >= 400 && status < 600 ? status : 500).json({ error: err?.message || 'Erro ao comunicar com a IA.' });
     }
 });
 
@@ -107,18 +106,10 @@ app.post('/api/fiscal/compare', async (req, res) => {
     }
 
     try {
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-        });
-
+        const response = await ai.models.generateContent({ model, contents: prompt });
         const text = response.text ?? '';
         return res.json({
-            candidates: [{
-                content: { parts: [{ text }], role: 'model' },
-                finishReason: 'STOP',
-                index: 0
-            }],
+            candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
             text
         });
     } catch (err) {
@@ -136,18 +127,10 @@ app.post('/api/fiscal/similar', async (req, res) => {
     }
 
     try {
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-        });
-
+        const response = await ai.models.generateContent({ model, contents: prompt });
         const text = response.text ?? '';
         return res.json({
-            candidates: [{
-                content: { parts: [{ text }], role: 'model' },
-                finishReason: 'STOP',
-                index: 0
-            }],
+            candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
             text
         });
     } catch (err) {
@@ -156,28 +139,17 @@ app.post('/api/fiscal/similar', async (req, res) => {
     }
 });
 
-
-// ─── Proxy genérico para chamadas diretas ao Gemini ──────────────────────────
+// ─── Proxy genérico Gemini ────────────────────────────────────────────────────
 app.post('/api/gemini/v1beta/models/:modelAndAction', async (req, res) => {
     const { model } = req.params;
     const body = req.body;
-
-    const prompt = body?.contents?.[0]?.parts?.[0]?.text
-        || body?.contents
-        || '';
+    const prompt = body?.contents?.[0]?.parts?.[0]?.text || body?.contents || '';
 
     try {
-        const response = await ai.models.generateContent({
-            model: model || 'gemini-2.0-flash',
-            contents: prompt,
-        });
+        const response = await ai.models.generateContent({ model: model || 'gemini-2.0-flash', contents: prompt });
         const text = response.text ?? '';
         return res.json({
-            candidates: [{
-                content: { parts: [{ text }], role: 'model' },
-                finishReason: 'STOP',
-                index: 0
-            }],
+            candidates: [{ content: { parts: [{ text }], role: 'model' }, finishReason: 'STOP', index: 0 }],
             text
         });
     } catch (err) {
@@ -186,7 +158,6 @@ app.post('/api/gemini/v1beta/models/:modelAndAction', async (req, res) => {
     }
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
 // ─── NFP: Validar Certificado A1 ─────────────────────────────────────────────
 app.post('/api/nfp/validar-certificado', async (req, res) => {
     const { certificateBase64, senha } = req.body;
@@ -280,10 +251,8 @@ app.post('/api/nfp/consultar-focus', async (req, res) => {
         const dataInicio = `${ano}-${mes}-01`;
         const ultimoDia = new Date(parseInt(ano), parseInt(mes), 0).getDate();
         const dataFim = `${ano}-${mes}-${ultimoDia}`;
-
         const auth = Buffer.from(FOCUS_NFE_TOKEN + ':').toString('base64');
 
-        // Consultar notas prestadas
         const urlPrestadas = `${FOCUS_NFE_BASE}/nfse?cnpj_prestador=${cnpjLimpo}&data_emissao_inicial=${dataInicio}&data_emissao_final=${dataFim}&completo=1`;
         console.log('Focus NFe URL:', urlPrestadas);
 
@@ -300,19 +269,15 @@ app.post('/api/nfp/consultar-focus', async (req, res) => {
         if (respPrestadas.ok) {
             const dataPrestadas = JSON.parse(textPrestadas);
             const lista = Array.isArray(dataPrestadas) ? dataPrestadas : (dataPrestadas.nfse || []);
-
             let totalValor = 0, totalIss = 0, semTomador = 0;
             const notasList = [];
-
             for (const nfse of lista) {
                 const valor = parseFloat(nfse.valor_servicos || nfse.valor_total || '0');
                 const iss = parseFloat(nfse.valor_iss || nfse.valor_iss_retido || '0');
                 const tomador = nfse.tomador_razao_social || nfse.tomador_nome || '';
-
                 totalValor += valor;
                 totalIss += iss;
                 if (!tomador.trim()) semTomador++;
-
                 notasList.push({
                     numero: nfse.numero || nfse.numero_nfse || '',
                     dataEmissao: nfse.data_emissao || '',
@@ -324,23 +289,13 @@ app.post('/api/nfp/consultar-focus', async (req, res) => {
                     status: nfse.status || ''
                 });
             }
-
-            prestadas = {
-                notas: notasList.length,
-                valor: totalValor.toFixed(2),
-                iss: totalIss.toFixed(2),
-                creditos: (totalValor * 0.02).toFixed(2),
-                semTomador,
-                lista: notasList
-            };
+            prestadas = { notas: notasList.length, valor: totalValor.toFixed(2), iss: totalIss.toFixed(2), creditos: (totalValor * 0.02).toFixed(2), semTomador, lista: notasList };
         }
 
-        // Consultar notas tomadas
         const urlTomadas = `${FOCUS_NFE_BASE}/nfse?cnpj_tomador=${cnpjLimpo}&data_emissao_inicial=${dataInicio}&data_emissao_final=${dataFim}`;
         const respTomadas = await fetch(urlTomadas, {
             headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' }
         });
-
         if (respTomadas.ok) {
             const dataTomadas = JSON.parse(await respTomadas.text());
             const listaTomadas = Array.isArray(dataTomadas) ? dataTomadas : (dataTomadas.nfse || []);
@@ -348,27 +303,14 @@ app.post('/api/nfp/consultar-focus', async (req, res) => {
             tomadas = { notas: listaTomadas.length, valor: totalTomado.toFixed(2) };
         }
 
-        res.json({
-            cnpj: cnpjLimpo, periodo, prestados: prestadas, tomados: tomadas,
-            fonte: 'FOCUS_NFE_REAL', status: 'sucesso'
-        });
-
+        res.json({ cnpj: cnpjLimpo, periodo, prestados: prestadas, tomados: tomadas, fonte: 'FOCUS_NFE_REAL', status: 'sucesso' });
     } catch (e) {
         console.error('Erro Focus NFe:', e.message);
         res.status(500).json({ error: e instanceof Error ? e.message : 'Erro ao consultar Focus NFe' });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`✅ Proxy Gemini rodando na porta ${PORT}`);
-    console.log(`   CORS permitido para: ${ALLOWED_ORIGINS.join(', ') || 'todos (desenvolvimento)'}`);
-});
-
-
 // ─── Serve Frontend estático ──────────────────────────────────────────────────
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { existsSync } from 'fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = join(__dirname, '../dist');
 if (existsSync(distPath)) {
@@ -376,5 +318,9 @@ if (existsSync(distPath)) {
     app.use(serveStatic(distPath));
     app.get('/{*path}', (_req, res) => res.sendFile(join(distPath, 'index.html')));
 }
-const analiseCreditosRouter = require('./routes/analise-creditos');
-app.use('/api/analise-creditos', analiseCreditosRouter);
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+    console.log(`✅ Servidor rodando na porta ${PORT}`);
+    console.log(`   CORS permitido para: ${ALLOWED_ORIGINS.join(', ') || 'todos (desenvolvimento)'}`);
+});
