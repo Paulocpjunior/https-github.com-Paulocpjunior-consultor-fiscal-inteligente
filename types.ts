@@ -485,3 +485,15 @@ export interface ManagerAlert {
     obligationId?: string;
     timestamp: number;
 }
+export enum SearchType {
+    CFOP = 'CFOP',
+    NCM = 'NCM',
+    SERVICO = 'Serviço',
+    REFORMA_TRIBUTARIA = 'Reforma Tributária',
+    SIMPLES_NACIONAL = 'Simples Nacional',
+    LUCRO_PRESUMIDO_REAL = 'Lucro Presumido/Real',
+    OBRIGACOES_FISCAIS = 'Obrigações Fiscais',
+    IMPORTA_XML = 'Importa XML',
+    ANALISADOR_REGIME = 'Regime Tributário',
+    ANALISE_CREDITOS = 'Análise de Créditos'
+}
